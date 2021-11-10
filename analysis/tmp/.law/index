@@ -6,5 +6,5 @@ tasks.makefiles:0b.WriteFileset:config directory-path fetch-output log-file prin
 tasks.plotting:0b.PlotCoffeaHists:config debug fetch-output log-file log-scale print-deps print-output print-status remove-output scale-signal unblinded version year
 tasks.plotting:0b.ArrayPlotting:config fetch-output log-file print-deps print-output print-status remove-output version year
 tasks.arraypreparation:0b.ArrayNormalisation:config fetch-output log-file print-deps print-output print-status remove-output version year
-tasks.coffea:0b.GroupCoffeaProcesses:config dataset fetch-output log-file print-deps print-output print-status remove-output version year
+tasks.coffea:0b.GroupCoffeaProcesses:config dataset debug fetch-output log-file print-deps print-output print-status remove-output version year
 tasks.inference:0b.DatacardProducer:config dataset fetch-output log-file print-deps print-output print-status remove-output signal-bin variable version year

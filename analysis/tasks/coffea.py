@@ -7,6 +7,7 @@ import law.contrib.coffea
 from luigi import BoolParameter, Parameter
 from coffea import processor
 from coffea.nanoevents import TreeMakerSchema, BaseSchema, NanoAODSchema
+from coffea.nanoevents import schemas
 import json
 import time
 import numpy as np
@@ -24,8 +25,7 @@ class CoffeaProcessor(
 ):  # AnalysisTask):
     processor = Parameter(default="ArrayExporter")
     debug = BoolParameter(default=False)
-    debug_dataset = "TTZ_qq"  # take a small set to reduce computing time
-
+    debug_dataset = "Data_David"
     """
     this is a HTCOndor workflow, normally it will get submitted with configurations defined
     in the htcondor_bottstrap.sh or the basetasks.HTCondorWorkflow
@@ -35,8 +35,8 @@ class CoffeaProcessor(
     def __init__(self, *args, **kwargs):
         super(CoffeaProcessor, self).__init__(*args, **kwargs)
 
-    def requires(self):
-        return WriteFileset.req(self)
+    # def requires(self):
+    #    return WriteFileset.req(self)
 
     # def load_corrections(self):
     # return {corr: target.load() for corr, target in
@@ -49,7 +49,7 @@ class CoffeaProcessor(
         out = {
             cat + "_" + dat: self.local_target(cat + "_" + dat + ".npy")
             for dat in datasets
-            for cat in self.config_inst.categories.names()
+            for cat in ["data_david"]  # self.config_inst.categories.names()
         }
         # from IPython import embed;embed()
         if self.processor == "Histogramer":
@@ -64,8 +64,9 @@ class CoffeaProcessor(
 
     @law.decorator.timeit(publish_message=True)
     def run(self):
-        with open(self.input().path, "r") as read_file:
-            fileset = json.load(read_file)
+
+        # with open(self.input().path, "r") as read_file:
+        #    fileset = json.load(read_file)
 
         # fileset = {
         # (dsname, shift): [target.path for target in files.targets if target.exists()]
@@ -90,19 +91,26 @@ class CoffeaProcessor(
 
         if self.debug:
             # from IPython import embed;embed()
-            fileset = {self.debug_dataset: [fileset[self.debug_dataset][0]]}
+            fileset = {
+                self.debug_dataset: [
+                    self.config_inst.get_dataset(self.debug_dataset).keys[0]
+                ]
+            }
 
         # , metrics
         # call imported processor, magic happens here
         out = processor.run_uproot_job(
             fileset,
-            treename="nominal",
+            treename="Events",
             processor_instance=processor_inst,
             # pre_executor=processor.futures_executor,
             # pre_args=dict(workers=32),
             executor=processor.iterative_executor,
             # executor_args=dict(savemetrics=1,
-            # schema=BaseSchema,),
+            # executor_args=dict(
+            #    #schema=processor.NanoAODSchema,),
+            #    schema=schemas.BaseSchema,
+            #    ),
             chunksize=10000,
         )
         # executor_args=dict(
@@ -144,6 +152,7 @@ class CoffeaProcessor(
 
 class GroupCoffeaProcesses(DatasetTask):
 
+    debug = BoolParameter(default=False)
     """
     Task to group coffea hist together if needed (e.g. get rid of an axis)
     Or reproduce root files for Combine
@@ -153,7 +162,7 @@ class GroupCoffeaProcesses(DatasetTask):
     template = "{variable}_{process}_{category}"
 
     def requires(self):
-        return CoffeaProcessor.req(self, processor="Histogramer")
+        return CoffeaProcessor.req(self, processor="Histogramer", debug=self.debug)
 
     def output(self):
         return self.local_target("legacy_hists.root")
@@ -163,7 +172,12 @@ class GroupCoffeaProcesses(DatasetTask):
         # )
 
     def store_parts(self):
-        return super(GroupCoffeaProcesses, self).store_parts() + (self.analysis_choice,)
+
+        parts = (self.analysis_choice,)
+        if self.debug:
+            parts += ("debug", "debug")
+
+        return super(GroupCoffeaProcesses, self).store_parts() + parts
 
     @law.decorator.timeit(publish_message=True)
     @law.decorator.safe_output
@@ -171,11 +185,13 @@ class GroupCoffeaProcesses(DatasetTask):
 
         import uproot3 as up3
 
+        # from IPython import embed;embed()
+
         # needed for newtrees
         # hists = coffea.util.load(self.input().path)
         hists = self.input()["collection"][0].load()
 
-        datasets = self.config_inst.datasets.names()
+        datasets = ["Data_David"]  # self.config_inst.datasets.names()
         categories = self.config_inst.categories.names()
 
         # create dir and write coffea to root hists

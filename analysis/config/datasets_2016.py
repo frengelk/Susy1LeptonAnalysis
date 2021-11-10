@@ -2,6 +2,16 @@ import os
 
 #####datasets#####
 def setup_datasets(cfg, campaign):
+
+    cfg.add_dataset(
+        "Data_David",
+        9999,
+        campaign=campaign,
+        keys=[
+            "/nfs/dust/cms/user/frengelk/store/2CBE8C1B-15FE-494F-A7AA-0F8BDC10D64B.root",
+        ],
+    )
+
     cfg.add_dataset(
         "TTJets_sl_fromt",
         1101,

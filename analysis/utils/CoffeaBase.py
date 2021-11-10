@@ -90,8 +90,10 @@ class BaseSelection:
 
     # common = ("energy", "x", "y", "z")  # , "pt", "eta")
     hl = (
-        "METPt",
-        "W_mt",
+        "mu_loose_pt",
+        "mu_tight_pt",
+        "jet_pt",
+        "met",
     )
 
     # dtype = np.float32
@@ -118,7 +120,7 @@ class BaseSelection:
             hl=np.stack(
                 [
                     ak.to_numpy(X[var]).astype(np.float32)
-                    for var in self.config.variables.names()
+                    for var in self.hl  # in self.config.variables.names()
                 ],
                 axis=-1,
             ),
@@ -127,6 +129,15 @@ class BaseSelection:
 
     def add_to_selection(self, selection, name, array):
         return selection.add(name, ak.to_numpy(array, allow_missing=True))
+
+    def delta_R(self, muon, jet):
+        return np.sqrt((muon.eta - jet.eta) ** 2 + (muon.phi - jet.phi) ** 2)
+
+    def mT(self, lep, met_pt, met_phi):
+        return np.sqrt(2 * lep.pt * met_pt * (1 - np.cos(lep.phi - met_phi)))
+
+    def LP(self, lep, W_pt, W_phi):
+        return lep.pt / W_pt * np.cos(abs(lep.phi - W_phi))
 
     def select(self, events):
 
@@ -146,219 +157,193 @@ class BaseSelection:
         data = self.config.get_dataset(dataset)
         process = self.config.get_process(dataset)
 
-        # print(process.name)
+        # print("\n",process.name, "\n")
+
+        # mu_trigger =events.HLT_IsoMu24
+        # events.Muon_pt > 30
+        # abs(events.Muon_eta) < 2.4
+        # events.Muon_pfRelIso04_all < 0.4
+        # #events.Muon_looseId 0.4
+        # #events.Muon_tightId 0.15
+        # events.Jet_pt > 30
+        # abs(events.Jet_eta) < 2.4
+        # # delta R jet muon > 0.4
+        # #events.Jet_phi
+        # events.FatJet_pt > 170
+        # abs(events.FatJet_eta) <2.4
+        # events.FatJet_mass > 40
+
+        muons = ak.zip(
+            {
+                "pt": events.Muon_pt,
+                "eta": events.Muon_eta,
+                "phi": events.Muon_phi,
+                "mass": events.Muon_mass,
+                "charge": events.Muon_charge,
+            },
+            with_name="PtEtaPhiMCandidate",
+        )
+
+        good_muon_cut = (abs(events.Muon_eta) < 2.4) & (events.Muon_pt > 30)
+
+        good_muons = muons[good_muon_cut]
+
+        loose_cut = (events.Muon_pfRelIso04_all < 0.4) & events.Muon_looseId
+        tight_cut = (events.Muon_pfRelIso04_all < 0.15) & events.Muon_tightId
+
+        jets = ak.zip(
+            {
+                "pt": events.Jet_pt,
+                "eta": events.Jet_eta,
+                "phi": events.Jet_phi,
+                "mass": events.Jet_mass,
+            },
+            with_name="PtEtaPhiMCandidate",
+        )
+
+        good_jet_cut = (abs(events.Jet_eta) < 2.4) & (events.Jet_pt > 30)
+        good_jets = jets[good_jet_cut]
+
+        good_loose_muons = muons[good_muon_cut & loose_cut]  # [:,:1]
+        good_tight_muons = muons[good_muon_cut & tight_cut]  # [:,:1]
+
+        dR_jets_cut = []
+
+        # for i,arr in enumerate(good_jets):
+        # bool_arr=[]
+        # if not ak.any(arr):
+        # bool_arr.append(ak.Array([False]))
+        # else:
+        # for jet in arr:
+        # # fill false for not existing muons
+        # if not ak.any(good_loose_muons[i]):
+        # bool_arr.append(ak.Array([False]))
+        # else:
+        # dR = self.delta_R(good_loose_muons[i], jet)
+        # #print(dR>0.4)
+        # bool_arr.append(dR>0.4)
+
+        # # if bool_arr == []:
+        # # print("\n [] [] \n")
+        # # from IPython import embed;embed()
+        # dR_jets_cut.append(bool_arr)
+        for i, arr in enumerate(good_jets):
+            bool_arr = []
+            if ak.any(arr):
+                for jet in arr:
+                    # fill false for not existing muons
+                    if ak.any(good_loose_muons[i]):
+                        delR = self.delta_R(good_loose_muons[i], jet)
+                        for dR in delR:
+                            if dR > 0.4:
+                                bool_arr.append(jet)
+
+            dR_jets_cut.append(bool_arr)
+
+        surviving_jets = ak.Array(dR_jets_cut)
+
+        # d_R_jmu = self.delta_R(good_loose_muons, good_jets[:,:1])
+        # good_jets = good_jets[d_R_jmu_cut > 0.4]
+
         # from IPython import embed;embed()
 
-        # leptons variables
-        n_leptons = events.nLepton
-        lead_lep_pt = events.LeptonPt[:, 0]
-        # tight_lep = events.LeptonTightId[:, 0]
-        lep_charge = events.LeptonCharge
-        lep_pdgid = events.LeptonPdgId
-
-        # construct lepton veto mask
-        # hacky: sort leptons around and then use the  == 2 case
-        # veto_lepton = np.where(
-        # events.nLepton == 2
-        # ,ak.sort(events.LeptonPt, ascending=True) [:,0] < 10
-        # ,(n_leptons == 1)
-        # )
-        two_lep = ak.mask(events.LeptonPt, (events.nLepton == 2))
-        veto_lepton = two_lep[:, 1] < 10
-
-        """
-        om gosh, that can be solved so much easier
-        look at
-        for i in range(500):
-            ...:     print(events.LeptonPt[:,1:2][i], events.LeptonPt[i])
-        events.LeptonPt[:,1:2] has only the second element, and if it doesnt exist, its empty
-        events.LeptonPt[:,1:2] > 10 produces [], False or True, as intended
-
-        works as well:
-        cut=(n_leptons>0)
-        events.LeptonPt.mask[cut]
-
-        In you want to consider combinations of all good particles in each event, so there are functions for constructing that.
-        ak.combinations(array.muons, 2).type
-        mu1, mu2 = ak.unzip(ak.combinations(array.muons, 2))
-        """
-
-        # muon selection
-        muon_selection = events.LeptonMediumId[:, 0] & (abs(lep_pdgid[:, 0]) == 13)
-        # ele selection
-        electron_selection = events.LeptonTightId[:, 0] & (abs(lep_pdgid[:, 0]) == 11)
-
-        # lep selection
-        lep_selection = (
-            (lead_lep_pt > 25)
-            & (veto_lepton | (events.nLepton == 1))
-            & (muon_selection | electron_selection)
-        )
-        self.add_to_selection(selection, "lep_selection", lep_selection)
-
-        # jet variables
-        n_jets = events.nJet
-        n_btags = events.nMediumDFBTagJet
-        jet_mass_1 = events.JetMass[:, 0]
-
-        # jest isolation selection
-        jet_iso_sel = (
-            (events.IsoTrackHadronicDecay)
-            & (events.IsoTrackPt > 10)
-            & (events.IsoTrackMt2 < 60)
-        )
-        # values of variables seem faulty, #FIXME
-        # self.add_to_selection(selection,"jet_iso_sel", ~jet_iso_sel[:,0])
-
-        # event variables
-        # look at all possibilities with dir(events)
-        METPt = events.METPt
-        W_mt = events.WBosonMt
-        Dphi = events.DeltaPhi
-        LT = events.LT
-        HT = events.HT
-
-        # after the tutorial
-        # this can be much easier a=sorted_jets[:,2:3]
-        sorted_jets = ak.mask(
-            events.JetPt, (events.nJet >= 3)
-        )  # ak.sort(events.JetPt, ascending=False)
-
-        baseline_selection = (
-            # (lead_lep_pt > 25)
-            # &veto lepton > 10
-            # &No isolated track with p T ≥ 10 GeV and M T2 < 60 GeV (80 GeV) for hadronic (leptonic)
-            (sorted_jets[:, 1] > 80)
-            & (LT > 250)
-            & (HT > 500)
-            & (n_jets >= 3)  # kinda double, but keep it for now
+        fatjets = ak.zip(
+            {
+                "pt": events.FatJet_pt,
+                "eta": events.FatJet_eta,
+                "phi": events.FatJet_phi,
+                "mass": events.FatJet_mass,
+            },
+            with_name="PtEtaPhiMCandidate",
         )
 
-        # base selection
-        zero_b = n_btags == 0
-        multi_b = n_btags >= 1
-        self.add_to_selection(selection, "baseline_selection", baseline_selection)
-        self.add_to_selection(selection, "zero_b", zero_b)
-        self.add_to_selection(selection, "multi_b", multi_b)
+        W_reco = ak.zip(
+            {
+                "pt": events.MET_pt + good_muons.pt,
+                "eta": good_muons.eta,
+                "phi": events.MET_phi + good_muons.phi,
+                "mass": good_muons.mass,
+            },
+            with_name="PtEtaPhiMCandidate",
+        )
 
-        # W tag?
-        # events.nGenMatchedW
+        good_fatjet_cut = (
+            (fatjets.pt > 170) & (abs(fatjets.eta) < 2.4) & (fatjets.mass > 40)
+        )
 
-        # add trigger selections
-        HLTLeptonOr = events.HLTLeptonOr
-        HLTMETOr = events.HLTMETOr
-        HLTElectronOr = events.HLTElectronOr
-        HLTMuonOr = events.HLTMuonOr
+        good_fatjets = fatjets[good_fatjet_cut]
 
-        self.add_to_selection(selection, "HLTElectronOr", events.HLTElectronOr)
-        self.add_to_selection(selection, "HLTLeptonOr", events.HLTLeptonOr)
-        self.add_to_selection(selection, "HLTMETOr", events.HLTMETOr)
-        self.add_to_selection(selection, "HLTMuonOr", events.HLTMuonOr)
+        nJets = events.nJet
+        nFatjets = events.nFatJet
+        nMuons = events.nMuon
 
-        from IPython import embed
+        one_loose = ak.num(good_loose_muons) == 1
+        one_tight = ak.num(good_tight_muons) == 1
 
-        embed()
+        one_jet = ak.num(surviving_jets) == 1
 
-        # apply some weights,  MC/data check beforehand
-        if not process.is_data:
-            weights.add("x_sec", process.xsecs[13.0].nominal)
+        zero_fatjet = ak.num(fatjets) == 0
 
-            # some weights have more than weight, not always consistent
-            # take only first weight, since everything with more than 1 lep gets ejected
+        #
 
-            weights.add(
-                "LeptonSFTrigger",
-                events.LeptonSFTrigger[:, 0],
-                weightUp=events.LeptonSFTriggerUp[:, 0],
-                weightDown=events.LeptonSFTriggerDown[:, 0],
-            )
+        # delta_R_cut_final = self.delta_R(good_muons, surviving_jets) > 0.7
+        # hacky, but if we cut on one jet, just take the first one
+        loose_dR_cut = (
+            self.delta_R(ak.firsts(surviving_jets), ak.firsts(good_loose_muons)) > 0.7
+        )
+        tight_dR_cut = (
+            self.delta_R(ak.firsts(surviving_jets), ak.firsts(good_tight_muons)) > 0.7
+        )
 
-            weights.add(
-                "LeptonSFIsolation",
-                events.LeptonSFIsolation[:, 0],
-                weightDown=events.LeptonSFIsolationDown[:, 0],
-                weightUp=events.LeptonSFIsolationUp[:, 0],
-            )
+        jet_sel = (
+            (one_jet)
+            & (zero_fatjet)
+            #    & (delta_R_cut_final)
+        )
 
-            weights.add(
-                "LeptonSFMVA",
-                events.LeptonSFMVA[:, 0],
-                weightDown=events.LeptonSFMVADown[:, 0],
-                weightUp=events.LeptonSFMVAUp[:, 0],
-            )
-
-            weights.add(
-                "LeptonSFGSF",
-                events.LeptonSFGSF[:, 0],
-                weightDown=events.LeptonSFGSFDown[:, 0],
-                weightUp=events.LeptonSFGSFUp[:, 0],
-            )
-
-            weights.add(
-                "LeptonSFId",
-                events.LeptonSFId[:, 0],
-                weightDown=events.LeptonSFIdDown[:, 0],
-                weightUp=events.LeptonSFIdUp[:, 0],
-            )
-
-            weights.add(
-                "nISRWeight_Mar17",
-                events.nISRWeight_Mar17,
-                weightDown=events.nISRWeightDown_Mar17,
-                weightUp=events.nISRWeightDown_Mar17,
-            )
-
-            # weights.add(
-            # 'PileUpWeight',
-            # events.PileUpWeight[:,0],
-            # weightDown=events.PileUpWeightMinus[:,0],
-            # weightUp=events.PileUpWeightPlus[:,0],
-            # )
-
-            # weights.add("JetMediumCSVBTagSF", events.JetMediumCSVBTagSF,
-            # weightUp = events.JetMediumCSVBTagSFUp,
-            # weightDown= events.JetMediumCSVBTagSFDown,
-            # )
         """
-        veto leptons:
-        muons loose working point
-        electrons: veto WP of cut based electron id without cut on relative isolation
-        medium wp of vut based muon ID used for good muon selection
-        good electrons tight wp of cut based electron ID without relative isolation cut
-        conversion veto& zero lost hits in innter tracker for good electrons, reject converted photons
+        mT = sqrt(2*LepPt*Met*(1-cos(LepPhi - MetPhi))
 
-        isolation variable: pt sum of all objects in cone divided by lep pt
-        p T < 50 GeV, R = 0.2; for 50 GeV < p T < 200 GeV,
-        R = 10 GeV/p T ; and for p T > 200 GeV, R = 0.05.
-
-        In addition to the lepton veto, we also veto isolated tracks that could stem from not well iden-
-        tified leptons. Charged PF tracks from the primary vertex with p T > 5 GeV are selected, and an
-        isolation variable Rel Iso is defined as the p T sum of all charged tracks within a cone of R = 0.3
-        around the track candidate (excluding the candidate itself), divided by the track p T . We require
-        Rel Iso < 0.1 ( 0.2 ) for hadronic (leptonic) tracks. The isolated track with the the highest-p T and
-        opposite charge with respect to the selected lepton is chosen.
+        LP = lepPt/WPt*cos(abs(lepPhi - WPhi))
         """
 
-        common = ["baseline_selection", "lep_selection", "HLTLeptonOr", "HLTMETOr"]
-
-        signalRegion = events.signalRegion == 1
-        controlRegion = events.signalRegion == 0
-        delta_phi = Dphi > 0.9
         # from IPython import embed;embed()
 
-        self.add_to_selection(selection, "signalRegion", signalRegion)
-        self.add_to_selection(selection, "controlRegion", controlRegion)
-        self.add_to_selection(selection, "delta_phi", delta_phi)
-        # if you need to add more options
-        # signal_region = ["signalRegion"]
-        # control_region = ["controlRegion"]
+        self.add_to_selection(selection, "one_tight", one_tight)
+        self.add_to_selection(selection, "one_loose", one_loose)
+        self.add_to_selection(selection, "jet_sel", jet_sel)
+        self.add_to_selection(selection, "loose_dR_cut", loose_dR_cut)
+        self.add_to_selection(selection, "tight_dR_cut", tight_dR_cut)
+
+        #
+        mu_loose_pt = ak.fill_none(ak.firsts(good_loose_muons.pt), value=-999)
+        mu_tight_pt = ak.fill_none(ak.firsts(good_tight_muons.pt), value=-999)
+
+        jet_pt = ak.fill_none(ak.firsts(surviving_jets.pt), value=-999)
+
+        METPt = events.MET_pt
+
+        loose_mT = ak.fill_none(
+            ak.firsts(self.mT(good_loose_muons, events.MET_pt, events.MET_phi)),
+            value=-999,
+        )
+        tight_mT = ak.fill_none(
+            ak.firsts(self.mT(good_tight_muons, events.MET_pt, events.MET_phi)),
+            value=-999,
+        )
+
+        LP = ak.fill_none(
+            ak.firsts(self.LP(good_muons, W_reco.pt, W_reco.phi)), value=-999
+        )
 
         categories = dict(
-            N0b_SR=common + ["zero_b", "signalRegion"],
-            N1b_SR=common + ["multi_b", "signalRegion"],
-            N0b_CR=common + ["zero_b", "controlRegion"],
-            N1b_CR=common + ["multi_b", "controlRegion"],
+            Mu_tight=["jet_sel", "one_tight", "tight_dR_cut"],
+            Mu_loose=["jet_sel", "one_loose", "loose_dR_cut"],
         )
+
+        # from IPython import embed;embed()
+
+        # print("done", "\n")
 
         return locals()
 
@@ -442,6 +427,7 @@ class Histogramer(BaseProcessor, BaseSelection):
                 for cut in out["categories"][cat]:
                     # rint(cut, "\n")
                     cut_mask = ak.to_numpy(out[cut])
+                    # catch outlier cases
                     if type(cut_mask) is np.ma.core.MaskedArray:
                         cut_mask = cut_mask.mask
                     mask = np.logical_and(mask, cut_mask)  # .mask
@@ -457,6 +443,8 @@ class Histogramer(BaseProcessor, BaseSelection):
                 values[var_name] = out[var_name][mask]
                 # weight = weights.weight()[cut]
                 values["weight"] = weight[mask]
+                # print(var_name, ":", out[var_name][mask], "\n")
+                # from IPython import embed;embed()
                 output["histograms"][var_name].fill(**values)
 
         # output["n_events"] = len(METPt)

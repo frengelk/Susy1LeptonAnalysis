@@ -60,6 +60,15 @@ def setup_processes(cfg):
     ############
 
     cfg.add_process(
+        "Data_David",
+        799,
+        label=r"data david",
+        label_short="dat dav",
+        color=(0, 0, 0),
+        is_data=True,
+    )
+
+    cfg.add_process(
         "TTJets",
         100,
         label=r"TT+Jets",

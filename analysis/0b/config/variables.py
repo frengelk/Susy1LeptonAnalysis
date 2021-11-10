@@ -21,57 +21,49 @@ def setup_variables(cfg):
     )
 
     cfg.add_variable(
-        name="W_mt",
-        expression="W_mt",
-        binning=(50, 0.0, 1000.0),
-        unit="GeV",
-        x_title=r"$m_{t}^{W}$",
-    )
-
-    cfg.add_variable(
-        name="LT",
-        expression="LT",
-        binning=(50, 0.0, 1000),
-        unit="GeV",
-        x_title="LT",
-    )
-
-    cfg.add_variable(
-        name="HT",
-        expression="HT",
-        binning=(50, 0.0, 1000.0),
-        unit="GeV",
-        x_title="HT",
-    )
-
-    cfg.add_variable(
-        name="n_jets",
-        expression="n_jets",
-        binning=(20, 0, 20),
-        # unit="",
-        x_title="Number of Jets",
-    )
-
-    cfg.add_variable(
-        name="lead_lep_pt",
-        expression="lead_lep_pt",
+        name="mu_loose_pt",
+        expression="mu_loose_pt",
         binning=(100, 0, 1000),
         # unit="",
-        x_title=r"$p_{T}^{lep1}$",
+        x_title=r"$p_{T}^{loose}$",
     )
 
     cfg.add_variable(
-        name="jet_mass_1",
-        expression="jet_mass_1",
-        binning=(50, 0.0, 1000.0),
-        unit="GeV",
-        x_title=r"$m_{Jet}^{1}$",
-    )
-
-    cfg.add_variable(
-        name="Dphi",
-        expression="Dphi",
-        binning=(64, -3.2, 3.2),
+        name="mu_tight_pt",
+        expression="mu_tight_pt",
+        binning=(100, 0, 1000),
         # unit="",
-        x_title=r"$ \Delta \Phi $",
+        x_title=r"$p_{T}^{tight}$",
+    )
+
+    cfg.add_variable(
+        name="jet_pt",
+        expression="jet_pt",
+        binning=(100, 0, 1000),
+        # unit="",
+        x_title=r"$p_{T}^{jet}$",
+    )
+
+    cfg.add_variable(
+        name="loose_mT",
+        expression="loose_mT",
+        binning=(100, 0, 1000),
+        # unit="",
+        x_title=r"$m_{T}^{loose}$",
+    )
+
+    cfg.add_variable(
+        name="tight_mT",
+        expression="tight_mT",
+        binning=(100, 0, 1000),
+        # unit="",
+        x_title=r"$m_{T}^{tight}$",
+    )
+
+    cfg.add_variable(
+        name="LP",
+        expression="LP",
+        binning=(50, 0.0, 1000),
+        unit="GeV",
+        x_title=r"LP",
     )
