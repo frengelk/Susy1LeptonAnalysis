@@ -212,12 +212,12 @@ class GroupCoffeaProcesses(DatasetTask):
                         hist_name = self.template.format(
                             variable=var, process=dat, category=cat
                         )
-                        if "data" in dat:
-                            hist_name = self.template.format(
-                                variable=var, process="data_obs", category=cat
-                            )
+                        # if "data" in dat:
+                            # hist_name = self.template.format(
+                                # variable=var, process="data_obs", category=cat
+                            # )
 
-                        # from IPython import embed;embed()
+                        #from IPython import embed;embed()
                         root_file[hist_name] = coffea.hist.export1d(
                             hists[var][(dat, cat)].project(var)
                         )

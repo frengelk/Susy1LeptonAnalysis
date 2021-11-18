@@ -120,7 +120,7 @@ class BaseSelection:
             hl=np.stack(
                 [
                     ak.to_numpy(X[var]).astype(np.float32)
-                    for var in self.hl  # in self.config.variables.names()
+                    for var in self.config.variables.names()
                 ],
                 axis=-1,
             ),
@@ -131,10 +131,10 @@ class BaseSelection:
         return selection.add(name, ak.to_numpy(array, allow_missing=True))
 
     def delta_R(self, muon, jet):
-        return np.sqrt((muon.eta - jet.eta) ** 2 + (muon.phi - jet.phi) ** 2)
+        return np.sqrt((muon.eta - jet.eta)**2 + (muon.phi - jet.phi)**2)
 
     def mT(self, lep, met_pt, met_phi):
-        return np.sqrt(2 * lep.pt * met_pt * (1 - np.cos(lep.phi - met_phi)))
+        return np.sqrt(2*lep.pt*met_pt*(1-np.cos(lep.phi- met_phi)))
 
     def LP(self, lep, W_pt, W_phi):
         return lep.pt / W_pt * np.cos(abs(lep.phi - W_phi))
@@ -157,7 +157,7 @@ class BaseSelection:
         data = self.config.get_dataset(dataset)
         process = self.config.get_process(dataset)
 
-        # print("\n",process.name, "\n")
+        #print("\n",process.name, "\n")
 
         # mu_trigger =events.HLT_IsoMu24
         # events.Muon_pt > 30
@@ -173,16 +173,13 @@ class BaseSelection:
         # abs(events.FatJet_eta) <2.4
         # events.FatJet_mass > 40
 
-        muons = ak.zip(
-            {
-                "pt": events.Muon_pt,
-                "eta": events.Muon_eta,
-                "phi": events.Muon_phi,
-                "mass": events.Muon_mass,
-                "charge": events.Muon_charge,
-            },
-            with_name="PtEtaPhiMCandidate",
-        )
+        muons = ak.zip({
+             "pt": events.Muon_pt,
+             "eta": events.Muon_eta,
+             "phi": events.Muon_phi,
+             "mass": events.Muon_mass,
+             "charge": events.Muon_charge,
+         }, with_name="PtEtaPhiMCandidate")
 
         good_muon_cut = (abs(events.Muon_eta) < 2.4) & (events.Muon_pt > 30)
 
@@ -191,85 +188,58 @@ class BaseSelection:
         loose_cut = (events.Muon_pfRelIso04_all < 0.4) & events.Muon_looseId
         tight_cut = (events.Muon_pfRelIso04_all < 0.15) & events.Muon_tightId
 
-        jets = ak.zip(
-            {
-                "pt": events.Jet_pt,
-                "eta": events.Jet_eta,
-                "phi": events.Jet_phi,
-                "mass": events.Jet_mass,
-            },
-            with_name="PtEtaPhiMCandidate",
-        )
+        jets = ak.zip({
+            "pt": events.Jet_pt,
+            "eta": events.Jet_eta,
+            "phi": events.Jet_phi,
+            "mass": events.Jet_mass,
+        }, with_name="PtEtaPhiMCandidate")
 
         good_jet_cut = (abs(events.Jet_eta) < 2.4) & (events.Jet_pt > 30)
         good_jets = jets[good_jet_cut]
 
-        good_loose_muons = muons[good_muon_cut & loose_cut]  # [:,:1]
-        good_tight_muons = muons[good_muon_cut & tight_cut]  # [:,:1]
+        good_loose_muons = muons[good_muon_cut & loose_cut]#[:,:1]
+        good_tight_muons = muons[good_muon_cut & tight_cut]#[:,:1]
 
         dR_jets_cut = []
 
+        # # jet cleaning from muons
         # for i,arr in enumerate(good_jets):
-        # bool_arr=[]
-        # if not ak.any(arr):
-        # bool_arr.append(ak.Array([False]))
-        # else:
-        # for jet in arr:
-        # # fill false for not existing muons
-        # if not ak.any(good_loose_muons[i]):
-        # bool_arr.append(ak.Array([False]))
-        # else:
-        # dR = self.delta_R(good_loose_muons[i], jet)
-        # #print(dR>0.4)
-        # bool_arr.append(dR>0.4)
+            # bool_arr=[]
+            # if ak.any(arr):
+                # for jet in arr:
+                    # # fill false for not existing muons
+                    # if ak.any(good_loose_muons[i]):
+                        # delR = self.delta_R(good_loose_muons[i], jet)
+                        # for dR in delR:
+                            # if dR>0.4:
+                                # bool_arr.append(jet)
 
-        # # if bool_arr == []:
-        # # print("\n [] [] \n")
-        # # from IPython import embed;embed()
-        # dR_jets_cut.append(bool_arr)
-        for i, arr in enumerate(good_jets):
-            bool_arr = []
-            if ak.any(arr):
-                for jet in arr:
-                    # fill false for not existing muons
-                    if ak.any(good_loose_muons[i]):
-                        delR = self.delta_R(good_loose_muons[i], jet)
-                        for dR in delR:
-                            if dR > 0.4:
-                                bool_arr.append(jet)
+            # dR_jets_cut.append(bool_arr)
 
-            dR_jets_cut.append(bool_arr)
-
-        surviving_jets = ak.Array(dR_jets_cut)
+        # surviving_jets = ak.Array(dR_jets_cut)
+        surviving_jets = good_jets
 
         # d_R_jmu = self.delta_R(good_loose_muons, good_jets[:,:1])
         # good_jets = good_jets[d_R_jmu_cut > 0.4]
 
-        # from IPython import embed;embed()
+        #from IPython import embed;embed()
 
-        fatjets = ak.zip(
-            {
-                "pt": events.FatJet_pt,
-                "eta": events.FatJet_eta,
-                "phi": events.FatJet_phi,
-                "mass": events.FatJet_mass,
-            },
-            with_name="PtEtaPhiMCandidate",
-        )
+        fatjets = ak.zip({
+                  "pt": events.FatJet_pt,
+                  "eta": events.FatJet_eta,
+                  "phi": events.FatJet_phi,
+                  "mass": events.FatJet_mass,
+              }, with_name="PtEtaPhiMCandidate")
 
-        W_reco = ak.zip(
-            {
-                "pt": events.MET_pt + good_muons.pt,
-                "eta": good_muons.eta,
-                "phi": events.MET_phi + good_muons.phi,
-                "mass": good_muons.mass,
-            },
-            with_name="PtEtaPhiMCandidate",
-        )
+        W_reco = ak.zip({
+          "pt": events.MET_pt+ good_muons.pt,
+          "eta": good_muons.eta,
+          "phi": events.MET_phi+good_muons.phi,
+          "mass": good_muons.mass,
+            }, with_name="PtEtaPhiMCandidate")
 
-        good_fatjet_cut = (
-            (fatjets.pt > 170) & (abs(fatjets.eta) < 2.4) & (fatjets.mass > 40)
-        )
+        good_fatjet_cut = (fatjets.pt > 170) & (abs(fatjets.eta) < 2.4) & (fatjets.mass > 40)
 
         good_fatjets = fatjets[good_fatjet_cut]
 
@@ -277,8 +247,8 @@ class BaseSelection:
         nFatjets = events.nFatJet
         nMuons = events.nMuon
 
-        one_loose = ak.num(good_loose_muons) == 1
-        one_tight = ak.num(good_tight_muons) == 1
+        one_loose = ak.num(good_loose_muons)==1
+        one_tight = ak.num(good_tight_muons) ==1
 
         one_jet = ak.num(surviving_jets) == 1
 
@@ -286,19 +256,15 @@ class BaseSelection:
 
         #
 
-        # delta_R_cut_final = self.delta_R(good_muons, surviving_jets) > 0.7
+        #delta_R_cut_final = self.delta_R(good_muons, surviving_jets) > 0.7
         # hacky, but if we cut on one jet, just take the first one
-        loose_dR_cut = (
-            self.delta_R(ak.firsts(surviving_jets), ak.firsts(good_loose_muons)) > 0.7
-        )
-        tight_dR_cut = (
-            self.delta_R(ak.firsts(surviving_jets), ak.firsts(good_tight_muons)) > 0.7
-        )
+        loose_dR_cut = (self.delta_R(ak.firsts(surviving_jets), ak.firsts(good_loose_muons)) > 0.7)
+        tight_dR_cut = (self.delta_R(ak.firsts(surviving_jets), ak.firsts(good_tight_muons)) > 0.7)
 
-        jet_sel = (
+        jet_sel=(
             (one_jet)
             & (zero_fatjet)
-            #    & (delta_R_cut_final)
+        #    & (delta_R_cut_final)
         )
 
         """
@@ -307,7 +273,7 @@ class BaseSelection:
         LP = lepPt/WPt*cos(abs(lepPhi - WPhi))
         """
 
-        # from IPython import embed;embed()
+        #from IPython import embed;embed()
 
         self.add_to_selection(selection, "one_tight", one_tight)
         self.add_to_selection(selection, "one_loose", one_loose)
@@ -316,34 +282,27 @@ class BaseSelection:
         self.add_to_selection(selection, "tight_dR_cut", tight_dR_cut)
 
         #
-        mu_loose_pt = ak.fill_none(ak.firsts(good_loose_muons.pt), value=-999)
-        mu_tight_pt = ak.fill_none(ak.firsts(good_tight_muons.pt), value=-999)
+        mu_loose_pt =ak.fill_none(ak.firsts(good_loose_muons.pt), value=-999)
+        mu_tight_pt =ak.fill_none(ak.firsts(good_tight_muons.pt), value=-999)
 
         jet_pt = ak.fill_none(ak.firsts(surviving_jets.pt), value=-999)
 
         METPt = events.MET_pt
 
-        loose_mT = ak.fill_none(
-            ak.firsts(self.mT(good_loose_muons, events.MET_pt, events.MET_phi)),
-            value=-999,
-        )
-        tight_mT = ak.fill_none(
-            ak.firsts(self.mT(good_tight_muons, events.MET_pt, events.MET_phi)),
-            value=-999,
-        )
+        loose_mT = ak.fill_none(ak.firsts(self.mT(good_loose_muons, events.MET_pt, events.MET_phi)), value=-999)
+        tight_mT = ak.fill_none(ak.firsts(self.mT(good_tight_muons, events.MET_pt, events.MET_phi)), value=-999)
 
-        LP = ak.fill_none(
-            ak.firsts(self.LP(good_muons, W_reco.pt, W_reco.phi)), value=-999
-        )
+        LP=ak.fill_none(ak.firsts(self.LP(good_muons, W_reco.pt, W_reco.phi)), value=-999)
 
+        # eject je seelction for now
         categories = dict(
-            Mu_tight=["jet_sel", "one_tight", "tight_dR_cut"],
-            Mu_loose=["jet_sel", "one_loose", "loose_dR_cut"],
-        )
+            Mu_tight=[ "one_tight"], #"jet_sel", , "tight_dR_cut"
+            Mu_loose=[ "one_loose"], # "jet_sel", , "loose_dR_cut"
+            )
 
-        # from IPython import embed;embed()
+        #from IPython import embed;embed()
 
-        # print("done", "\n")
+        #print("done", "\n")
 
         return locals()
 
@@ -421,9 +380,10 @@ class Histogramer(BaseProcessor, BaseSelection):
                 weight = weights.weight()
                 # value = out[var_name]
                 # generate blank mask for variable values
-                mask = np.ones(len(out[var_name]), dtype=bool)
+                #mask = np.ones(len(out[var_name]), dtype=bool)
 
                 # combine cuts together: problem, some have None values
+                """
                 for cut in out["categories"][cat]:
                     # rint(cut, "\n")
                     cut_mask = ak.to_numpy(out[cut])
@@ -433,8 +393,13 @@ class Histogramer(BaseProcessor, BaseSelection):
                     mask = np.logical_and(mask, cut_mask)  # .mask
                     # print(np.sum(mask))
                     # value = value[out[cut]]
+                """
+                #mask = out[out["categories"][cat][0]] & out[out["categories"][cat][1]] & out[out["categories"][cat][2]]
+                # only one cut atm
+                mask = out[out["categories"][cat][0]]
+                mask=ak.to_numpy(ak.fill_none(mask, value=False))
 
-                # from IPython import embed;embed()
+                #from IPython import embed;embed()
 
                 # mask = ak.to_numpy(mask).mask
                 values = {}
@@ -443,8 +408,8 @@ class Histogramer(BaseProcessor, BaseSelection):
                 values[var_name] = out[var_name][mask]
                 # weight = weights.weight()[cut]
                 values["weight"] = weight[mask]
-                # print(var_name, ":", out[var_name][mask], "\n")
-                # from IPython import embed;embed()
+                #print(var_name, ":", out[var_name][mask], "\n")
+                #from IPython import embed;embed()
                 output["histograms"][var_name].fill(**values)
 
         # output["n_events"] = len(METPt)
