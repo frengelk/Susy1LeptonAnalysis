@@ -55,7 +55,7 @@ def setup_variables(cfg):
     cfg.add_variable(
         name="tight_mT",
         expression="tight_mT",
-       binning=(50, 0.0, 150),
+        binning=(50, 0.0, 150),
         # unit="",
         x_title=r"$m_{T}^{tight}$",
     )
