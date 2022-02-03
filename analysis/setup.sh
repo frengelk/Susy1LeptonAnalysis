@@ -6,8 +6,8 @@ action() {
     #
 
     # FIXME
-    source "/nfs/dust/cms/user/frengelk/Anaconda/etc/profile.d/conda.sh"
-    conda activate
+    #source "/nfs/dust/cms/user/frengelk/Anaconda/etc/profile.d/conda.sh"
+    #conda activate
 
     local this_file="$( [ ! -z "$ZSH_VERSION" ] && echo "${(%):-%x}" || echo "${BASH_SOURCE[0]}" )"
     local this_dir="$( cd "$( dirname "$this_file" )" && pwd )"

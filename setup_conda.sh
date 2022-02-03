@@ -2,11 +2,11 @@
 if  command -v conda &> /dev/null ;
 then
  echo "ERROR!!!!! remove all conda entries from Path and conda init from .rc files";
-else 
+else
 set -e
 #I would add the following 3 lines to the bashrc
 module load anaconda3/5.0
-source /opt/anaconda3/5.0/etc/profile.d/conda.sh   
+source /opt/anaconda3/5.0/etc/profile.d/conda.sh
 export DUST=/nfs/dust/cms/user/$USER/
 
 cd $DUST
@@ -26,4 +26,5 @@ mamba install -c conda-forge law -y
 $DUST/Anaconda/envs/susy1lep/bin/pip install order
 mamba install -c conda-forge scikit-learn -y
 mamba install -c conda-forge black -y
+mamba install -c conda-forge ipython -y
  fi

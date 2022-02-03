@@ -372,7 +372,7 @@ class BaseSelection:
 
 
 class array_accumulator(column_accumulator):
-    """ column_accumulator with delayed concatenate """
+    """column_accumulator with delayed concatenate"""
 
     def __init__(self, value):
         self._empty = value[:0]

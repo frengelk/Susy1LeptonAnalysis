@@ -12,15 +12,14 @@ import mplhep as hep
 from tqdm.auto import tqdm
 import operator
 import pickle
-import tensorflow as tf
-from tensorflow import keras
 import sklearn as sk
+import torch
 
 # other modules
 from tasks.basetasks import ConfigTask, DNNTask
 from tasks.coffea import CoffeaProcessor
-from tasks.multiclass import DNNTrainer
 from tasks.arraypreparation import ArrayNormalisation
+from tasks.pytorch_test import PytorchMulticlass
 
 
 class PlotCoffeaHists(ConfigTask):
@@ -296,7 +295,11 @@ class DNNHistoryPlotting(DNNTask):
     """
 
     def requires(self):
-        return DNNTrainer.req(self)
+        return (
+            PytorchMulticlass.req(
+                self, n_layers=self.n_layers, n_nodes=self.n_nodes, dropout=self.dropout
+            ),
+        )
 
     def output(self):
         return {
@@ -321,7 +324,9 @@ class DNNHistoryPlotting(DNNTask):
     @law.decorator.safe_output
     def run(self):
         # retrieve history callback for trainings history
-        # from IPython import embed; embed()
+        from IPython import embed
+
+        embed()
         # with open(self.input()["history_callback"].path, "rb") as f:
         with open(
             self.input()["collection"].targets[0]["history_callback"].path, "rb"
@@ -381,7 +386,7 @@ class DNNEvaluationPlotting(DNNTask):
     def requires(self):
         return dict(
             data=ArrayNormalisation.req(self),
-            model=DNNTrainer.req(
+            model=PytorchMulticlass.req(
                 self, n_layers=self.n_layers, n_nodes=self.n_nodes, dropout=self.dropout
             ),
         )
