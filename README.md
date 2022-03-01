@@ -1,6 +1,6 @@
 # SusyLeptonAnalysis
 
-TODO: Structure
+*Getting moved to the respective wiki pages, keeping it right now*
 
 Creation of the needed conda environment from .yml file (points to my directory, a lot of packages)
 (Currently not neccessary when using setup.sh, but can be customized)
