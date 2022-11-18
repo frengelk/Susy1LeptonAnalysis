@@ -6,6 +6,15 @@
 
 For setting up the needed environment and intialising your framework, check out https://github.com/frengelk/Susy1LeptonAnalysis/wiki/Getting-started
 
+
+# Current analysis tasks
+
+Check out https://github.com/frengelk/Susy1LeptonAnalysis/wiki/Task-overview
+
+# Documentation links:
+
+Check out https://github.com/frengelk/Susy1LeptonAnalysis/wiki/Documentation-links
+
 # Nice to know
 
 Beautifying all .py-files from command line (before commiting!): 
@@ -19,11 +28,3 @@ law setup:
 source analysis/setup.sh
 law index 
 ```
-
-# Current analysis tasks
-
-Check out https://github.com/frengelk/Susy1LeptonAnalysis/wiki/Task-overview
-
-# Documentation links:
-
-Check out https://github.com/frengelk/Susy1LeptonAnalysis/wiki/Documentation-links
