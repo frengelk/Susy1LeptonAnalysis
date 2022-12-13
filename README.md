@@ -2,6 +2,8 @@
 
 *Getting moved to the respective wiki pages, keeping it right now*
 
+Please read the respective wiki pages for open questions.
+
 ### Getting started
 
 For setting up the needed environment and intialising your framework, check out https://github.com/frengelk/Susy1LeptonAnalysis/wiki/Getting-started
