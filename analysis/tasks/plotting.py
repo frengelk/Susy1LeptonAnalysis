@@ -19,7 +19,7 @@ import torch
 from tasks.basetasks import ConfigTask, DNNTask
 from tasks.coffea import CoffeaProcessor
 from tasks.arraypreparation import ArrayNormalisation
-from tasks.pytorch_test import PytorchMulticlass
+#from tasks.pytorch_test import PytorchMulticlass
 
 
 class PlotCoffeaHists(ConfigTask):
