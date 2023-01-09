@@ -25,7 +25,7 @@ from captum.attr import NeuronConductance
 from tasks.basetasks import ConfigTask, DNNTask, HTCondorWorkflow
 from tasks.coffea import CoffeaProcessor
 from tasks.arraypreparation import ArrayNormalisation
-#from tasks.pytorch_test import PytorchMulticlass
+from tasks.pytorch_test import PytorchMulticlass
 
 import utils.PytorchHelp as util
 
@@ -40,12 +40,23 @@ class PlotCoffeaHists(ConfigTask):
     log_scale = luigi.BoolParameter()
     unblinded = luigi.BoolParameter()
     scale_signal = luigi.IntParameter(default=1)
-    debug = luigi.BoolParameter()
+    debug = luigi.BoolParameter(default=False)
+    debug_dataset = luigi.Parameter(
+        default="data_e_C"
+    )  # take a small set to reduce computing time
+    debug_str = luigi.Parameter(
+        default="/nfs/dust/cms/user/frengelk/Code/cmssw/CMSSW_12_1_0/Batch/2022_11_24/2017/Data/root/SingleElectron_Run2017C-UL2017_MiniAODv2_NanoAODv9-v1_NANOAOD_1.0.root"
+    )
 
     def requires(self):
         if self.debug:
             return CoffeaProcessor.req(
-                self, processor="Histogramer", workflow="local", debug=True
+                self,
+                processor="Histogramer",
+                workflow="local",
+                debug=True,
+                debug_dataset=self.debug_dataset,
+                debug_str=self.debug_str,
             )
 
         else:
@@ -183,7 +194,6 @@ class PlotCoffeaHists(ConfigTask):
                         for i in range(1, len(bg_hists)):
                             bg.add(bg_hists[i])
 
-                    # from IPython import embed;embed()
                     # order the processes by magnitude of integral
                     order_lut = bg.integrate(var.name).values()
                     bg_order = sorted(order_lut.items(), key=operator.itemgetter(1))
@@ -227,6 +237,7 @@ class PlotCoffeaHists(ConfigTask):
                             # binwnorm=True,
                             clear=False,
                         )
+                        from IPython import embed;embed()
                         coffea.hist.plotratio(
                             data.sum("process"),
                             bg.sum("process"),
