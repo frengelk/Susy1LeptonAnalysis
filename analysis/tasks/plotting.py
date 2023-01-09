@@ -15,11 +15,19 @@ import pickle
 import sklearn as sk
 import torch
 
+# captum
+from captum.attr import IntegratedGradients
+from captum.attr import LayerConductance
+from captum.attr import NeuronConductance
+
+
 # other modules
-from tasks.basetasks import ConfigTask, DNNTask
+from tasks.basetasks import ConfigTask, DNNTask, HTCondorWorkflow
 from tasks.coffea import CoffeaProcessor
 from tasks.arraypreparation import ArrayNormalisation
-#from tasks.pytorch_test import PytorchMulticlass
+from tasks.pytorch_test import PytorchMulticlass
+
+import utils.PytorchHelp as util
 
 
 class PlotCoffeaHists(ConfigTask):
@@ -32,12 +40,23 @@ class PlotCoffeaHists(ConfigTask):
     log_scale = luigi.BoolParameter()
     unblinded = luigi.BoolParameter()
     scale_signal = luigi.IntParameter(default=1)
-    debug = luigi.BoolParameter()
+    debug = luigi.BoolParameter(default=False)
+    debug_dataset = luigi.Parameter(
+        default="data_e_C"
+    )  # take a small set to reduce computing time
+    debug_str = luigi.Parameter(
+        default="/nfs/dust/cms/user/frengelk/Code/cmssw/CMSSW_12_1_0/Batch/2022_11_24/2017/Data/root/SingleElectron_Run2017C-UL2017_MiniAODv2_NanoAODv9-v1_NANOAOD_1.0.root"
+    )
 
     def requires(self):
         if self.debug:
             return CoffeaProcessor.req(
-                self, processor="Histogramer", workflow="local", debug=True
+                self,
+                processor="Histogramer",
+                workflow="local",
+                debug=True,
+                debug_dataset=self.debug_dataset,
+                debug_str=self.debug_str,
             )
 
         else:
@@ -175,7 +194,6 @@ class PlotCoffeaHists(ConfigTask):
                         for i in range(1, len(bg_hists)):
                             bg.add(bg_hists[i])
 
-                    # from IPython import embed;embed()
                     # order the processes by magnitude of integral
                     order_lut = bg.integrate(var.name).values()
                     bg_order = sorted(order_lut.items(), key=operator.itemgetter(1))
@@ -219,6 +237,7 @@ class PlotCoffeaHists(ConfigTask):
                             # binwnorm=True,
                             clear=False,
                         )
+                        from IPython import embed;embed()
                         coffea.hist.plotratio(
                             data.sum("process"),
                             bg.sum("process"),
@@ -297,14 +316,19 @@ class DNNHistoryPlotting(DNNTask):
     def requires(self):
         return (
             PytorchMulticlass.req(
-                self, n_layers=self.n_layers, n_nodes=self.n_nodes, dropout=self.dropout
+                self,
+                n_layers=self.n_layers,
+                n_nodes=self.n_nodes,
+                dropout=self.dropout,
+                batch_size=self.batch_size,
+                learning_rate=self.learning_rate,  # , debug=True
             ),
         )
 
     def output(self):
         return {
-            "loss_plot": self.local_target("loss_plot.png"),
-            "acc_plot": self.local_target("acc_plot.png"),
+            "loss_plot": self.local_target("torch_loss_plot.png"),
+            "acc_plot": self.local_target("torch_acc_plot.png"),
         }
 
     def store_parts(self):
@@ -312,44 +336,41 @@ class DNNHistoryPlotting(DNNTask):
         return (
             super(DNNHistoryPlotting, self).store_parts()
             + (self.analysis_choice,)
-            + (self.channel,)
-            + (self.n_layers,)
+            # + (self.channel,)
+            # + (self.n_layers,)
             + (self.n_nodes,)
             + (self.dropout,)
             + (self.batch_size,)
+            + (self.learning_rate,)
         )
 
     @law.decorator.timeit(publish_message=True)
     @law.decorator.notify
     @law.decorator.safe_output
     def run(self):
-        # retrieve history callback for trainings history
-        from IPython import embed
+        # retrieve history callback for trainings
+        accuracy_stats = (
+            self.input()[0]["collection"].targets[0]["accuracy_stats"].load()
+        )
+        loss_stats = self.input()[0]["collection"].targets[0]["loss_stats"].load()
 
-        embed()
-        # with open(self.input()["history_callback"].path, "rb") as f:
-        with open(
-            self.input()["collection"].targets[0]["history_callback"].path, "rb"
-        ) as f:
-            history = pickle.load(f)
+        # read in values, skip first for val since Trainer does a validation step beforehand
+        train_loss = loss_stats["train"]
+        val_loss = loss_stats["val"]
 
-        train_loss_history = history["loss"]
-        val_loss = history["val_loss"]
-
-        train_acc_history = history["accuracy"]
-        val_acc = history["val_accuracy"]
+        train_acc = accuracy_stats["train"]
+        val_acc = accuracy_stats["val"]
 
         self.output()["loss_plot"].parent.touch()
-
         plt.plot(
-            np.arange(1, len(val_loss) + 1, 1),
+            np.arange(0, len(val_loss), 1),
             val_loss,
             label="loss on valid data",
             color="orange",
         )
         plt.plot(
-            np.arange(1, len(train_loss_history) + 1, 1),
-            train_loss_history,
+            np.arange(1, len(train_loss) + 1, 1),
+            train_loss,
             label="loss on train data",
             color="green",
         )
@@ -360,14 +381,14 @@ class DNNHistoryPlotting(DNNTask):
         plt.gcf().clear()
 
         plt.plot(
-            np.arange(1, len(val_acc) + 1, 1),
+            np.arange(0, len(val_acc), 1),
             val_acc,
             label="acc on vali data",
             color="orange",
         )
         plt.plot(
-            np.arange(1, len(train_acc_history) + 1, 1),
-            train_acc_history,
+            np.arange(1, len(train_acc) + 1, 1),
+            train_acc,
             label="acc on train data",
             color="green",
         )
@@ -387,7 +408,11 @@ class DNNEvaluationPlotting(DNNTask):
         return dict(
             data=ArrayNormalisation.req(self),
             model=PytorchMulticlass.req(
-                self, n_layers=self.n_layers, n_nodes=self.n_nodes, dropout=self.dropout
+                self,
+                n_layers=self.n_layers,
+                n_nodes=self.n_nodes,
+                dropout=self.dropout,
+                debug=False,
             ),
         )
         # return DNNTrainer.req(
@@ -396,8 +421,8 @@ class DNNEvaluationPlotting(DNNTask):
 
     def output(self):
         return {
-            "ROC": self.local_target("ROC.png"),
-            "confusion_matrix": self.local_target("confusion_matrix.png"),
+            "ROC": self.local_target("pytorch_ROC.png"),
+            "confusion_matrix": self.local_target("pytorch_confusion_matrix.png"),
         }
 
     def store_parts(self):
@@ -405,11 +430,12 @@ class DNNEvaluationPlotting(DNNTask):
         return (
             super(DNNEvaluationPlotting, self).store_parts()
             + (self.analysis_choice,)
-            + (self.channel,)
-            + (self.n_layers,)
+            # + (self.channel,)
+            # + (self.n_layers,)
             + (self.n_nodes,)
             + (self.dropout,)
             + (self.batch_size,)
+            + (self.learning_rate,)
         )
 
     @law.decorator.timeit(publish_message=True)
@@ -423,27 +449,46 @@ class DNNEvaluationPlotting(DNNTask):
         n_processes = len(self.config_inst.get_aux("DNN_process_template").keys())
         all_processes = list(self.config_inst.get_aux("DNN_process_template").keys())
 
+        path = self.input()["model"]["collection"].targets[0]["model"].path
+
         # load complete model
-        reconstructed_model = keras.models.load_model(
-            self.input()["model"]["collection"].targets[0]["saved_model"].path
-        )
+        reconstructed_model = torch.load(path)
 
         # load all the prepared data thingies
         X_test = self.input()["data"]["X_test"].load()
         y_test = self.input()["data"]["y_test"].load()
 
-        # test_loss, test_acc = reconstructed_model.evaluate(X_test, y_test)
-        # print("Test accuracy:", test_acc)
+        test_dataset = util.ClassifierDataset(
+            torch.from_numpy(X_test).float(), torch.from_numpy(y_test).float()
+        )
+        test_loader = torch.utils.data.DataLoader(
+            dataset=test_dataset, batch_size=len(y_test)
+        )
 
-        test_predict = reconstructed_model.predict(X_test)
+        # val_loss, val_acc = reconstructed_model.evaluate(X_test, y_test)
+        # print("Test accuracy:", val_acc)
 
-        # "signal"...
-        predict_signal = reconstructed_model.predict(X_test)[:, 0]
+        y_predictions = []
+        with torch.no_grad():
+
+            reconstructed_model.eval()
+            for X_test_batch, y_test_batch in test_loader:
+
+                y_test_pred = reconstructed_model(X_test_batch)
+
+                y_predictions.append(y_test_pred.numpy())
+
+            # test_predict = reconstructed_model.predict(X_test)
+            y_predictions = np.array(y_predictions[0])
+            test_predictions = np.argmax(y_predictions, axis=1)
+
+            # "signal"...
+            predict_signal = np.array(y_predictions)[:, 1]
 
         self.output()["confusion_matrix"].parent.touch()
 
         # Roc curve, compare labels and predicted labels
-        fpr, tpr, tresholds = sk.metrics.roc_curve(y_test[:, 0], predict_signal)
+        fpr, tpr, tresholds = sk.metrics.roc_curve(y_test[:, 1], predict_signal)
 
         plt.plot(
             fpr,
@@ -458,11 +503,12 @@ class DNNEvaluationPlotting(DNNTask):
         plt.savefig(self.output()["ROC"].path)
         plt.gcf().clear()
 
+        # from IPython import embed;embed()
         # Correlation Matrix Plot
         # plot correlation matrix
         pred_matrix = sk.metrics.confusion_matrix(
             np.argmax(y_test, axis=-1),
-            np.argmax(test_predict, axis=-1),
+            test_predictions,  # np.concatenate(test_predictions),
             normalize=self.normalize,
         )
 
@@ -481,7 +527,8 @@ class DNNEvaluationPlotting(DNNTask):
                     np.round(pred_matrix[i, j], 3),
                     ha="center",
                     va="center",
-                    color="black",
+                    color="white",
+                    fontsize=14,
                 )
         ticks = np.arange(0, n_processes, 1)
         # Let the horizontal axes labeling appear on bottom
@@ -504,9 +551,16 @@ Plot DNN distribution on test set
 
 class DNNDistributionPlotting(DNNTask):
     def requires(self):
-        # return dict(data=ArrayNormalisation.req(self), model=DnnTrainer.req(self),)
-        return DNNTrainer.req(
-            self, n_layers=self.n_layers, n_nodes=self.n_nodes, dropout=self.dropout
+        return dict(
+            data=ArrayNormalisation.req(self),
+            model=PytorchMulticlass.req(
+                self,
+                n_layers=self.n_layers,
+                n_nodes=self.n_nodes,
+                dropout=self.dropout,
+                learning_rate=self.learning_rate,
+                debug=False,
+            ),
         )
 
     def output(self):
@@ -514,6 +568,7 @@ class DNNDistributionPlotting(DNNTask):
             "real_processes": self.local_target("DNN_distribution.png"),
             "predicted": self.local_target("DNN_predicted_distribution.png"),
             "score_by_group": self.local_target("DNN_score_by_process.pdf"),
+            "2D_variable_plots": self.local_target("DNN_score_2D_variables.pdf"),
         }
 
     def store_parts(self):
@@ -537,21 +592,40 @@ class DNNDistributionPlotting(DNNTask):
         n_processes = len(self.config_inst.get_aux("DNN_process_template").keys())
         all_processes = list(self.config_inst.get_aux("DNN_process_template").keys())
 
-        # load complete model
-        reconstructed_model = keras.models.load_model(
-            self.input()["collection"].targets[0]["saved_model"].path
-        )
-
         # load all the prepared data thingies
-        X_test = np.load(self.input()["collection"].targets[0]["X_test"].path)
-        y_test = np.load(self.input()["collection"].targets[0]["y_test"].path)
+        X_test = self.input()["data"]["X_test"].load()
+        y_test = self.input()["data"]["y_test"].load()
 
-        # test_loss, test_acc = reconstructed_model.evaluate(X_test, y_test)
-        # print("Test accuracy:", test_acc)
+        # val_loss, val_acc = reconstructed_model.evaluate(X_test, y_test)
+        # print("Test accuracy:", val_acc)
+        test_dataset = util.ClassifierDataset(
+            torch.from_numpy(X_test).float(), torch.from_numpy(y_test).float()
+        )
+        test_loader = torch.utils.data.DataLoader(
+            dataset=test_dataset, batch_size=len(y_test)
+        )
+        path = self.input()["model"]["collection"].targets[0]["model"].path
 
-        test_predict = reconstructed_model.predict(X_test)
+        # load complete model
+        reconstructed_model = torch.load(path)
+        """
+        y_predictions = []
+        with torch.no_grad():
 
-        # from IPython import embed;embed()
+            reconstructed_model.eval()
+            for X_test_batch, y_test_batch in test_loader:
+
+                y_test_pred = reconstructed_model(X_test_batch)
+
+                y_predictions.append(y_test_pred.numpy())
+
+            # test_predict = reconstructed_model.predict(X_test)
+            y_predictions = np.array(y_predictions[0])
+            test_predictions = np.argmax(y_predictions, axis=1)
+        """
+        test_predict = reconstructed_model(torch.tensor(X_test))
+        # FIXME
+        test_predict = reconstructed_model.softmax(test_predict)
 
         self.output()["real_processes"].parent.touch()
 
@@ -562,7 +636,7 @@ class DNNDistributionPlotting(DNNTask):
 
         for i in range(n_processes):
             plt.hist(
-                test_predict[y_test[:, i] == 1][:, i],
+                test_predict.detach().numpy()[y_test[:, i] == 1][:, i],
                 label=all_processes[i],
                 histtype="step",
                 density=True,
@@ -583,7 +657,9 @@ class DNNDistributionPlotting(DNNTask):
 
         for i in range(n_processes):
             plt.hist(
-                test_predict[np.argmax(test_predict, axis=1) == i][:, i],
+                test_predict.detach().numpy()[
+                    np.argmax(test_predict.detach().numpy(), axis=1) == i
+                ][:, i],
                 label=all_processes[i],
                 histtype="step",
                 density=True,
@@ -606,7 +682,7 @@ class DNNDistributionPlotting(DNNTask):
 
                 for j in range(n_processes):
                     plt.hist(
-                        test_predict[y_test[:, i] == 1][:, j],
+                        test_predict.detach().numpy()[y_test[:, i] == 1][:, j],
                         label=all_processes[j] + " score",
                         histtype="step",
                         density=True,
@@ -621,3 +697,183 @@ class DNNDistributionPlotting(DNNTask):
 
                 pdf.savefig(fig)
                 plt.close(fig)
+
+        with PdfPages(self.output()["2D_variable_plots"].path) as pdf:
+            for i, proc in enumerate(all_processes):
+                for j, var in enumerate(self.config_inst.variables.names()):
+
+                    fig = plt.figure()
+
+                    plt.hist2d(
+                        test_predict.detach().numpy()[y_test[:, i] == 1][:, i],
+                        X_test[:, j][y_test[:, i] == 1],
+                        bins=50,
+                    )
+
+                    plt.xlabel("DNN Score", fontsize=16)
+                    plt.ylabel(
+                        "{} {}".format(
+                            self.config_inst.get_variable(var).x_title,
+                            self.config_inst.get_variable(var).unit,
+                        ),
+                        fontsize=16,
+                    )
+                    plt.title("2D {} {}".format(proc, var), fontsize=16)
+                    # plt.legend()
+                    plt.colorbar()
+
+                    pdf.savefig(fig)
+                    plt.close(fig)
+
+
+class PlotFeatureImportance(DNNTask):  # , HTCondorWorkflow, law.local
+    def requires(self):
+        return dict(
+            data=ArrayNormalisation.req(self),
+            model=PytorchMulticlass.req(
+                self, n_layers=self.n_layers, n_nodes=self.n_nodes, dropout=self.dropout
+            ),
+        )
+
+    def output(self):
+        return {
+            key: self.local_target(
+                "feature_importance.png".replace(".png", "_process_{}.png".format(key))
+            )
+            for key in self.config_inst.get_aux("DNN_process_template").keys()
+        }
+
+    def store_parts(self):
+        # make plots for each use case
+        return (
+            super(PlotFeatureImportance, self).store_parts()
+            + (self.analysis_choice,)
+            + (self.dropout,)
+            + (self.batch_size,)
+            + (self.learning_rate,)
+        )
+
+    def create_branch_map(self):
+        # overwrite branch map
+        n = 1
+        return list(range(n))
+
+        # return {i: i for i in range(n)}
+
+    # Helper method to print importances and visualize distribution
+    # def visualize_importances(self, feature_names, importances, title="Average Feature Importances", plot=True, axis_title="Features"):
+
+    def run(self):
+        # load complete model
+        path = self.input()["model"]["collection"].targets[0]["model"].path
+        reconstructed_model = torch.load(path)
+
+        # load all the prepared data thingies
+        X_test = self.input()["data"]["X_test"].load()
+        y_test = self.input()["data"]["y_test"].load()
+        test_input_tensor = torch.from_numpy(X_test).type(torch.FloatTensor)
+        baseline = torch.zeros(2, 14)
+
+        ig = IntegratedGradients(reconstructed_model)
+
+        out_probs = reconstructed_model(test_input_tensor).detach().numpy()
+        out_classes = np.argmax(out_probs, axis=1)
+        test_labels = np.argmax(y_test, axis=1)
+
+        test_input_tensor.requires_grad_()
+        print("Test Accuracy:", sum(out_classes == test_labels) / len(test_labels))
+
+        feature_names = self.config_inst.variables.names()
+
+        # FIXME, should be nothardcoded but dependent on some processes
+        for j, key in enumerate(
+            self.config_inst.get_aux("DNN_process_template").keys()
+        ):
+            attr, delta = ig.attribute(
+                test_input_tensor[:2000], target=j, return_convergence_delta=True
+            )
+            attr = attr.detach().numpy()
+
+            # print('IG Attributions:', attr)
+            # print('Convergence Delta:', delta)
+
+            importances = np.mean(attr, axis=0)
+
+            # plotting
+            title = "Average Feature Importances for process {}".format(key)
+            axis_title = "Features"
+            # ugly to do it each time, but least amount of code
+            self.output()[key].parent.touch()
+            for i in range(len(feature_names)):
+                print(feature_names[i], ": ", "%.3f" % (importances[i]))
+            x_pos = np.arange(len(feature_names))
+            # if plot:
+            plt.figure(figsize=(12, 8))
+            plt.bar(x_pos, importances, align="center")
+            plt.xticks(
+                x_pos, feature_names, wrap=True, rotation=30, rotation_mode="anchor"
+            )
+            plt.xlabel(axis_title)
+            plt.title(title)
+            plt.savefig(self.output()[key].path)
+
+
+class PlotNeuronConductance(DNNTask):  # , HTCondorWorkflow, law.local
+    def requires(self):
+        return dict(
+            data=ArrayNormalisation.req(self),
+            model=PytorchMulticlass.req(
+                self, n_layers=self.n_layers, n_nodes=self.n_nodes, dropout=self.dropout
+            ),
+        )
+
+    def output(self):
+        return self.local_target("Neurons.png")
+
+    def store_parts(self):
+        # make plots for each use case
+        return (
+            super(PlotNeuronConductance, self).store_parts()
+            + (self.analysis_choice,)
+            + (self.dropout,)
+            + (self.batch_size,)
+            + (self.learning_rate,)
+        )
+
+    def run(self):
+
+        # load complete models
+        path = self.input()["model"]["collection"].targets[0]["model"].path
+        reconstructed_model = torch.load(path)
+
+        # load all the prepared data thingies
+        X_test = self.input()["data"]["X_test"].load()
+        y_test = self.input()["data"]["y_test"].load()
+        test_input_tensor = torch.from_numpy(X_test).type(torch.FloatTensor)
+        test_input_tensor.requires_grad_()
+
+        feature_names = self.config_inst.variables.names()
+
+        # also plot layer Conductance
+        cond = LayerConductance(reconstructed_model, reconstructed_model.layer_1)
+        cond_vals = cond.attribute(test_input_tensor[:1000], target=0)
+        cond_vals = cond_vals.detach().numpy()
+
+        plt.figure(figsize=(12, 8))
+        title = "Average Neuron Importances"
+        axis_title = "Neurons"
+        x_pos = np.arange(len(feature_names))
+        # from IPython import embed;embed()
+        plt.bar(range(64), np.mean(cond_vals, axis=0), align="center")
+        # plt.xticks(range(64), feature_names, wrap=True)
+        plt.xlabel(axis_title)
+        plt.title(title)
+        self.output().parent.touch()
+        plt.savefig(self.output().path)
+
+        for i in range(64):
+            plt.figure()
+            plt.hist(cond_vals[:, i], 100)
+            plt.title("Neuron {} Distribution".format(i))
+            plt.savefig(self.output().path.replace(".png", "_neuron{}.png".format(i)))
+            plt.close()
