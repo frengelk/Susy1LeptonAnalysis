@@ -1,5 +1,7 @@
 import os
 
+# to add: 4 top events SM, tZq_ll tZq_lNu tWZ
+
 #####datasets#####
 def setup_datasets(cfg, campaign):
     cfg.add_dataset(
