@@ -26,6 +26,8 @@ mamba install captum -c pytorch -y
 mamba install -c conda-forge pytorch-lightning -y
 mamba install -c conda-forge law -y
 $DUST/Anaconda/envs/susy1lep/bin/pip install order
+$DUST/Anaconda/envs/susy1lep/bin/pip install ipdb
+
 mamba install -c conda-forge scikit-learn -y
 mamba install -c conda-forge black -y
 mamba install -c conda-forge ipython -y
