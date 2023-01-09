@@ -25,7 +25,7 @@ from captum.attr import NeuronConductance
 from tasks.basetasks import ConfigTask, DNNTask, HTCondorWorkflow
 from tasks.coffea import CoffeaProcessor
 from tasks.arraypreparation import ArrayNormalisation
-from tasks.pytorch_test import PytorchMulticlass
+#from tasks.pytorch_test import PytorchMulticlass
 
 import utils.PytorchHelp as util
 

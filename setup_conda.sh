@@ -14,7 +14,7 @@ mkdir -p Anaconda/envs  Anaconda/pkgs
 cd Anaconda
 conda config --add envs_dirs $DUST/Anaconda/envs
 conda config --add pkgs_dirs $DUST/Anaconda/pkgs
-conda create -n susy1lep -y
+conda create -n susy1lep python=3.10 -y
 conda activate susy1lep
 conda install conda -y
 conda install -c conda-forge mamba -y
