@@ -12,7 +12,8 @@ import sklearn.model_selection as skm
 
 # other modules
 from tasks.basetasks import ConfigTask
-from tasks.coffea import CoffeaProcessor
+from tasks.coffea import CoffeaProcessor, CollectCoffeaOutput
+from utils.SignalRegions import signal_regions_0b
 
 
 class ArrayNormalisation(ConfigTask):
@@ -281,3 +282,31 @@ class CrossValidationPrep(ConfigTask):
             self.output()["cross_val_{}".format(i)][
                 "cross_val_y_val_{}".format(i)
             ].dump(one_hot_labels[val_idx])
+
+
+class WriteSignalTable(ConfigTask):
+    def requires(self):
+        return CollectCoffeaOutput.req(self, processor="ArrayExporter")
+
+    # def output(self):
+    # return self.local_target("hists")
+
+    def output(self):
+        return self.local_target("SignalTable.txt")
+
+    def run(self):
+        inp = self.input()["signal_bin_counts"].load()
+        self.output().parent.touch()
+        with open(self.output().path, "w") as text_file:
+            text_file.write(r"\begin{table}" + "\n")
+            text_file.write(r"\begin{tabular}{|l|l|c|}" + " \hline \n")
+            text_file.write("Bin & Cut & Yield \\\ \hline \n")
+            for key in signal_regions_0b.keys():
+                text_file.write(
+                    "{} & {} & {} \\\ \hline \n".format(
+                        key,
+                        " ".join(signal_regions_0b[key]).replace("&", " "),
+                        inp[key],
+                    )
+                )
+            text_file.write("\end{tabular} \n \end{table}")

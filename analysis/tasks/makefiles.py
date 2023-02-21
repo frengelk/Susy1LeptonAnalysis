@@ -87,10 +87,10 @@ class WriteConfigData(MakeFilesTask):
     # )
 
     def run(self):
+        self.output().parent.touch()
+
         with open(self.input().path, "r") as read_file:
             file_dict = json.load(read_file)
-
-        self.output().parent.touch()
 
         with open(self.output().path, "w") as out:
             out.write("import os")

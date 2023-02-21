@@ -437,9 +437,6 @@ class BaseSelection:
             # N1b_CR=common + ["multi_b", "delta_phi_CR"],
         )
 
-        from IPython import embed
-
-        embed()
         return locals()
 
     ##################Electron####################
@@ -623,9 +620,6 @@ class BaseSelection:
             N1ib=common + ["multi_b"],
         )
 
-        from IPython import embed
-
-        embed()
         return locals()
 
 

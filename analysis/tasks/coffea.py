@@ -17,6 +17,7 @@ from tqdm import tqdm
 # other modules
 from tasks.basetasks import DatasetTask, HTCondorWorkflow
 from utils.CoffeaBase import *
+from utils.SignalRegions import signal_regions_0b
 from tasks.makefiles import WriteFileset, WriteDatasets
 
 
@@ -42,9 +43,9 @@ class CoffeaTask(DatasetTask):
     # parameter with selection we use coffea
     lepton_selection = Parameter(default="Muon")
     job_dict = {
-        "SingleElectron": 1,  # 245,
-        "MET": 1,  # 292,
-        "SingleMuon": 1,  # 419,
+        "SingleElectron": 244,
+        "MET": 285,
+        "SingleMuon": 424,
     }
 
 
@@ -373,7 +374,10 @@ class CollectCoffeaOutput(CoffeaTask):
 
     # def output(self):
     def output(self):
-        return self.local_target("event_counts.json")
+        return {
+            "event_counts": self.local_target("event_counts.json"),
+            "signal_bin_counts": self.local_target("signal_bin_counts.json"),
+        }
 
     def store_parts(self):
         return super(CollectCoffeaOutput, self).store_parts() + (self.analysis_choice,)
@@ -388,13 +392,14 @@ class CollectCoffeaOutput(CoffeaTask):
         print(var_names)
         # signal_events = 0
         event_counts = {}
+        # initialize
+        signal_bin_counts = {k: 0 for k in signal_regions_0b.keys()}
         # iterate over the indices for each file
         for key, value in in_dict.items():
             tot_events, signal_events = 0, 0
             np_dict = value["collection"].targets[0]
             # different key for each file, we ignore it for now, only interested in values
             for i in tqdm(range(len(np_dict) // 2)):
-                # from IPython import embed; embed()
                 # dataset = "data_mu_" + key.split("Run" + self.year)[1][0]
 
                 np_0b = np.load(np_dict["job_{}_N0b".format(i)].path)
@@ -404,6 +409,16 @@ class CollectCoffeaOutput(CoffeaTask):
                 LT = np_0b[:, var_names.index("LT")]
                 HT = np_0b[:, var_names.index("HT")]
                 n_jets = np_0b[:, var_names.index("n_jets")]
+
+                for ke in signal_regions_0b.keys():
+                    signal_bin_counts[ke] += len(
+                        np_0b[
+                            eval(signal_regions_0b[ke][0])
+                            & eval(signal_regions_0b[ke][1])
+                            & eval(signal_regions_0b[ke][2])
+                            & eval(signal_regions_0b[ke][3])
+                        ]
+                    )
 
                 # at some point, we have to define the signal regions
                 LT1_nj5 = np_0b[
@@ -469,11 +484,15 @@ class CollectCoffeaOutput(CoffeaTask):
             print(count_dict)
             event_counts.update(count_dict)
 
-        self.output().dump(event_counts)
+        print(signal_bin_counts)
+        self.output()["event_counts"].dump(event_counts)
+        self.output()["signal_bin_counts"].dump(signal_bin_counts)
 
-        from IPython import embed
+        vals = 0
+        for key in signal_bin_counts.keys():
+            vals += signal_bin_counts[key]
 
-        # embed()
+        print("Sum over signal region:", vals)
 
 
 # class CollectCoffeaOutput(CoffeaTask):
