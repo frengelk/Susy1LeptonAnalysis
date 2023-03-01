@@ -1,8 +1,24 @@
 import os
 
-
 #####datasets#####
 def setup_datasets(cfg, campaign):
+
+    ### signal ###
+    cfg.add_dataset(
+        "T5qqqqVV",
+        1001,
+        campaign=campaign,
+        keys=[""],
+    )
+
+    cfg.add_dataset(
+        "T1tttt",
+        1002,
+        campaign=campaign,
+        keys=[""],
+    )
+
+    ### MC ###
     cfg.add_dataset(
         "TTJets_sl_fromt",
         1101,

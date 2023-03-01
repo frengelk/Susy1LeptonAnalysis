@@ -1,5 +1,5 @@
 """
-This is the base class for the coffea Task 
+This is the base class for the coffea Task
 Here we apply our selection and define the categories used for the analysis
 Also this write our arrays
 """
@@ -130,7 +130,7 @@ class BaseSelection:
         genJetEta_2 = events.GenJetEta_2
         genJetMass_2 = events.GenJetMass_2
         return locals()
-    
+
     def get_muon_variables(self, events):
         # leptons variables
         nMuon = events.nMuon
@@ -168,16 +168,16 @@ class BaseSelection:
         dataset = events.metadata["dataset"]
         dataset_obj = self.config.get_dataset(dataset)
         process_obj = self.config.get_process(dataset)
-        
+
         summary = self.accumulator.identity()
         size = events.metadata["entrystop"] - events.metadata["entrystart"]
         summary["n_events"][dataset] = size
         summary["n_events"]["sumAllEvents"] = size
-        
-        
+
+
         # Get Variables used for Analysis and Selection
         locals().update(self.get_base_variable(events))
-        if events.metadata["IsFastSim"]:
+        if events.metadata["isFastSim"]:
             locals().update(self.get_gen_variable(events))
         locals().update(self.get_electron_variables(events))
         locals().update(self.get_muon_variables(events))
@@ -192,20 +192,21 @@ class BaseSelection:
         self.add_to_selection(selection, "doubleCounting_XOR", doubleCounting_XOR)
         self.add_to_selection((selection), "HLT_Or", events.HLT_MuonOr | events.HLT_MetOr | events.HLT_EleOr)
         self.add_to_selection((selection), "baselineSelection", ak.fill_none(baselineSelection, False))
-        self.add_to_selection((selection), "zero_b", zero_b)
-        self.add_to_selection((selection), "multi_b", multi_b)
+        X = locals()
+        self.add_to_selection((selection), "zero_b", X["zero_b"])
+        self.add_to_selection((selection), "multi_b", X["multi_b"])
         # apply some weights,  MC/data check beforehand
         weights = processor.Weights(size, storeIndividual=self.individal_weights)
         if not process_obj.is_data:
             weights.add("xsecs", process_obj.xsecs[13.0].nominal)
-        common = ["baselineSelection", "HLT_Or"] 
+        common = ["baselineSelection", "HLT_Or"]
         categories = dict(N0b=["zero_b"], N1ib=["multi_b"])
         return locals()
 
     def add_to_selection(self, selection, name, array):
         return selection.add(name, ak.to_numpy(array, allow_missing=True))
 
-  
+
 class ArrayAccumulator(column_accumulator):
     """column_accumulator with delayed concatenate"""
 
@@ -256,14 +257,14 @@ class ArrayExporter(BaseProcessor, BaseSelection):
             if selection and categories
             else {"all": slice(None)})
 
-    def select(self, events):  
+    def select(self, events):
         # applies selction and returns all variables and all defined objects
         out = self.base_select(events)
         return out
 
     def process(self, events):
         # Applies indivudal selection per category and then combines them
-        selected_output = self.select(events)  
+        selected_output = self.select(events)
         categories = self.categories(selected_output)
         print("categories:",categories)
         # weights = selected_output["weights"]
