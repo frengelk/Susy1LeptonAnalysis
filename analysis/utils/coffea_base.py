@@ -165,15 +165,15 @@ class BaseSelection:
 
 
     def base_select(self, events):
-
+        dataset = events.metadata["dataset"]
+        dataset_obj = self.config.get_dataset(dataset)
+        process_obj = self.config.get_process(dataset)
+        
         summary = self.accumulator.identity()
         size = events.metadata["entrystop"] - events.metadata["entrystart"]
         summary["n_events"][dataset] = size
         summary["n_events"]["sumAllEvents"] = size
         
-        dataset = events.metadata["dataset"]
-        dataset_obj = self.config.get_dataset(dataset)
-        process_obj = self.config.get_process(dataset)
         
         # Get Variables used for Analysis and Selection
         locals().update(self.get_base_variable(events))

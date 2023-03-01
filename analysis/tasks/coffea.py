@@ -17,7 +17,7 @@ from tqdm import tqdm
 # other modules
 from tasks.base import DatasetTask, HTCondorWorkflow
 from utils.coffea_base import *
-from tasks.makefiles import  WriteDatasets
+from tasks.makefiles import  WriteDatasetPathDict
 
 
 
@@ -58,7 +58,7 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
         super(CoffeaProcessor, self).__init__(*args, **kwargs)
 
     def requires(self):
-        return WriteDatasets.req(self)
+        return WriteDatasetPathDict.req(self)
         # return WriteFileset.req(self)
 
     def create_branch_map(self):
@@ -103,7 +103,7 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
             # data_path + "/" + subset[self.branch]
             primaryDataset = "MC"  # file["MetaData"]["primaryDataset"].array()[0]
             isData = file["MetaData"]["IsData"].array()[0]
-            isFastsim = file["MetaData"]["isFastSim"].array()[0]
+            isFastsim = file["MetaData"]["IsFastSim"].array()[0]
         fileset = {
             dataset: {
                 "files": [data_path + "/" + subset[self.branch]],
