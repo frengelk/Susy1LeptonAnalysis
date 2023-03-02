@@ -164,8 +164,8 @@ class BaseSelection:
 
     def base_select(self, events):
         dataset = events.metadata["dataset"]
-        dataset_obj = self.config.get_dataset(dataset)
-        process_obj = self.config.get_process(dataset)
+        #dataset_obj = self.config.get_dataset(dataset)
+        #process_obj = self.config.get_process(dataset)
 
         summary = self.accumulator.identity()
         size = events.metadata["entrystop"] - events.metadata["entrystart"]
@@ -194,8 +194,8 @@ class BaseSelection:
         self.add_to_selection((selection), "multi_b", X["multi_b"])
         # apply some weights,  MC/data check beforehand
         weights = processor.Weights(size, storeIndividual=self.individal_weights)
-        if not process_obj.is_data:
-            weights.add("xsecs", process_obj.xsecs[13.0].nominal)
+        #if not process_obj.is_data:
+        #    weights.add("xsecs", process_obj.xsecs[13.0].nominal)
         common = ["baselineSelection", "HLT_Or"]
         categories = dict(N0b=["zero_b"], N1ib=["multi_b"])
         return locals()

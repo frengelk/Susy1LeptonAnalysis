@@ -24,9 +24,6 @@ class WriteDatasets(BaseMakeFilesTask):
         self.output().parent.touch()
 
         file_dict = {}
-        from IPython import embed
-
-        embed()
         for root, dirs, files in os.walk(self.directory_path):
             for directory in dirs:
                 # print(directory)
@@ -35,12 +32,10 @@ class WriteDatasets(BaseMakeFilesTask):
                     for file in f:
                         file_list.append(directory + "/" + file)
                 file_dict.update({directory: file_list})  # self.directory_path + "/" +
-                from IPython import embed
-
-                embed()
 
         with open(self.output().path, "w") as out:
             json.dump(file_dict, out)
+        from IPython import embed; embed()
 
 
 class WriteConfigData(BaseMakeFilesTask):
@@ -153,3 +148,4 @@ class WriteDatasetPathDict(BaseMakeFilesTask):
         self.output()["dataset_dict"].dump(file_dict)
         self.output()["dataset_path"].dump(self.directory_path)
         self.output()["job_number_dict"].dump(job_number_dict)
+        from IPython import embed; embed()
