@@ -145,4 +145,3 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
                 for key in self.output().keys():
                     if key in cat:
                         self.output()[key].dump(out["arrays"][cat]["hl"].value)
-
