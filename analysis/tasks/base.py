@@ -9,9 +9,11 @@ import importlib
 import math
 
 from utils.sandbox import CMSSWSandboxTask
-law.contrib.load("numpy", "tasks", "root", "htcondor", "hdf5", "coffea", "matplotlib")  # "wlcg",
-class BaseTask(law.Task):
 
+law.contrib.load("numpy", "tasks", "root", "htcondor", "hdf5", "coffea", "matplotlib")  # "wlcg",
+
+
+class BaseTask(law.Task):
     version = luigi.Parameter(default="dev1", description="version of current workflow")
 
     def local_path(self, *path):
@@ -25,8 +27,8 @@ class BaseTask(law.Task):
     def local_directory_target(self, *args):
         return law.LocalDirectoryTarget(self.local_path(*args))
 
-class CampaignTask(BaseTask):
 
+class CampaignTask(BaseTask):
     year = luigi.Parameter(description="Year", default="2016")
     config = luigi.Parameter(default="SUSY_1lep_ML", description="current analysis")
     analysis_choice = "common"
@@ -34,9 +36,7 @@ class CampaignTask(BaseTask):
     def __init__(self, *args, **kwargs):
         super(CampaignTask, self).__init__(*args, **kwargs)
         self.campaign_name = "Run2_pp_13TeV_{}".format(self.year)
-        self.campaign_inst = importlib.import_module(
-            "config.{}".format(self.campaign_name)
-        ).campaign
+        self.campaign_inst = importlib.import_module("config.{}".format(self.campaign_name)).campaign
 
     def store_parts(self):
         parts = (self.analysis_choice, self.campaign_name, self.__class__.__name__)
@@ -46,7 +46,6 @@ class CampaignTask(BaseTask):
 
 
 class AnalysisTask(CampaignTask):
-
     analysis_id = "0b"
     task_namespace = "{}".format(analysis_id)
 
@@ -66,7 +65,6 @@ class AnalysisTask(CampaignTask):
 
 
 class ConfigTask(AnalysisTask):
-
     def __init__(self, *args, **kwargs):
         super(ConfigTask, self).__init__(*args, **kwargs)
         self.config_inst = self.analysis_inst.get_config(self.campaign_name)
@@ -79,13 +77,17 @@ class ConfigTask(AnalysisTask):
 
 
 class ShiftTask(ConfigTask):
-
-    shift = luigi.Parameter(default="nominal",significant=False,description="systematic shift to " "apply, default: nominal",)
+    shift = luigi.Parameter(
+        default="nominal",
+        significant=False,
+        description="systematic shift to " "apply, default: nominal",
+    )
     effective_shift = luigi.Parameter(default="nominal")
     shifts = set()
     exclude_params_index = {"effective_shift"}
     exclude_params_req = {"effective_shift"}
     exclude_params_sandbox = {"effective_shift"}
+
     @classmethod
     def modify_param_values(cls, params):
         if params["shift"] == "nominal":
@@ -110,10 +112,7 @@ class ShiftTask(ConfigTask):
 
 
 class DatasetTask(ConfigTask):  # ShiftTask
-
-    dataset = luigi.Parameter(
-        default="TTJets_sl_fromt", description="the dataset name, default: "
-    )
+    dataset = luigi.Parameter(default="TTJets_sl_fromt", description="the dataset name, default: ")
 
     def __init__(self, *args, **kwargs):
         super(DatasetTask, self).__init__(*args, **kwargs)
@@ -135,12 +134,11 @@ class HTCondorWorkflow(law.htcondor.HTCondorWorkflow):
     """
 
     def create_branch_map(self):
-        n = 10  
+        n = 10
         n = n * 1
         if self.debug:
             n = 1
         return list(range(n))
-
 
     def htcondor_post_submit_delay(self):
         return self.poll_interval * 60

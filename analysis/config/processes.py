@@ -12,6 +12,8 @@ import order as od
 import scinum as sn
 from math import inf
 from config.constants import *
+
+
 def setup_processes(cfg):
     ### signal ###
     cfg.add_process(
@@ -24,7 +26,7 @@ def setup_processes(cfg):
             13: sn.Number(0.1),  # FIXME
         },
     )
-    cfg.add_process("T1tttt",2,label=r"T1tttt",label_short="T1",color=(150, 150, 150),xsecs={13: sn.Number(0.1)})  # FIXME,
+    cfg.add_process("T1tttt", 2, label=r"T1tttt", label_short="T1", color=(150, 150, 150), xsecs={13: sn.Number(0.1)})  # FIXME,
     #### MC ####
     cfg.add_process(
         "TTJets",
@@ -536,4 +538,3 @@ def setup_processes(cfg):
             od.Process("data_MET_H", 908, label=r"data", is_data=True),
         ],
     )
-

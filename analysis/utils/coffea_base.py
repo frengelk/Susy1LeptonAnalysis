@@ -52,6 +52,7 @@ class BaseProcessor(processor.ProcessorABC):
 
     def get_dataset(self, events):
         return events.metadata["dataset"]
+
     def get_dataset_shift(self, events):
         return events.metadata["dataset"][1]
 
@@ -63,9 +64,7 @@ class BaseProcessor(processor.ProcessorABC):
             if lfn.endswith(fn):
                 return lfn
         else:
-            raise RuntimeError(
-                "could not find original LFN for: %s" % events.metadata["filename"]
-            )
+            raise RuntimeError("could not find original LFN for: %s" % events.metadata["filename"])
 
     def get_pu_key(self, events):
         ds = self.get_dataset(events)
@@ -130,7 +129,7 @@ class BaseSelection:
         genJetEta_2 = events.GenJetEta_2
         genJetMass_2 = events.GenJetMass_2
         return locals()
-    
+
     def get_muon_variables(self, events):
         # leptons variables
         nMuon = events.nMuon
@@ -163,18 +162,16 @@ class BaseSelection:
 
         return locals()
 
-
     def base_select(self, events):
         dataset = events.metadata["dataset"]
         dataset_obj = self.config.get_dataset(dataset)
         process_obj = self.config.get_process(dataset)
-        
+
         summary = self.accumulator.identity()
         size = events.metadata["entrystop"] - events.metadata["entrystart"]
         summary["n_events"][dataset] = size
         summary["n_events"]["sumAllEvents"] = size
-        
-        
+
         # Get Variables used for Analysis and Selection
         locals().update(self.get_base_variable(events))
         if events.metadata["IsFastSim"]:
@@ -183,8 +180,8 @@ class BaseSelection:
         locals().update(self.get_muon_variables(events))
         sortedJets = ak.mask(events.JetPt, (events.nJet >= 3))
         goodJets = (events.JetPt > 30) & (abs(events.JetEta) < 2.4)
-        #Baseline PreSelection
-        baselineSelection = ((sortedJets[:, 1] > 80) & (events.LT > 250) & (events.HT > 500) & (ak.num(goodJets) >= 3) & ~(events.IsoTrackVeto))
+        # Baseline PreSelection
+        baselineSelection = (sortedJets[:, 1] > 80) & (events.LT > 250) & (events.HT > 500) & (ak.num(goodJets) >= 3) & ~(events.IsoTrackVeto)
         # prevent double counting in data
         doubleCounting_XOR = (not events.metadata["isData"]) | ((events.metadata["PD"] == "isSingleElectron") & events.HLT_EleOr) | ((events.metadata["PD"] == "isSingleMuon") & events.HLT_MuonOr & ~events.HLT_EleOr) | ((events.metadata["PD"] == "isMet") & events.HLT_MetOr & ~events.HLT_MuonOr & ~events.HLT_EleOr)
         # define selection
@@ -198,14 +195,14 @@ class BaseSelection:
         weights = processor.Weights(size, storeIndividual=self.individal_weights)
         if not process_obj.is_data:
             weights.add("xsecs", process_obj.xsecs[13.0].nominal)
-        common = ["baselineSelection", "HLT_Or"] 
+        common = ["baselineSelection", "HLT_Or"]
         categories = dict(N0b=["zero_b"], N1ib=["multi_b"])
         return locals()
 
     def add_to_selection(self, selection, name, array):
         return selection.add(name, ak.to_numpy(array, allow_missing=True))
 
-  
+
 class ArrayAccumulator(column_accumulator):
     """column_accumulator with delayed concatenate"""
 
@@ -234,14 +231,12 @@ class ArrayAccumulator(column_accumulator):
         return sum(map(len, self._value))
 
 
-
-
 class ArrayExporter(BaseProcessor, BaseSelection):
     output = "*.npy"
     dtype = None
     sep = "_"
 
-    def __init__(self, task,Lepton):
+    def __init__(self, task, Lepton):
         super().__init__(task)
         self.Lepton = Lepton
 
@@ -252,31 +247,24 @@ class ArrayExporter(BaseProcessor, BaseSelection):
         # Creates dict where all selection are applied -> {category: combined selection per category}
         selection = select_output.get("selection")
         categories = select_output.get("categories")
-        return ({cat: selection.all(*cuts) for cat, cuts in categories.items()}
-            if selection and categories
-            else {"all": slice(None)})
+        return {cat: selection.all(*cuts) for cat, cuts in categories.items()} if selection and categories else {"all": slice(None)}
 
-    def select(self, events):  
+    def select(self, events):
         # applies selction and returns all variables and all defined objects
         out = self.base_select(events)
         return out
 
     def process(self, events):
         # Applies indivudal selection per category and then combines them
-        selected_output = self.select(events)  
+        selected_output = self.select(events)
         categories = self.categories(selected_output)
-        print("categories:",categories)
+        print("categories:", categories)
         # weights = selected_output["weights"]
         output = selected_output["summary"]
         arrays = self.get_selection_as_np(selected_output)
         if self.dtype:
             arrays = {key: array.astype(self.dtype) for key, array in arrays.items()}
-        output["arrays"] = dict_accumulator(
-            {category+ "_" + selected_output["dataset"]:
-              dict_accumulator({key: ArrayAccumulator(array[cut, ...]) for key, array in arrays.items()})
-                for category, cut in categories.items()
-            }
-        )
+        output["arrays"] = dict_accumulator({category + "_" + selected_output["dataset"]: dict_accumulator({key: ArrayAccumulator(array[cut, ...]) for key, array in arrays.items()}) for category, cut in categories.items()})
         return output
 
     def postprocess(self, accumulator):

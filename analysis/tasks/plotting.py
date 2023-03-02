@@ -9,9 +9,9 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 import mplhep as hep
 from tqdm.auto import tqdm
+
 # other modules
 from tasks.coffea import CoffeaProcessor, CoffeaTask
-
 
 
 class ArrayPlotting(CoffeaTask):
@@ -69,9 +69,7 @@ class ArrayPlotting(CoffeaTask):
 
                 # define empty hists
                 np_hist = np.array([])
-                np_0b = np.load(
-                    np_dict.path
-                )  # np.load(np_dict["job_{}_N0b".format(i)].path)
+                np_0b = np.load(np_dict.path)  # np.load(np_dict["job_{}_N0b".format(i)].path)
                 np_hist = np.append(np_hist, np_0b[:, var_names.index(var.name)])
                 # integrate hist
                 bins = np.arange(
@@ -101,5 +99,3 @@ class ArrayPlotting(CoffeaTask):
             ax.set_yscale("log")
             plt.savefig(self.output()[var.name]["log"].path)
             plt.gcf().clear()
-
-

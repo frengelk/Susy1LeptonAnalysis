@@ -17,23 +17,18 @@ from tqdm import tqdm
 # other modules
 from tasks.base import DatasetTask, HTCondorWorkflow
 from utils.coffea_base import *
-from tasks.makefiles import  WriteDatasetPathDict
+from tasks.makefiles import WriteDatasetPathDict
 
 
-
-    
 class CoffeaTask(DatasetTask):
     """
     token task to define attributes
     """
+
     processor = Parameter(default="ArrayExporter")
     debug = BoolParameter(default=False)
-    debug_dataset = Parameter(
-        default="data_mu_C"
-    )  # take a small set to reduce computing time
-    debug_str = Parameter(
-        default="/nfs/dust/cms/user/wiens/CMSSW/CMSSW_12_1_0/Testing/2022_11_10/TTJets/TTJets_1.root"
-    )
+    debug_dataset = Parameter(default="data_mu_C")  # take a small set to reduce computing time
+    debug_str = Parameter(default="/nfs/dust/cms/user/wiens/CMSSW/CMSSW_12_1_0/Testing/2022_11_10/TTJets/TTJets_1.root")
     file = Parameter(
         default="/nfs/dust/cms/user/frengelk/Code/cmssw/CMSSW_12_1_0/Batch/2022_11_24/2017/Data/root/SingleElectron_Run2017C-UL2017_MiniAODv2_NanoAODv9-v1_NANOAOD_1.0.root"
         # "/nfs/dust/cms/user/wiens/CMSSW/CMSSW_12_1_0/Testing/2022_11_10/TTJets/TTJets_1.root"
@@ -70,7 +65,6 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
         # datasets = self.config_inst.datasets.names()
         # if self.debug:
         #     datasets = [self.debug_dataset]
-        
 
         #     out = {
         #         cat + "_" + dat: self.local_target(cat + "_" + dat + ".npy")
@@ -81,13 +75,13 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
         #     if self.processor == "Histogramer":
         #         out = self.local_target("hists.coffea")
         #     return out
+
     def store_parts(self):
-        parts = (self.analysis_choice, self.processor,self.lepton_selection)
+        parts = (self.analysis_choice, self.processor, self.lepton_selection)
         return super(CoffeaProcessor, self).store_parts() + parts
 
     @law.decorator.timeit(publish_message=True)
     def run(self):
-       
         data_dict = self.input()["dataset_dict"].load()  # ["SingleMuon"]  # {self.dataset: [self.file]}
         data_path = self.input()["dataset_path"].load()
         # declare processor
@@ -107,14 +101,10 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
         fileset = {
             dataset: {
                 "files": [data_path + "/" + subset[self.branch]],
-                "metadata": {
-                    "PD": primaryDataset,
-                    "IsData": isData,
-                    "isFastsim": isFastsim
-                },
+                "metadata": {"PD": primaryDataset, "IsData": isData, "isFastsim": isFastsim},
             }
         }
-        start=time.time()
+        start = time.time()
         # call imported processor, magic happens here
         out = processor.run_uproot_job(
             fileset,
@@ -123,9 +113,7 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
             # pre_executor=processor.futures_executor,
             # pre_args=dict(workers=32),
             executor=processor.iterative_executor,
-            executor_args=dict(
-                status=False
-            ),  # desc="", unit="Trolling"), # , desc="Trolling"
+            executor_args=dict(status=False),  # desc="", unit="Trolling"), # , desc="Trolling"
             # metadata_cache = 'MetaData',
             # schema=BaseSchema,),
             chunksize=10000,
@@ -143,4 +131,3 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
             self.output().parent.touch()
             for cat in out["arrays"]:
                 self.output().dump(out["arrays"][cat]["hl"].value)
-        
