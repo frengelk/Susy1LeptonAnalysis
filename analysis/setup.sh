@@ -41,5 +41,8 @@ action() {
 
     source "$( law completion )"
     law index --verbose
+
+    # new files to be readable
+    umask 002
 }
 action "$@"
