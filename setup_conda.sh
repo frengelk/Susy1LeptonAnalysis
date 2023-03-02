@@ -14,23 +14,15 @@ mkdir -p Anaconda/envs  Anaconda/pkgs
 cd Anaconda
 conda config --add envs_dirs $DUST/Anaconda/envs
 conda config --add pkgs_dirs $DUST/Anaconda/pkgs
-conda create -n susy1lep -y
+conda create -n susy1lep --python=3.10.6
 conda activate susy1lep
-conda install conda -y
+
 conda install -c conda-forge mamba -y
-mamba install -c conda-forge coffea -y
-mamba update -n base -c defaults conda -y
-mamba install cudatoolkit=10.2 -c pytorch -y
-mamba install -c conda-forge pytorch -y
-mamba install captum -c pytorch -y
-mamba install -c conda-forge pytorch-lightning -y
-mamba install -c conda-forge law -y
+mamba install -c conda-forge coffea law mplhep black ipython ipdb aghast root -y 
+# mamba update -n base -c defaults conda -y
+#mamba install cudatoolkit=10.2 -c pytorch -y
+#mamba install -c conda-forge pytorch -y
+#mamba install captum -c pytorch -y
+#mamba install -c conda-forge pytorch-lightning -y
 $DUST/Anaconda/envs/susy1lep/bin/pip install order
-mamba install -c conda-forge scikit-learn -y
-mamba install -c conda-forge mplhep -y
-mamba install -c conda-forge black -y
-mamba install -c conda-forge ipython -y
-mamba install -c conda-forge ipdb -y
-mamba install -c conda-forge aghast -y
-mamba install -c conda-forge root -y
  fi

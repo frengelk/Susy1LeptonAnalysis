@@ -116,7 +116,6 @@ class WriteFileset(BaseMakeFilesTask):
         fileset = {}
 
         for dat in self.config_inst.datasets:
-
             fileset.update(
                 {
                     dat.name: [self.directory_path + "/" + key for key in dat.keys],
