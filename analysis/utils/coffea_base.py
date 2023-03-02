@@ -1,5 +1,5 @@
 """
-This is the base class for the coffea Task 
+This is the base class for the coffea Task
 Here we apply our selection and define the categories used for the analysis
 Also this write our arrays
 """
@@ -172,9 +172,11 @@ class BaseSelection:
         summary["n_events"][dataset] = size
         summary["n_events"]["sumAllEvents"] = size
 
+
+
         # Get Variables used for Analysis and Selection
         locals().update(self.get_base_variable(events))
-        if events.metadata["IsFastSim"]:
+        if events.metadata["isFastSim"]:
             locals().update(self.get_gen_variable(events))
         locals().update(self.get_electron_variables(events))
         locals().update(self.get_muon_variables(events))
@@ -189,8 +191,9 @@ class BaseSelection:
         self.add_to_selection(selection, "doubleCounting_XOR", doubleCounting_XOR)
         self.add_to_selection((selection), "HLT_Or", events.HLT_MuonOr | events.HLT_MetOr | events.HLT_EleOr)
         self.add_to_selection((selection), "baselineSelection", ak.fill_none(baselineSelection, False))
-        self.add_to_selection((selection), "zero_b", zero_b)
-        self.add_to_selection((selection), "multi_b", multi_b)
+        X = locals()
+        self.add_to_selection((selection), "zero_b", X["zero_b"])
+        self.add_to_selection((selection), "multi_b", X["multi_b"])
         # apply some weights,  MC/data check beforehand
         weights = processor.Weights(size, storeIndividual=self.individal_weights)
         if not process_obj.is_data:

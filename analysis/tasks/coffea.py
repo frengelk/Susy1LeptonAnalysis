@@ -66,6 +66,8 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
         # if self.debug:
         #     datasets = [self.debug_dataset]
 
+
+
         #     out = {
         #         cat + "_" + dat: self.local_target(cat + "_" + dat + ".npy")
         #         for dat in datasets
@@ -82,6 +84,7 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
 
     @law.decorator.timeit(publish_message=True)
     def run(self):
+
         data_dict = self.input()["dataset_dict"].load()  # ["SingleMuon"]  # {self.dataset: [self.file]}
         data_path = self.input()["dataset_path"].load()
         # declare processor
@@ -92,16 +95,18 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
         key_name = list(data_dict.keys())[0]
         subset = sorted(data_dict[key_name])
         dataset = key_name.split("_")[0]
+        if dataset == "merged":
+            dataset = data_path.split("/")[-2]
 
         with up.open(data_path + "/" + subset[self.branch]) as file:
             # data_path + "/" + subset[self.branch]
             primaryDataset = "MC"  # file["MetaData"]["primaryDataset"].array()[0]
             isData = file["MetaData"]["IsData"].array()[0]
-            isFastsim = file["MetaData"]["IsFastSim"].array()[0]
+            isFastSim = file["MetaData"]["IsFastSim"].array()[0]
         fileset = {
             dataset: {
                 "files": [data_path + "/" + subset[self.branch]],
-                "metadata": {"PD": primaryDataset, "IsData": isData, "isFastsim": isFastsim},
+                "metadata": {"PD": primaryDataset, "isData": isData, "isFastSim": isFastSim},
             }
         }
         start = time.time()
@@ -131,3 +136,4 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
             self.output().parent.touch()
             for cat in out["arrays"]:
                 self.output().dump(out["arrays"][cat]["hl"].value)
+

@@ -2,6 +2,24 @@ import os
 
 # to add: 4 top events SM, tZq_ll tZq_lNu tWZ
 
+#####datasets#####
+def setup_datasets(cfg, campaign):
+
+    ### signal ###
+    cfg.add_dataset(
+        "T5qqqqVV",
+        1001,
+        campaign=campaign,
+        keys=[""],
+    )
+
+    cfg.add_dataset(
+        "T1tttt",
+        1002,
+        campaign=campaign,
+        keys=[""],
+    )
+
 
 #####datasets#####
 def setup_datasets(cfg, campaign):
