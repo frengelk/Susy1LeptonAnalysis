@@ -62,11 +62,16 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
         # return WriteFileset.req(self)
 
     def create_branch_map(self):
-        return list(range(1))
+        return list(range(1)) # FIXME arbitrary
         # return list(range(self.job_dict[self.data_key]))  # self.job_number
 
     def output(self):
-        return self.local_target("signal.npy")
+        return {
+            cat: self.local_target(cat + "_signal.npy")
+            for cat in self.config_inst.categories.names()
+        }
+
+        #self.local_target("signal.npy")
         # datasets = self.config_inst.datasets.names()
         # if self.debug:
         #     datasets = [self.debug_dataset]
@@ -100,7 +105,9 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
         dataset = key_name.split("_")[0]
         if dataset == "merged":
             dataset = data_path.split("/")[-2]
-
+        if self.branch >= len(subset):
+            import sys
+            sys.exit()
         with up.open(data_path + "/" + subset[self.branch]) as file:
             # data_path + "/" + subset[self.branch]
             primaryDataset = "MC"  # file["MetaData"]["primaryDataset"].array()[0]
@@ -142,6 +149,8 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
         console.print(f"* Events / s: {all_events/total_time:.0f}")
         # save outputs, seperated for processor, both need different touch calls
         if self.processor == "ArrayExporter":
-            self.output().parent.touch()
+            self.output().popitem()[1].parent.touch()
             for cat in out["arrays"]:
-                self.output().dump(out["arrays"][cat]["hl"].value)
+                for key in self.output().keys():
+                    if key in cat:
+                        self.output()[key].dump(out["arrays"][cat]["hl"].value)

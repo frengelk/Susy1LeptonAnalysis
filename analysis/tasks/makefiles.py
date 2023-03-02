@@ -9,13 +9,14 @@ import json
 Tasks to write config for datasets from target directory
 Then write a fileset directory as an input for coffea
 """
+
+
 class BaseMakeFilesTask(AnalysisTask):
     # Basis class only for inheritance
-    directory_path = Parameter(default="/nfs/dust/cms/user/frengelk/Code/cmssw/CMSSW_12_1_0/Batch/2023_01_18/2017/Data/root")      
+    directory_path = Parameter(default="/nfs/dust/cms/user/frengelk/Code/cmssw/CMSSW_12_1_0/Batch/2023_01_18/2017/Data/root")
 
 
 class WriteDatasets(BaseMakeFilesTask):
-
     def output(self):
         return self.local_target("datasets_{}.json".format(self.year))
 
@@ -23,6 +24,9 @@ class WriteDatasets(BaseMakeFilesTask):
         self.output().parent.touch()
 
         file_dict = {}
+        from IPython import embed
+
+        embed()
         for root, dirs, files in os.walk(self.directory_path):
             for directory in dirs:
                 # print(directory)
@@ -31,6 +35,9 @@ class WriteDatasets(BaseMakeFilesTask):
                     for file in f:
                         file_list.append(directory + "/" + file)
                 file_dict.update({directory: file_list})  # self.directory_path + "/" +
+                from IPython import embed
+
+                embed()
 
         with open(self.output().path, "w") as out:
             json.dump(file_dict, out)
@@ -92,7 +99,6 @@ class WriteConfigData(BaseMakeFilesTask):
 
 
 class WriteFileset(BaseMakeFilesTask):
-
     def requires(self):
         return WriteConfigData.req(self)
 
@@ -120,16 +126,14 @@ class WriteFileset(BaseMakeFilesTask):
         with open(self.output().path, "w") as file:
             json.dump(fileset, file)
 
+
 class WriteDatasetPathDict(BaseMakeFilesTask):
     def output(self):
         return {
             "dataset_dict": self.local_target("datasets_{}.json".format(self.year)),
-            "dataset_path": self.local_target(
-                "path.json"
-            ),  # save this so you'll find the files
+            "dataset_path": self.local_target("path.json"),  # save this so you'll find the files
             "job_number_dict": self.local_target("job_number_dict.json"),
         }
-    
 
     def run(self):
         self.output()["dataset_dict"].parent.touch()
@@ -150,4 +154,3 @@ class WriteDatasetPathDict(BaseMakeFilesTask):
         self.output()["dataset_dict"].dump(file_dict)
         self.output()["dataset_path"].dump(self.directory_path)
         self.output()["job_number_dict"].dump(job_number_dict)
-
