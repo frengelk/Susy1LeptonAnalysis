@@ -25,10 +25,8 @@ for year, cfg in ("2016", config_2016), ("2017", config_2017):
     # with od.uniqueness_context(cfg.campaign.name):
     campaign = cfg.campaign
     if year == "2016":
-
         setup_datasets(cfg, campaign=campaign)
     else:
-
         setup_datasets(cfg, campaign=campaign)
     setup_processes(cfg)
     for dat in cfg.datasets:

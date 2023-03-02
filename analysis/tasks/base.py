@@ -14,7 +14,6 @@ law.contrib.load("numpy", "tasks", "root", "htcondor", "hdf5", "coffea", "matplo
 
 
 class BaseTask(law.Task):
-
     version = luigi.Parameter(default="dev1", description="version of current workflow")
 
     def local_path(self, *path):
@@ -30,7 +29,6 @@ class BaseTask(law.Task):
 
 
 class CampaignTask(BaseTask):
-
     year = luigi.Parameter(description="Year", default="2016")
     config = luigi.Parameter(default="SUSY_1lep_ML", description="current analysis")
     analysis_choice = "common"
@@ -48,7 +46,6 @@ class CampaignTask(BaseTask):
 
 
 class AnalysisTask(CampaignTask):
-
     analysis_id = "0b"
     task_namespace = "{}".format(analysis_id)
 
@@ -80,7 +77,6 @@ class ConfigTask(AnalysisTask):
 
 
 class ShiftTask(ConfigTask):
-
     shift = luigi.Parameter(
         default="nominal",
         significant=False,
@@ -116,7 +112,6 @@ class ShiftTask(ConfigTask):
 
 
 class DatasetTask(ConfigTask):  # ShiftTask
-
     dataset = luigi.Parameter(default="TTJets_sl_fromt", description="the dataset name, default: ")
 
     def __init__(self, *args, **kwargs):
