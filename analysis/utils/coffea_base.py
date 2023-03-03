@@ -145,7 +145,7 @@ class BaseSelection:
         # MuonMass
         muonCharge = events.MuonCharge
         muonPdgId = events.MuonPdgId
-        #vetoMuon = (events.MuonPt[:, 1:2] > 10) & events.MuonLooseId[:, 1:2]
+        # vetoMuon = (events.MuonPt[:, 1:2] > 10) & events.MuonLooseId[:, 1:2]
 
         return locals()
 
@@ -164,8 +164,8 @@ class BaseSelection:
 
     def base_select(self, events):
         dataset = events.metadata["dataset"]
-        #dataset_obj = self.config.get_dataset(dataset)
-        #process_obj = self.config.get_process(dataset)
+        # dataset_obj = self.config.get_dataset(dataset)
+        # process_obj = self.config.get_process(dataset)
 
         summary = self.accumulator.identity()
         size = events.metadata["entrystop"] - events.metadata["entrystart"]
@@ -174,7 +174,7 @@ class BaseSelection:
 
         # Get Variables used for Analysis and Selection
         locals().update(self.get_base_variable(events))
-        #if events.metadata["isFastSim"]:
+        # if events.metadata["isFastSim"]:
         #    locals().update(self.get_gen_variable(events))
         locals().update(self.get_electron_variables(events))
         locals().update(self.get_muon_variables(events))
@@ -194,7 +194,7 @@ class BaseSelection:
         self.add_to_selection((selection), "multi_b", X["multi_b"])
         # apply some weights,  MC/data check beforehand
         weights = processor.Weights(size, storeIndividual=self.individal_weights)
-        #if not process_obj.is_data:
+        # if not process_obj.is_data:
         #    weights.add("xsecs", process_obj.xsecs[13.0].nominal)
         common = ["baselineSelection", "HLT_Or"]
         categories = dict(N0b=["zero_b"], N1ib=["multi_b"])

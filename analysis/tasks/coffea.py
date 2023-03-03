@@ -40,7 +40,6 @@ class CoffeaTask(DatasetTask):
     datasets_to_process = ListParameter(default=["T5qqqqVV"])
 
 
-
 class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
 
     """
@@ -60,17 +59,17 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
 
     def create_branch_map(self):
         # define job number according to number of files of the dataset that you want to process
-        files, job_number = self.load_job_dict()
+        job_number = self.load_job_dict()[1]
         return list(range(job_number))
         # return list(range(self.job_dict[self.data_key]))  # self.job_number
 
     def output(self):
-        files, job_number = self.load_job_dict()
+        files, job_number, job_number_dict = self.load_job_dict()
         return {
-            cat + "_" + dat: self.local_target(cat + "_" + dat + ".npy")
-            for dat in files
+            cat + "_" + dat.split("/")[0] + "_" + str(job): self.local_target(cat + "_" + dat.split("/")[0] + "_" + str(job) + ".npy")
             for cat in self.config_inst.categories.names()
-            #for i in range(job_number)  + "_" + str(job_number)
+            for job, dat in job_number_dict.items()
+            # for i in range(job_number)  + "_" + str(job_number)
         }
 
     def store_parts(self):
@@ -80,8 +79,15 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
     def load_job_dict(self):
         with open(self.config_inst.get_aux("job_dict")) as f:
             data_list = json.load(f)
-        job_number = len(data_list.keys())
-        return data_list, job_number
+        job_number = 0  # len(data_list.keys())
+        job_number_dict = {}
+        for key, files in data_list.items():
+            if key not in self.datasets_to_process:
+                continue
+            for i, file in enumerate(sorted(files)):
+                job_number_dict.update({job_number + i: file})
+            job_number += len(files)
+        return data_list, job_number, job_number_dict
 
     @law.decorator.timeit(publish_message=True)
     def run(self):
@@ -91,24 +97,24 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
         if self.processor == "ArrayExporter":
             processor_inst = ArrayExporter(self, Lepton=self.lepton_selection)
         # building together the respective strings to use for the coffea call
+        files, job_number, job_number_dict = self.load_job_dict()
         treename = self.lepton_selection
-        key_name = self.datasets_to_process[self.branch] # list(data_dict.keys())[0]
-        subset = sorted(data_dict[key_name])
-        dataset = key_name#.split("_")[0]
-        print(key_name)
+        # key_name = self.datasets_to_process[self.branch] # list(data_dict.keys())[0]
+        subset = job_number_dict[self.branch]
+        dataset = subset.split("/")[0]  # split("_")[0]
         if dataset == "merged":
             dataset = data_path.split("/")[-2]
         # if not fulfilled, you'll try to access undefined files
         assert self.branch < len(subset)
 
-        with up.open(data_path + "/" + subset[0]) as file:
+        with up.open(data_path + "/" + subset) as file:
             # data_path + "/" + subset[self.branch]
             primaryDataset = "MC"  # file["MetaData"]["primaryDataset"].array()[0]
             isData = file["MetaData"]["IsData"].array()[0]
             isFastSim = file["MetaData"]["IsFastSim"].array()[0]
         fileset = {
             dataset: {
-                "files": [data_path + "/" + file for file in subset],
+                "files": [data_path + "/" + subset],  # file for file in
                 "metadata": {"PD": primaryDataset, "isData": isData, "isFastSim": isFastSim},
             }
         }
@@ -138,4 +144,4 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
         if self.processor == "ArrayExporter":
             self.output().popitem()[1].parent.touch()
             for cat in out["arrays"]:
-                self.output()[cat].dump(out["arrays"][cat]["hl"].value)
+                self.output()[cat + "_" + str(self.branch)].dump(out["arrays"][cat]["hl"].value)

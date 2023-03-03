@@ -60,21 +60,21 @@ class WriteConfigData(BaseMakeFilesTask):
         self.output().parent.touch()
 
         with open(self.output().path, "w") as out:
-            #out.write("import os")
-            #out.write("\n" + "#####datasets#####" + "\n")
-            #out.write("def setup_datasets(cfg, campaign):" + "\n")
+            # out.write("import os")
+            # out.write("\n" + "#####datasets#####" + "\n")
+            # out.write("def setup_datasets(cfg, campaign):" + "\n")
             # for proc in self.config_inst.processes:
-                # for child in proc.walk_processes():
-                    # child = child[0]
-                    # # print(child.name)
-                    # # from IPython import embed;embed()
-                    # # for sets in file_dict.keys():
-                    # if child.name in proc_dict.keys():
-                        # sets = []
-                        # for directory in proc_dict[child.name]:
-                            # sets.extend(file_dict[directory])
-                        # for line in self.write_add_dataset(child.name, child.id, sets):
-                            # out.write(line + "\n")
+            # for child in proc.walk_processes():
+            # child = child[0]
+            # # print(child.name)
+            # # from IPython import embed;embed()
+            # # for sets in file_dict.keys():
+            # if child.name in proc_dict.keys():
+            # sets = []
+            # for directory in proc_dict[child.name]:
+            # sets.extend(file_dict[directory])
+            # for line in self.write_add_dataset(child.name, child.id, sets):
+            # out.write(line + "\n")
 
             for key in self.input().load().keys():
                 out.write(key + ":" + str(self.input().load()[key]))
@@ -135,4 +135,6 @@ class WriteDatasetPathDict(BaseMakeFilesTask):
         self.output()["dataset_dict"].dump(file_dict)
         self.output()["dataset_path"].dump(self.directory_path)
         self.output()["job_number_dict"].dump(job_number_dict)
-        from IPython import embed; embed()
+        from IPython import embed
+
+        embed()

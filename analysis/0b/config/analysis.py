@@ -2,6 +2,7 @@
 # Initializes which processes, datasets and general information update the data        #
 ########################################################################################
 import copy
+import os
 
 # base config
 import config.Run2_pp_13TeV_2016 as run_2016
@@ -38,7 +39,7 @@ for year, cfg in ("2016", config_2016), ("2017", config_2017):
         "T5qqqqWW",
     )
 
-    cfg.set_aux("job_dict", "/nfs/dust/cms/user/frengelk/Code/SusyLeptonAnalysis/analysis/config/datasets_2017.json")
+    cfg.set_aux("job_dict", os.path.expandvars("$ANALYSIS_BASE/config/datasets_2017.json"))
 
     cfg.set_aux(
         "proc_data_template",
