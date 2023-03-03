@@ -4,7 +4,7 @@ import logging
 import os
 import law
 import law.contrib.coffea
-from luigi import BoolParameter, Parameter, IntParameter
+from luigi import BoolParameter, Parameter, IntParameter, ListParameter
 from coffea import processor
 from coffea.nanoevents import TreeMakerSchema, BaseSchema, NanoAODSchema
 import json
@@ -37,6 +37,8 @@ class CoffeaTask(DatasetTask):
     data_key = Parameter(default="SingleMuon")
     # parameter with selection we use coffea
     lepton_selection = Parameter(default="Muon")
+    datasets_to_process = ListParameter(default=["T5qqqqVV"])
+
 
 
 class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
@@ -57,39 +59,32 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
         # return WriteFileset.req(self)
 
     def create_branch_map(self):
-        return list(range(1)) # FIXME arbitrary
+        # define job number according to number of files of the dataset that you want to process
+        files, job_number = self.load_job_dict()
+        return list(range(job_number))
         # return list(range(self.job_dict[self.data_key]))  # self.job_number
 
     def output(self):
+        files, job_number = self.load_job_dict()
         return {
-            cat: self.local_target(cat + "_signal.npy")
+            cat + "_" + dat: self.local_target(cat + "_" + dat + ".npy")
+            for dat in files
             for cat in self.config_inst.categories.names()
+            #for i in range(job_number)  + "_" + str(job_number)
         }
-
-        #self.local_target("signal.npy")
-        # datasets = self.config_inst.datasets.names()
-        # if self.debug:
-        #     datasets = [self.debug_dataset]
-
-
-
-        #     out = {
-        #         cat + "_" + dat: self.local_target(cat + "_" + dat + ".npy")
-        #         for dat in datasets
-        #         for cat in self.config_inst.categories.names()
-        #     }
-        #     # from IPython import embed;embed()
-        #     if self.processor == "Histogramer":
-        #         out = self.local_target("hists.coffea")
-        #     return out
 
     def store_parts(self):
         parts = (self.analysis_choice, self.processor, self.lepton_selection)
         return super(CoffeaProcessor, self).store_parts() + parts
 
+    def load_job_dict(self):
+        with open(self.config_inst.get_aux("job_dict")) as f:
+            data_list = json.load(f)
+        job_number = len(data_list.keys())
+        return data_list, job_number
+
     @law.decorator.timeit(publish_message=True)
     def run(self):
-
         data_dict = self.input()["dataset_dict"].load()  # ["SingleMuon"]  # {self.dataset: [self.file]}
         data_path = self.input()["dataset_path"].load()
         # declare processor
@@ -97,22 +92,23 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
             processor_inst = ArrayExporter(self, Lepton=self.lepton_selection)
         # building together the respective strings to use for the coffea call
         treename = self.lepton_selection
-        key_name = list(data_dict.keys())[0]
+        key_name = self.datasets_to_process[self.branch] # list(data_dict.keys())[0]
         subset = sorted(data_dict[key_name])
-        dataset = key_name.split("_")[0]
+        dataset = key_name#.split("_")[0]
+        print(key_name)
         if dataset == "merged":
             dataset = data_path.split("/")[-2]
-        if self.branch >= len(subset):
-            import sys
-            sys.exit()
-        with up.open(data_path + "/" + subset[self.branch]) as file:
+        # if not fulfilled, you'll try to access undefined files
+        assert self.branch < len(subset)
+
+        with up.open(data_path + "/" + subset[0]) as file:
             # data_path + "/" + subset[self.branch]
             primaryDataset = "MC"  # file["MetaData"]["primaryDataset"].array()[0]
             isData = file["MetaData"]["IsData"].array()[0]
             isFastSim = file["MetaData"]["IsFastSim"].array()[0]
         fileset = {
             dataset: {
-                "files": [data_path + "/" + subset[self.branch]],
+                "files": [data_path + "/" + file for file in subset],
                 "metadata": {"PD": primaryDataset, "isData": isData, "isFastSim": isFastSim},
             }
         }
@@ -142,6 +138,4 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
         if self.processor == "ArrayExporter":
             self.output().popitem()[1].parent.touch()
             for cat in out["arrays"]:
-                for key in self.output().keys():
-                    if key in cat:
-                        self.output()[key].dump(out["arrays"][cat]["hl"].value)
+                self.output()[cat].dump(out["arrays"][cat]["hl"].value)

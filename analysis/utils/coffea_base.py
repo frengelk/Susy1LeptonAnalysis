@@ -128,6 +128,12 @@ class BaseSelection:
         genJetPhi_2 = events.GenJetPhi_2
         genJetEta_2 = events.GenJetEta_2
         genJetMass_2 = events.GenJetMass_2
+        genElectronPt = events.GenElectronPt_1
+        genElectronPhi = events.GenElectronPhi_1
+        genElectronEta = events.GenElectronEta_1
+        genMuonPt = events.GenMuonPt_1
+        genMuonPhi = events.GenMuonPhi_1
+        genMuonEta = events.GenMuonEta_1
         return locals()
 
     def get_muon_variables(self, events):
@@ -139,10 +145,7 @@ class BaseSelection:
         # MuonMass
         muonCharge = events.MuonCharge
         muonPdgId = events.MuonPdgId
-        vetoMuon = (events.MuonPt[:, 1:2] > 10) & events.MuonLooseId[:, 1:2]
-        genMuonPt = events.GenMuonPt_1
-        genMuonPhi = events.GenMuonPhi_1
-        genMuonEta = events.GenMuonEta_1
+        #vetoMuon = (events.MuonPt[:, 1:2] > 10) & events.MuonLooseId[:, 1:2]
 
         return locals()
 
@@ -156,9 +159,6 @@ class BaseSelection:
         electronCharge = events.ElectronCharge
         electronPdgId = events.ElectronPdgId
         vetoElectron = (events.ElectronPt[:, 1:2] > 10) & events.ElectronLooseId[:, 1:2]
-        genElectronPt = events.GenElectronPt_1
-        genElectronPhi = events.GenElectronPhi_1
-        genElectronEta = events.GenElectronEta_1
 
         return locals()
 
@@ -174,8 +174,8 @@ class BaseSelection:
 
         # Get Variables used for Analysis and Selection
         locals().update(self.get_base_variable(events))
-        if events.metadata["isFastSim"]:
-            locals().update(self.get_gen_variable(events))
+        #if events.metadata["isFastSim"]:
+        #    locals().update(self.get_gen_variable(events))
         locals().update(self.get_electron_variables(events))
         locals().update(self.get_muon_variables(events))
         sortedJets = ak.mask(events.JetPt, (events.nJet >= 3))
@@ -259,7 +259,6 @@ class ArrayExporter(BaseProcessor, BaseSelection):
         # Applies indivudal selection per category and then combines them
         selected_output = self.select(events)
         categories = self.categories(selected_output)
-        print("categories:", categories)
         # weights = selected_output["weights"]
         output = selected_output["summary"]
         arrays = self.get_selection_as_np(selected_output)

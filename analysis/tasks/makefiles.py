@@ -35,7 +35,6 @@ class WriteDatasets(BaseMakeFilesTask):
 
         with open(self.output().path, "w") as out:
             json.dump(file_dict, out)
-        from IPython import embed; embed()
 
 
 class WriteConfigData(BaseMakeFilesTask):
@@ -43,7 +42,7 @@ class WriteConfigData(BaseMakeFilesTask):
         return WriteDatasets.req(self)
 
     def output(self):
-        return self.local_target("datasets_{}.py".format(self.year))
+        return self.local_target("files_per_dataset_{}.py".format(self.year))
 
     def write_add_dataset(self, name, number, keys):
         return [
@@ -54,16 +53,6 @@ class WriteConfigData(BaseMakeFilesTask):
             "keys={})".format(keys),
         ]
 
-    # cfg.add_dataset(
-    # "ttJets",
-    # 1100,
-    # campaign=campaign,
-    # # keys=["/nfs/dust/cms/user/frengelk/Testing/TTJets_HT_1200to2500_1.root"],
-    # keys=[
-    # "/nfs/dust/cms/user/frengelk/Testing/TTJets_TuneCP5_RunIISummer19UL16NanoAODv2_1.root"
-    # ],
-    # )
-
     def run(self):
         with open(self.input().path, "r") as read_file:
             file_dict = json.load(read_file)
@@ -71,26 +60,24 @@ class WriteConfigData(BaseMakeFilesTask):
         self.output().parent.touch()
 
         with open(self.output().path, "w") as out:
-            out.write("import os")
-            out.write("\n" + "#####datasets#####" + "\n")
-            out.write("def setup_datasets(cfg, campaign):" + "\n")
-            # from IPython import embed;embed()
+            #out.write("import os")
+            #out.write("\n" + "#####datasets#####" + "\n")
+            #out.write("def setup_datasets(cfg, campaign):" + "\n")
+            # for proc in self.config_inst.processes:
+                # for child in proc.walk_processes():
+                    # child = child[0]
+                    # # print(child.name)
+                    # # from IPython import embed;embed()
+                    # # for sets in file_dict.keys():
+                    # if child.name in proc_dict.keys():
+                        # sets = []
+                        # for directory in proc_dict[child.name]:
+                            # sets.extend(file_dict[directory])
+                        # for line in self.write_add_dataset(child.name, child.id, sets):
+                            # out.write(line + "\n")
 
-            # for correct mapping of processes and all datasets
-            proc_dict = self.config_inst.get_aux("proc_data_template")
-
-            for proc in self.config_inst.processes:
-                for child in proc.walk_processes():
-                    child = child[0]
-                    # print(child.name)
-                    # from IPython import embed;embed()
-                    # for sets in file_dict.keys():
-                    if child.name in proc_dict.keys():
-                        sets = []
-                        for directory in proc_dict[child.name]:
-                            sets.extend(file_dict[directory])
-                        for line in self.write_add_dataset(child.name, child.id, sets):
-                            out.write(line + "\n")
+            for key in self.input().load().keys():
+                out.write(key + ":" + str(self.input().load()[key]))
 
 
 class WriteFileset(BaseMakeFilesTask):

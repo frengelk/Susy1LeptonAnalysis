@@ -38,6 +38,8 @@ for year, cfg in ("2016", config_2016), ("2017", config_2017):
         "T5qqqqWW",
     )
 
+    cfg.set_aux("job_dict", "/nfs/dust/cms/user/frengelk/Code/SusyLeptonAnalysis/analysis/config/datasets_2017.json")
+
     cfg.set_aux(
         "proc_data_template",
         {
