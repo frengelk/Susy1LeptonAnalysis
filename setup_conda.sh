@@ -18,7 +18,7 @@ conda create -n susy1lep --python=3.10.6
 conda activate susy1lep
 
 conda install -c conda-forge mamba -y
-mamba install -c conda-forge coffea law mplhep black ipython ipdb aghast root -y 
+mamba install -c conda-forge coffea law mplhep black ipython ipdb aghast root h5py -y
 # mamba update -n base -c defaults conda -y
 #mamba install cudatoolkit=10.2 -c pytorch -y
 #mamba install -c conda-forge pytorch -y
