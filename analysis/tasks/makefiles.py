@@ -36,6 +36,9 @@ class WriteDatasets(BaseMakeFilesTask):
         with open(self.output().path, "w") as out:
             json.dump(file_dict, out)
 
+        # copy the json file directly to the aux part
+        os.system("cp {} {}".format(self.output().path, self.config_inst.get_aux("job_dict")))
+
 
 class WriteConfigData(BaseMakeFilesTask):
     def requires(self):

@@ -54,8 +54,8 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
         super(CoffeaProcessor, self).__init__(*args, **kwargs)
 
     def requires(self):
-        return WriteDatasetPathDict.req(self)
-        # return WriteFileset.req(self)
+        # return WriteDatasetPathDict.req(self)
+        return WriteDatasets.req(self)
 
     def create_branch_map(self):
         # define job number according to number of files of the dataset that you want to process
