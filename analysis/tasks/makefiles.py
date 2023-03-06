@@ -40,6 +40,38 @@ class WriteDatasets(BaseMakeFilesTask):
         os.system("cp {} {}".format(self.output().path, self.config_inst.get_aux("job_dict")))
 
 
+class WriteDatasetPathDict(BaseMakeFilesTask):
+    def requires(self):
+        return WriteDatasets.req(self)
+
+    def output(self):
+        return {
+            "dataset_dict": self.local_target("datasets_{}.json".format(self.year)),
+            "dataset_path": self.local_target("path.json"),  # save this so you'll find the files
+            "job_number_dict": self.local_target("job_number_dict.json"),
+        }
+
+    def run(self):
+        self.output()["dataset_dict"].parent.touch()
+        file_dict = {}
+        for root, dirs, files in os.walk(self.directory_path):
+            for directory in dirs:
+                # print(directory)
+                file_list = []
+                for r, d, f in os.walk(self.directory_path + "/" + directory):
+                    for file in f:
+                        file_list.append(directory + "/" + file)
+                file_dict.update({directory: file_list})  # self.directory_path + "/" +
+        assert len(file_dict.keys()) > 0, "No files found in {}".format(self.directory_path)
+        job_number_dict = {}
+        for k in file_dict.keys():
+            print(k, len(file_dict[k]))
+            job_number_dict.update({k: len(file_dict[k])})
+        self.output()["dataset_dict"].dump(file_dict)
+        self.output()["dataset_path"].dump(self.directory_path)
+        self.output()["job_number_dict"].dump(job_number_dict)
+
+
 class WriteConfigData(BaseMakeFilesTask):
     def requires(self):
         return WriteDatasets.req(self)
@@ -109,35 +141,3 @@ class WriteFileset(BaseMakeFilesTask):
 
         with open(self.output().path, "w") as file:
             json.dump(fileset, file)
-
-
-class WriteDatasetPathDict(BaseMakeFilesTask):
-    def output(self):
-        return {
-            "dataset_dict": self.local_target("datasets_{}.json".format(self.year)),
-            "dataset_path": self.local_target("path.json"),  # save this so you'll find the files
-            "job_number_dict": self.local_target("job_number_dict.json"),
-        }
-
-    def run(self):
-        self.output()["dataset_dict"].parent.touch()
-        file_dict = {}
-        for root, dirs, files in os.walk(self.directory_path):
-            for directory in dirs:
-                # print(directory)
-                file_list = []
-                for r, d, f in os.walk(self.directory_path + "/" + directory):
-                    for file in f:
-                        file_list.append(directory + "/" + file)
-                file_dict.update({directory: file_list})  # self.directory_path + "/" +
-        assert len(file_dict.keys()) > 0, "No files found in {}".format(self.directory_path)
-        job_number_dict = {}
-        for k in file_dict.keys():
-            print(k, len(file_dict[k]))
-            job_number_dict.update({k: len(file_dict[k])})
-        self.output()["dataset_dict"].dump(file_dict)
-        self.output()["dataset_path"].dump(self.directory_path)
-        self.output()["job_number_dict"].dump(job_number_dict)
-        from IPython import embed
-
-        embed()
