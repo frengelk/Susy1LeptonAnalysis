@@ -18,12 +18,12 @@ class ArrayPlotting(CoffeaTask):
     density = luigi.BoolParameter(default=False)
 
     def requires(self):
-        #return CoffeaProcessor.req(self)
+        # return CoffeaProcessor.req(self)
         return {
             sel: CoffeaProcessor.req(
                 self,
                 lepton_selection=sel,
-                #workflow="local",
+                # workflow="local",
             )
             for sel in ["Electron", "Muon"]  # , "Electron"]
         }
@@ -47,7 +47,7 @@ class ArrayPlotting(CoffeaTask):
     @law.decorator.timeit(publish_message=True)
     @law.decorator.safe_output
     def run(self):
-        #in_dict = self.input()  # ["collection"].targets
+        # in_dict = self.input()  # ["collection"].targets
         # in_dict = self.input()["Muon"]["collection"].targets[0]
         # making clear which index belongs to which variable
         var_names = self.config_inst.variables.names()
@@ -77,7 +77,7 @@ class ArrayPlotting(CoffeaTask):
                     np_hist = np.array([])
                     # accessing the input and unpacking the condor submission structure
                     for key, value in np_dict.items():
-                        cat = "N0b" # or loop over self.config_inst.categories.names()
+                        cat = "N0b"  # or loop over self.config_inst.categories.names()
                         if cat in key and dat in key:
                             np_0b = np.load(value.path)
                             np_hist = np.append(np_hist, np_0b[:, var_names.index(var.name)])
