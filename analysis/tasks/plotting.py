@@ -18,13 +18,14 @@ class ArrayPlotting(CoffeaTask):
     density = luigi.BoolParameter(default=False)
 
     def requires(self):
+        # return CoffeaProcessor.req(self)
         return {
             sel: CoffeaProcessor.req(
                 self,
                 lepton_selection=sel,
-                workflow="local",
+                # workflow="local",
             )
-            for sel in ["Muon"]  # , "Electron"]
+            for sel in ["Electron", "Muon"]  # , "Electron"]
         }
 
     def output(self):
@@ -46,7 +47,7 @@ class ArrayPlotting(CoffeaTask):
     @law.decorator.timeit(publish_message=True)
     @law.decorator.safe_output
     def run(self):
-        in_dict = self.input()  # ["collection"].targets
+        # in_dict = self.input()  # ["collection"].targets
         # in_dict = self.input()["Muon"]["collection"].targets[0]
         # making clear which index belongs to which variable
         var_names = self.config_inst.variables.names()
@@ -66,35 +67,41 @@ class ArrayPlotting(CoffeaTask):
             )
             # iterate over the indices for each file
             feedback = []  # {}
-            np_dict = self.input()["Muon"]["collection"].targets[0]
-            for key, value in np_dict.items():
-                # different key for each file, we ignore it for now, only interested in values
-                # define empty hists
-                np_hist = np.array([])
-                np_0b = np.load(value.path)  # np.load(np_dict["job_{}_N0b".format(i)].path)
-                np_hist = np.append(np_hist, np_0b[:, var_names.index(var.name)])
-                # integrate hist
-                bins = np.arange(
-                    var.binning[1],
-                    var.binning[2],
-                    (var.binning[2] - var.binning[1]) / var.binning[0],
-                )
-                back = np.sum(np.histogram(np_hist, bins=bins)[0])
-                plt.hist(
-                    np_hist,
-                    bins=bins,
-                    histtype="step",
-                    label=key + ": {}".format(back),
-                    density=self.density,
-                )
-                # feedback.update({key:np.sum(back[0])})
-                feedback.append(back)
-                # sorting the labels/handels of the plt hist by descending magnitude of integral
-                order = np.argsort((-1) * np.array(feedback))
-                # print(var.name, feedback)
+            # ieterating over lepton keys
+            for lep in self.input().keys():
+                np_dict = self.input()[lep]["collection"].targets[0]
+                # sort inputs by datasets
+                for dat in self.datasets_to_process:
+                    # different key for each file, we ignore it for now, only interested in values
+                    # define empty hists
+                    np_hist = np.array([])
+                    # accessing the input and unpacking the condor submission structure
+                    for key, value in np_dict.items():
+                        cat = "N0b"  # or loop over self.config_inst.categories.names()
+                        if cat in key and dat in key:
+                            np_0b = np.load(value.path)
+                            np_hist = np.append(np_hist, np_0b[:, var_names.index(var.name)])
+                    # integrate hist
+                    bins = np.arange(
+                        var.binning[1],
+                        var.binning[2],
+                        (var.binning[2] - var.binning[1]) / var.binning[0],
+                    )
+                    back = np.sum(np.histogram(np_hist, bins=bins)[0])
+                    plt.hist(
+                        np_hist,
+                        bins=bins,
+                        histtype="step",
+                        label="{} {}: {}".format(lep, dat, back),
+                        density=self.density,
+                    )
+                    # feedback.update({key:np.sum(back[0])})
+                    feedback.append(back)
+            # sorting the labels/handels of the plt hist by descending magnitude of integral
+            order = np.argsort((-1) * np.array(feedback))
+            # print(var.name, feedback)
             handles, labels = plt.gca().get_legend_handles_labels()
             ax.legend(np.array(handles)[order], np.array(labels)[order])
-            ax.legend()
             ax.set_xlabel(var.get_full_x_title())
             ax.set_ylabel(var.get_full_y_title())
             self.output()[var.name]["nominal"].parent.touch()

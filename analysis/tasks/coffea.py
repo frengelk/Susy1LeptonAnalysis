@@ -104,8 +104,6 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
         dataset = subset.split("/")[0]  # split("_")[0]
         if dataset == "merged":
             dataset = data_path.split("/")[-2]
-        # if not fulfilled, you'll try to access undefined files
-        assert self.branch < len(subset)
 
         with up.open(data_path + "/" + subset) as file:
             # data_path + "/" + subset[self.branch]
