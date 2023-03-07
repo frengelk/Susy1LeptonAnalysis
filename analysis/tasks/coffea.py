@@ -1,23 +1,23 @@
 # coding: utf-8
 
+import json
 import logging
 import os
+import time
+
 import law
 import law.contrib.coffea
-from luigi import BoolParameter, Parameter, IntParameter, ListParameter
-from coffea import processor
-from coffea.nanoevents import TreeMakerSchema, BaseSchema, NanoAODSchema
-import json
-import time
 import numpy as np
 import uproot as up
+from coffea import processor
+from coffea.nanoevents import BaseSchema, NanoAODSchema, TreeMakerSchema
+from luigi import BoolParameter, IntParameter, ListParameter, Parameter
 from rich.console import Console
-from tqdm import tqdm
-
 # other modules
 from tasks.base import DatasetTask, HTCondorWorkflow
-from utils.coffea_base import *
 from tasks.makefiles import WriteDatasetPathDict, WriteDatasets
+from tqdm import tqdm
+from utils.coffea_base import *
 
 
 class CoffeaTask(DatasetTask):
@@ -134,7 +134,7 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
         )
         # show summary
         console = Console()
-        all_events = out["n_events"]["sum_all_events"]
+        all_events = out["n_events"]["sumAllEvents"]
         total_time = time.time() - start
         console.print("\n[u][bold magenta]Summary metrics:[/bold magenta][/u]")
         console.print(f"* Total time: {total_time:.2f}s")
