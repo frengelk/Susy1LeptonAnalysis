@@ -101,7 +101,14 @@ class ArrayPlotting(CoffeaTask):
                     handles, labels = plt.gca().get_legend_handles_labels()
                     handles = [h for _, h in sorted(zip(sumOfHists, handles))]
                     labels = [l for _, l in sorted(zip(sumOfHists, labels))]
-                    ax.legend(handles, labels, ncol=1, loc="upper left",bbox_to_anchor=(1, 1),  borderaxespad=0,)
+                    ax.legend(
+                        handles,
+                        labels,
+                        ncol=1,
+                        loc="upper left",
+                        bbox_to_anchor=(1, 1),
+                        borderaxespad=0,
+                    )
                     ax.set_xlabel(var.get_full_x_title())
                     ax.set_ylabel(var.get_full_y_title())
                     for ending in self.formats:
