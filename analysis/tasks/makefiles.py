@@ -42,7 +42,7 @@ class WriteDatasets(BaseMakeFilesTask):
 
 class WriteDatasetPathDict(BaseMakeFilesTask):
     def requires(self):
-        return WriteDatasets.req(self, directory_path = self.directory_path)
+        return WriteDatasets.req(self, directory_path=self.directory_path)
 
     def output(self):
         return {

@@ -15,6 +15,8 @@ from luigi import BoolParameter, IntParameter, ListParameter, Parameter
 from rich.console import Console
 # other modules
 from tasks.base import DatasetTask, HTCondorWorkflow
+from utils.coffea_base import ArrayExporter
+from utils.signal_regions import signal_regions_0b
 from tasks.makefiles import WriteDatasetPathDict, WriteDatasets
 from tqdm import tqdm
 from utils.coffea_base import *
@@ -59,9 +61,11 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
 
     def create_branch_map(self):
         # define job number according to number of files of the dataset that you want to process
+        if self.debug:
+            # only one job
+            return list(range(1))
         job_number = self.load_job_dict()[1]
         return list(range(job_number))
-        # return list(range(self.job_dict[self.data_key]))  # self.job_number
 
     def output(self):
         files, job_number, job_number_dict = self.load_job_dict()
@@ -107,7 +111,7 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
 
         with up.open(data_path + "/" + subset) as file:
             # data_path + "/" + subset[self.branch]
-            primaryDataset = "MC"  # file["MetaData"]["primaryDataset"].array()[0]
+            primaryDataset = file["MetaData"]["primaryDataset"].array()[0]
             isData = file["MetaData"]["IsData"].array()[0]
             isFastSim = file["MetaData"]["IsFastSim"].array()[0]
         fileset = {
@@ -143,3 +147,139 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
             self.output().popitem()[1].parent.touch()
             for cat in out["arrays"]:
                 self.output()[cat + "_" + str(self.branch)].dump(out["arrays"][cat]["hl"].value)
+
+
+class CollectCoffeaOutput(CoffeaTask):
+    def requires(self):
+        return {
+            sel: CoffeaProcessor.req(
+                self,
+                lepton_selection=sel,
+                #workflow="local",
+            )
+            for sel in ["Electron", "Muon"]
+        }
+
+    # def output(self):
+    def output(self):
+        return {
+            "event_counts": self.local_target("event_counts.json"),
+            "signal_bin_counts": self.local_target("signal_bin_counts.json"),
+        }
+
+    def store_parts(self):
+        return super(CollectCoffeaOutput, self).store_parts() + (self.analysis_choice,)
+
+    @law.decorator.timeit(publish_message=True)
+    @law.decorator.safe_output
+    def run(self):
+        in_dict = self.input()  # ["collection"].targets
+
+        # making clear which index belongs to which variable
+        var_names = self.config_inst.variables.names()
+        print(var_names)
+        # signal_events = 0
+        event_counts = {}
+        # initialize
+        signal_bin_counts = {k: 0 for k in signal_regions_0b.keys()}
+        # iterate over the indices for each file
+        for key, value in in_dict.items():
+            tot_events, signal_events = 0, 0
+            np_dict = value["collection"].targets[0]
+            for dat in self.datasets_to_process:
+                # different key for each file, we ignore it for now, only interested in values
+                for file, value in np_dict.items():
+                    cat = "N0b" # or loop over self.config_inst.categories.names()
+                    if cat in file and dat in file:
+                        np_0b = np.load(np_dict[file].path)
+                        # np_1ib = np.load(value["N1ib_" + dataset])
+
+                        Dphi = np_0b[:, var_names.index("dPhi")]
+                        LT = np_0b[:, var_names.index("LT")]
+                        HT = np_0b[:, var_names.index("HT")]
+                        n_jets = np_0b[:, var_names.index("nJets")]
+
+                        for ke in signal_regions_0b.keys():
+                            signal_bin_counts[ke] += len(
+                                np_0b[
+                                    eval(signal_regions_0b[ke][0])
+                                    & eval(signal_regions_0b[ke][1])
+                                    & eval(signal_regions_0b[ke][2])
+                                    & eval(signal_regions_0b[ke][3])
+                                ]
+                            )
+
+                        # at some point, we have to define the signal regions
+                        LT1_nj5 = np_0b[
+                            (LT > 250) & (LT < 450) & (Dphi > 1) & (HT > 500) & (n_jets == 5)
+                        ]
+                        LT1_nj67 = np_0b[
+                            (LT > 250)
+                            & (LT < 450)
+                            & (Dphi > 1)
+                            & (HT > 500)
+                            & (n_jets > 5)
+                            & (n_jets < 8)
+                        ]
+                        LT1_nj8i = np_0b[
+                            (LT > 250) & (LT < 450) & (Dphi > 1) & (HT > 500) & (n_jets > 7)
+                        ]
+
+                        LT2_nj5 = np_0b[
+                            (LT > 450) & (LT < 650) & (Dphi > 0.75) & (HT > 500) & (n_jets == 5)
+                        ]
+                        LT2_nj67 = np_0b[
+                            (LT > 450)
+                            & (LT < 650)
+                            & (Dphi > 0.75)
+                            & (HT > 500)
+                            & (n_jets > 5)
+                            & (n_jets < 8)
+                        ]
+                        LT2_nj8i = np_0b[
+                            (LT > 450) & (LT < 650) & (Dphi > 0.75) & (HT > 500) & (n_jets > 7)
+                        ]
+
+                        LT3_nj5 = np_0b[(LT > 650) & (Dphi > 0.75) & (HT > 500) & (n_jets == 5)]
+                        LT3_nj67 = np_0b[
+                            (LT > 650)
+                            & (Dphi > 0.75)
+                            & (HT > 500)
+                            & (n_jets > 5)
+                            & (n_jets < 8)
+                        ]
+                        LT3_nj8i = np_0b[(LT > 650) & (Dphi > 0.75) & (HT > 500) & (n_jets > 7)]
+
+                        signal_events += (
+                            len(LT1_nj5)
+                            + len(LT1_nj67)
+                            + len(LT1_nj8i)
+                            + len(LT2_nj5)
+                            + len(LT2_nj67)
+                            + len(LT2_nj8i)
+                            + len(LT3_nj5)
+                            + len(LT3_nj67)
+                            + len(LT3_nj8i)
+                        )
+
+                        tot_events += len(np_0b)
+
+                count_dict = {
+                    key + "_" + dat: {
+                        "tot_events": tot_events,
+                        "signal_events": signal_events,
+                    }
+                }
+                print(count_dict)
+                event_counts.update(count_dict)
+
+        print(signal_bin_counts)
+        self.output()["event_counts"].dump(event_counts)
+        self.output()["signal_bin_counts"].dump(signal_bin_counts)
+
+        vals = 0
+        for key in signal_bin_counts.keys():
+            vals += signal_bin_counts[key]
+
+        print("Sum over signal region:", vals)
+

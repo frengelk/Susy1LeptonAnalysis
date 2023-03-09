@@ -113,8 +113,9 @@ class BaseSelection:
         WBosonMt = events.WBosonMt
         dPhi = events.DeltaPhi
         nbJets = events.nDeepJetMediumBTag
-        zero_b = nbJets == 0
-        multi_b = nbJets >= 1
+        # name with underscores lead to problems
+        zerob = nbJets == 0
+        multib = nbJets >= 1
         return locals()
 
     def get_gen_variable(self, events):
@@ -184,20 +185,23 @@ class BaseSelection:
         baselineSelection = (sortedJets[:, 1] > 80) & (events.LT > 250) & (events.HT > 500) & (ak.num(goodJets) >= 3) & ~(events.IsoTrackVeto)
         # prevent double counting in data
         doubleCounting_XOR = (not events.metadata["isData"]) | ((events.metadata["PD"] == "isSingleElectron") & events.HLT_EleOr) | ((events.metadata["PD"] == "isSingleMuon") & events.HLT_MuonOr & ~events.HLT_EleOr) | ((events.metadata["PD"] == "isMet") & events.HLT_MetOr & ~events.HLT_MuonOr & ~events.HLT_EleOr)
+        # HLT Combination
+        HLT_Or = events.HLT_MuonOr | events.HLT_MetOr | events.HLT_EleOr
         # define selection
         selection = processor.PackedSelection()
         self.add_to_selection(selection, "doubleCounting_XOR", doubleCounting_XOR)
-        self.add_to_selection((selection), "HLT_Or", events.HLT_MuonOr | events.HLT_MetOr | events.HLT_EleOr)
+        self.add_to_selection((selection), "HLT_Or", HLT_Or)
         self.add_to_selection((selection), "baselineSelection", ak.fill_none(baselineSelection, False))
-        X = locals()
-        self.add_to_selection((selection), "zero_b", X["zero_b"])
-        self.add_to_selection((selection), "multi_b", X["multi_b"])
+        self.add_to_selection((selection), "zerob", locals()["zerob"])
+        self.add_to_selection((selection), "multib", locals()["multib"])
         # apply some weights,  MC/data check beforehand
         weights = processor.Weights(size, storeIndividual=self.individal_weights)
         # if not process_obj.is_data:
         #    weights.add("xsecs", process_obj.xsecs[13.0].nominal)
-        common = ["baselineSelection", "HLT_Or"]
-        categories = dict(N0b=["zero_b"], N1ib=["multi_b"])
+        common = ["baselineSelection", "HLT_Or", "doubleCounting_XOR"]
+        for cut in common:
+            print(cut, ak.sum(eval(cut)))
+        categories = dict(N0b=common + ["zerob"], N1ib=common + ["multib"])
         return locals()
 
     def add_to_selection(self, selection, name, array):
