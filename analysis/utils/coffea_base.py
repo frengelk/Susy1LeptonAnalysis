@@ -199,13 +199,10 @@ class BaseSelection:
         # if not process_obj.is_data:
         #    weights.add("xsecs", process_obj.xsecs[13.0].nominal)
         common = ["baselineSelection", "HLT_Or", "doubleCounting_XOR"]
-        for cut in common:
-            print(cut, ak.sum(eval(cut)))
+        #for cut in common:
+        #    print(cut, ak.sum(eval(cut)))
         categories = dict(N0b=common + ["zerob"], N1ib=common + ["multib"])
         return locals()
-
-    def add_to_selection(self, selection, name, array):
-        return selection.add(name, ak.to_numpy(array, allow_missing=True))
 
 
 class ArrayAccumulator(column_accumulator):
