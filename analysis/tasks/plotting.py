@@ -95,12 +95,12 @@ class ArrayPlotting(CoffeaTask):
                             boost_hist = self.get_density(boost_hist)
 
                         hep.histplot(boost_hist, label="{} {}: {}".format(lep, dat, boost_hist.sum()))
-                        sumOfHists.append(boost_hist.sum())
+                        sumOfHists.append(-1 * boost_hist.sum())
                     # sorting the labels/handels of the plt hist by descending magnitude of integral
                     order = np.argsort((-1) * np.array(sumOfHists))
                     handles, labels = plt.gca().get_legend_handles_labels()
-                    handles = [h for _, h in sorted(zip(order, handles))]
-                    labels = [l for _, l in sorted(zip(order, labels))]
+                    handles = [h for _, h in sorted(zip(sumOfHists, handles))]
+                    labels = [l for _, l in sorted(zip(sumOfHists, labels))]
                     ax.legend(handles, labels)
                     ax.set_xlabel(var.get_full_x_title())
                     ax.set_ylabel(var.get_full_y_title())
