@@ -13,6 +13,7 @@ from coffea import processor
 from coffea.nanoevents import BaseSchema, NanoAODSchema, TreeMakerSchema
 from luigi import BoolParameter, IntParameter, ListParameter, Parameter
 from rich.console import Console
+
 # other modules
 from tasks.base import DatasetTask, HTCondorWorkflow
 from utils.coffea_base import ArrayExporter
@@ -61,9 +62,6 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
 
     def create_branch_map(self):
         # define job number according to number of files of the dataset that you want to process
-        if self.debug:
-            # only one job
-            return list(range(1))
         job_number = self.load_job_dict()[1]
         return list(range(job_number))
 
@@ -78,6 +76,8 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
 
     def store_parts(self):
         parts = (self.analysis_choice, self.processor, self.lepton_selection)
+        if self.debug:
+            parts += ("debug",)
         return super(CoffeaProcessor, self).store_parts() + parts
 
     def load_job_dict(self):
@@ -91,6 +91,9 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
             for i, file in enumerate(sorted(files)):
                 job_number_dict.update({job_number + i: file})
             job_number += len(files)
+        if self.debug:
+            job_number = 1
+            job_number_dict = {0: job_number_dict[0]}
         return data_list, job_number, job_number_dict
 
     @law.decorator.timeit(publish_message=True)
@@ -155,9 +158,9 @@ class CollectCoffeaOutput(CoffeaTask):
             sel: CoffeaProcessor.req(
                 self,
                 lepton_selection=sel,
-                #workflow="local",
+                # workflow="local",
             )
-            for sel in ["Electron", "Muon"]
+            for sel in ["Muon"]  # "Electron",
         }
 
     # def output(self):
@@ -189,7 +192,7 @@ class CollectCoffeaOutput(CoffeaTask):
             for dat in self.datasets_to_process:
                 # different key for each file, we ignore it for now, only interested in values
                 for file, value in np_dict.items():
-                    cat = "N0b" # or loop over self.config_inst.categories.names()
+                    cat = "N0b"  # or loop over self.config_inst.categories.names()
                     if cat in file and dat in file:
                         np_0b = np.load(np_dict[file].path)
                         # np_1ib = np.load(value["N1ib_" + dataset])
@@ -200,72 +203,29 @@ class CollectCoffeaOutput(CoffeaTask):
                         n_jets = np_0b[:, var_names.index("nJets")]
 
                         for ke in signal_regions_0b.keys():
-                            signal_bin_counts[ke] += len(
-                                np_0b[
-                                    eval(signal_regions_0b[ke][0])
-                                    & eval(signal_regions_0b[ke][1])
-                                    & eval(signal_regions_0b[ke][2])
-                                    & eval(signal_regions_0b[ke][3])
-                                ]
-                            )
+                            signal_bin_counts[ke] += len(np_0b[eval(signal_regions_0b[ke][0]) & eval(signal_regions_0b[ke][1]) & eval(signal_regions_0b[ke][2]) & eval(signal_regions_0b[ke][3])])
 
                         # at some point, we have to define the signal regions
-                        LT1_nj5 = np_0b[
-                            (LT > 250) & (LT < 450) & (Dphi > 1) & (HT > 500) & (n_jets == 5)
-                        ]
-                        LT1_nj67 = np_0b[
-                            (LT > 250)
-                            & (LT < 450)
-                            & (Dphi > 1)
-                            & (HT > 500)
-                            & (n_jets > 5)
-                            & (n_jets < 8)
-                        ]
-                        LT1_nj8i = np_0b[
-                            (LT > 250) & (LT < 450) & (Dphi > 1) & (HT > 500) & (n_jets > 7)
-                        ]
+                        LT1_nj5 = np_0b[(LT > 250) & (LT < 450) & (Dphi > 1) & (HT > 500) & (n_jets == 5)]
+                        LT1_nj67 = np_0b[(LT > 250) & (LT < 450) & (Dphi > 1) & (HT > 500) & (n_jets > 5) & (n_jets < 8)]
+                        LT1_nj8i = np_0b[(LT > 250) & (LT < 450) & (Dphi > 1) & (HT > 500) & (n_jets > 7)]
 
-                        LT2_nj5 = np_0b[
-                            (LT > 450) & (LT < 650) & (Dphi > 0.75) & (HT > 500) & (n_jets == 5)
-                        ]
-                        LT2_nj67 = np_0b[
-                            (LT > 450)
-                            & (LT < 650)
-                            & (Dphi > 0.75)
-                            & (HT > 500)
-                            & (n_jets > 5)
-                            & (n_jets < 8)
-                        ]
-                        LT2_nj8i = np_0b[
-                            (LT > 450) & (LT < 650) & (Dphi > 0.75) & (HT > 500) & (n_jets > 7)
-                        ]
+                        LT2_nj5 = np_0b[(LT > 450) & (LT < 650) & (Dphi > 0.75) & (HT > 500) & (n_jets == 5)]
+                        LT2_nj67 = np_0b[(LT > 450) & (LT < 650) & (Dphi > 0.75) & (HT > 500) & (n_jets > 5) & (n_jets < 8)]
+                        LT2_nj8i = np_0b[(LT > 450) & (LT < 650) & (Dphi > 0.75) & (HT > 500) & (n_jets > 7)]
 
                         LT3_nj5 = np_0b[(LT > 650) & (Dphi > 0.75) & (HT > 500) & (n_jets == 5)]
-                        LT3_nj67 = np_0b[
-                            (LT > 650)
-                            & (Dphi > 0.75)
-                            & (HT > 500)
-                            & (n_jets > 5)
-                            & (n_jets < 8)
-                        ]
+                        LT3_nj67 = np_0b[(LT > 650) & (Dphi > 0.75) & (HT > 500) & (n_jets > 5) & (n_jets < 8)]
                         LT3_nj8i = np_0b[(LT > 650) & (Dphi > 0.75) & (HT > 500) & (n_jets > 7)]
 
-                        signal_events += (
-                            len(LT1_nj5)
-                            + len(LT1_nj67)
-                            + len(LT1_nj8i)
-                            + len(LT2_nj5)
-                            + len(LT2_nj67)
-                            + len(LT2_nj8i)
-                            + len(LT3_nj5)
-                            + len(LT3_nj67)
-                            + len(LT3_nj8i)
-                        )
+                        signal_events += len(LT1_nj5) + len(LT1_nj67) + len(LT1_nj8i) + len(LT2_nj5) + len(LT2_nj67) + len(LT2_nj8i) + len(LT3_nj5) + len(LT3_nj67) + len(LT3_nj8i)
 
                         tot_events += len(np_0b)
 
                 count_dict = {
-                    key + "_" + dat: {
+                    key
+                    + "_"
+                    + dat: {
                         "tot_events": tot_events,
                         "signal_events": signal_events,
                     }
@@ -282,4 +242,3 @@ class CollectCoffeaOutput(CoffeaTask):
             vals += signal_bin_counts[key]
 
         print("Sum over signal region:", vals)
-

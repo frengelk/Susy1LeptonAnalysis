@@ -20,16 +20,19 @@ class ArrayPlotting(CoffeaTask):
     formats = luigi.ListParameter(default=["png", "pdf"])
     density = luigi.BoolParameter(default=False)
     divide_by_binwidth = luigi.BoolParameter(default=False)
+    debug = luigi.BoolParameter(default=False)
 
     def requires(self):
-        # return CoffeaProcessor.req(self)
+        if self.debug:
+            return {sel: CoffeaProcessor.req(self, debug=True, workflow="local") for sel in self.channel}
+
         return {
             sel: CoffeaProcessor.req(
                 self,
                 lepton_selection=sel,
                 # workflow="local",
             )
-            for sel in ["Electron", "Muon"]  # , "Electron"]
+            for sel in self.channel
         }
 
     def output(self):
@@ -48,7 +51,10 @@ class ArrayPlotting(CoffeaTask):
         }
 
     def store_parts(self):
-        return super(ArrayPlotting, self).store_parts() + (self.analysis_choice,)
+        parts = tuple()
+        if self.debug:
+            parts += ("debug",)
+        return super(ArrayPlotting, self).store_parts() + (self.analysis_choice,) + parts
 
     def construct_axis(self, binning, isRegular=True):
         if isRegular:
@@ -77,12 +83,13 @@ class ArrayPlotting(CoffeaTask):
                 for cat in self.config_inst.categories.names():
                     sumOfHists = []
                     fig, ax = plt.subplots(figsize=(12, 10))
-                    hep.style.use("CMS")
-                    hep.cms.label(
-                        label="Work in progress",
-                        loc=0,
-                        ax=ax,
-                    )
+                    # hep.style.use("CMS")
+                    # hep.cms.label(
+                    # label="Private Work",
+                    # loc=0,
+                    # ax=ax,
+                    # )
+                    hep.cms.text("Private work (CMS simulation)")
                     for dat in self.datasets_to_process:
                         # accessing the input and unpacking the condor submission structure
                         boost_hist = bh.Histogram(self.construct_axis(var.binning, True))
