@@ -161,9 +161,9 @@ class HTCondorWorkflow(law.htcondor.HTCondorWorkflow):
         config.custom_content.append(("universe", "vanilla"))
         # require more RAM on CPU
         # config.custom_content.append(("request_cpus", "1"))
-        config.custom_content.append(("request_memory", "500")) # 20000
+        config.custom_content.append(("request_memory", "500"))  # 20000
         # config.custom_content.append(("+RequestRuntime = 86400"))
-        config.custom_content.append(("+RequestRuntime = 1*60*60")) # 10
+        config.custom_content.append(("+RequestRuntime = 1*60*60"))  # 10
         # config.custom_content.append(("Request_GPUs", "0"))
         # config.custom_content.append(("Request_GpuMemory", "0"))
 

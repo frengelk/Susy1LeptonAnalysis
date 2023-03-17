@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import os
 
 
@@ -11,4 +12,3 @@ for root, dirs, files in os.walk("."):
     for filename in files:
         if filename.endswith(".py"):
             print("beautifying:", root + "/" + filename)
-            beautify(root + "/" + filename)

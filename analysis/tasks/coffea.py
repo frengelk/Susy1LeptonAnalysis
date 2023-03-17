@@ -160,7 +160,7 @@ class CollectCoffeaOutput(CoffeaTask):
                 lepton_selection=sel,
                 # workflow="local",
             )
-            for sel in ["Muon"]  # "Electron",
+            for sel in ["Muon", "Electron"]
         }
 
     # def output(self):

@@ -183,6 +183,9 @@ class BaseSelection:
         goodJets = (events.JetPt > 30) & (abs(events.JetEta) < 2.4)
         # Baseline PreSelection
         baselineSelection = (sortedJets[:, 1] > 80) & (events.LT > 250) & (events.HT > 500) & (ak.num(goodJets) >= 3) & ~(events.IsoTrackVeto)
+        # require correct lepton IDs, applay cut depending on tree name
+        ElectronIdCut = ak.fill_none(ak.firsts(events.ElectronTightId[:, 0:1]), False)
+        MuonIdCut = ak.fill_none(ak.firsts(events.MuonMediumId[:, 0:1]), False)
         # prevent double counting in data
         doubleCounting_XOR = (not events.metadata["isData"]) | ((events.metadata["PD"] == "isSingleElectron") & events.HLT_EleOr) | ((events.metadata["PD"] == "isSingleMuon") & events.HLT_MuonOr & ~events.HLT_EleOr) | ((events.metadata["PD"] == "isMet") & events.HLT_MetOr & ~events.HLT_MuonOr & ~events.HLT_EleOr)
         # HLT Combination
@@ -192,17 +195,19 @@ class BaseSelection:
         self.add_to_selection(selection, "doubleCounting_XOR", doubleCounting_XOR)
         self.add_to_selection((selection), "HLT_Or", HLT_Or)
         self.add_to_selection((selection), "baselineSelection", ak.fill_none(baselineSelection, False))
+        self.add_to_selection((selection), "ElectronIdCut", ElectronIdCut)
+        self.add_to_selection((selection), "MuonIdCut", MuonIdCut)
         self.add_to_selection((selection), "zerob", locals()["zerob"])
         self.add_to_selection((selection), "multib", locals()["multib"])
         # apply some weights,  MC/data check beforehand
         weights = processor.Weights(size, storeIndividual=self.individal_weights)
         # if not process_obj.is_data:
         #    weights.add("xsecs", process_obj.xsecs[13.0].nominal)
-        common = ["baselineSelection", "HLT_Or", "doubleCounting_XOR"]
+        common = ["baselineSelection", "HLT_Or", "doubleCounting_XOR"]#, "{}IdCut".format(events.metadata["treename"])]
         for cut in common:
             print(cut, ak.sum(eval(cut)))
-
         categories = dict(N0b=common + ["zerob"], N1ib=common + ["multib"])
+        #categories = dict(N0b=["zerob"], N1ib=["multib"])
         return locals()
 
 
