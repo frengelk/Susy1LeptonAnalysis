@@ -116,6 +116,10 @@ class BaseSelection:
         # name with underscores lead to problems
         zerob = nbJets == 0
         multib = nbJets >= 1
+        # variables to check cuts
+        correctedMetPt = events.CorrectedMetPt
+        isoTrackPt = ak.fill_none(ak.firsts(events.IsoTrackPt), value=0)
+        isoTrackMt2 = ak.fill_none(ak.firsts(events.IsoTrackMt2), value=0)
         return locals()
 
     def get_gen_variable(self, events):
@@ -181,11 +185,13 @@ class BaseSelection:
         locals().update(self.get_muon_variables(events))
         sortedJets = ak.mask(events.JetPt, (events.nJet >= 3))
         goodJets = (events.JetPt > 30) & (abs(events.JetEta) < 2.4)
+        # iso_track = ((events.IsoTrackPt > 10) & (((events.IsoTrackMt2 < 60) & events.IsoTrackIsHadronicDecay) | ((events.IsoTrackMt2 < 80) & ~(events.IsoTrackIsHadronicDecay))))
+        # iso_track_cut = ak.sum(iso_track, axis=-1) == 0
         # Baseline PreSelection
-        baselineSelection = (sortedJets[:, 1] > 80) & (events.LT > 250) & (events.HT > 500) & (ak.num(goodJets) >= 3) & ~(events.IsoTrackVeto)
+        baselineSelection = (sortedJets[:, 1] > 80) & (events.LT > 250) & (events.HT > 500) & (ak.num(goodJets) >= 3) & (~events.IsoTrackVeto)
         # require correct lepton IDs, applay cut depending on tree name
-        ElectronIdCut = ak.fill_none(ak.firsts(events.ElectronTightId[:, 0:1]), False)
-        MuonIdCut = ak.fill_none(ak.firsts(events.MuonMediumId[:, 0:1]), False)
+        # ElectronIdCut = ak.fill_none(ak.firsts(events.ElectronTightId[:, 0:1]), False)
+        # MuonIdCut = ak.fill_none(ak.firsts(events.MuonMediumId[:, 0:1]), False)
         # prevent double counting in data
         doubleCounting_XOR = (not events.metadata["isData"]) | ((events.metadata["PD"] == "isSingleElectron") & events.HLT_EleOr) | ((events.metadata["PD"] == "isSingleMuon") & events.HLT_MuonOr & ~events.HLT_EleOr) | ((events.metadata["PD"] == "isMet") & events.HLT_MetOr & ~events.HLT_MuonOr & ~events.HLT_EleOr)
         # HLT Combination
@@ -195,19 +201,19 @@ class BaseSelection:
         self.add_to_selection(selection, "doubleCounting_XOR", doubleCounting_XOR)
         self.add_to_selection((selection), "HLT_Or", HLT_Or)
         self.add_to_selection((selection), "baselineSelection", ak.fill_none(baselineSelection, False))
-        self.add_to_selection((selection), "ElectronIdCut", ElectronIdCut)
-        self.add_to_selection((selection), "MuonIdCut", MuonIdCut)
+        # self.add_to_selection((selection), "ElectronIdCut", ElectronIdCut)
+        # self.add_to_selection((selection), "MuonIdCut", MuonIdCut)
         self.add_to_selection((selection), "zerob", locals()["zerob"])
         self.add_to_selection((selection), "multib", locals()["multib"])
         # apply some weights,  MC/data check beforehand
         weights = processor.Weights(size, storeIndividual=self.individal_weights)
         # if not process_obj.is_data:
         #    weights.add("xsecs", process_obj.xsecs[13.0].nominal)
-        common = ["baselineSelection", "HLT_Or", "doubleCounting_XOR"]#, "{}IdCut".format(events.metadata["treename"])]
-        for cut in common:
-            print(cut, ak.sum(eval(cut)))
-        categories = dict(N0b=common + ["zerob"], N1ib=common + ["multib"])
-        #categories = dict(N0b=["zerob"], N1ib=["multib"])
+        common = ["baselineSelection", "doubleCounting_XOR", "HLT_Or"]  # , "{}IdCut".format(events.metadata["treename"])]
+        # for cut in common:
+        # print(cut, ak.sum(eval(cut)))
+        #categories = dict(N0b=common + ["zerob"], N1ib=common + ["multib"])  # common +
+        categories = {cat.name: cat.get_aux("cuts") for cat in self.config.categories}
         return locals()
 
 
@@ -272,6 +278,96 @@ class ArrayExporter(BaseProcessor, BaseSelection):
         if self.dtype:
             arrays = {key: array.astype(self.dtype) for key, array in arrays.items()}
         output["arrays"] = dict_accumulator({category + "_" + selected_output["dataset"]: dict_accumulator({key: ArrayAccumulator(array[cut, ...]) for key, array in arrays.items()}) for category, cut in categories.items()})
+        return output
+
+    def postprocess(self, accumulator):
+        return accumulator
+
+
+class Histogramer(BaseProcessor, BaseSelection):
+    def variables(self):
+        return self.config.variables
+
+    def __init__(self, task):
+        super().__init__(task)
+
+        self._accumulator["histograms"] = dict_accumulator(
+            {
+                var.name: hist.Hist(
+                    "Counts",
+                    self.dataset_axis,
+                    self.category_axis,
+                    # self.syst_axis,
+                    hist.Bin(
+                        var.name,
+                        var.x_title,
+                        var.binning[0],
+                        var.binning[1],
+                        var.binning[2],
+                    ),
+                )
+                for var in self.variables()
+            }
+        )
+
+    @property
+    def accumulator(self):
+        return self._accumulator
+
+    def categories(self, select_output):
+        # For reference the categories here are e.g. 0b or multi b
+        # Creates dict where all selection are applied -> {category: combined selection per category}
+        selection = select_output.get("selection")
+        categories = select_output.get("categories")
+        return selection, categories
+        # return {cat: selection.all(*cuts) for cat, cuts in categories.items()} if selection and categories else {"all": slice(None)}
+
+    def process(self, events):
+        output = self.accumulator.identity()
+        selected_output = self.base_select(events)
+        weights = selected_output["weights"]
+        for cat in selected_output["categories"].keys():
+            for var_name in self.variables().names():
+                weight = weights.weight()
+                # value = out[var_name]
+                # generate blank mask for variable values
+                mask = np.ones(len(selected_output[var_name]), dtype=bool)
+                # combine cuts together: problem, some have None values
+                for cut in selected_output["categories"][cat][:1]:  # FIXME
+                    cut_mask = ak.to_numpy(selected_output[cut])
+                    if type(cut_mask) is np.ma.core.MaskedArray:
+                        cut_mask = cut_mask.mask
+                    mask = np.logical_and(mask, cut_mask)  # .mask
+
+                values = {}
+                values["dataset"] = selected_output["dataset"]
+                values["category"] = cat
+                # we just want to hist every entry so flatten works since we don't wont to deal with nested array structures
+                values[var_name] = ak.flatten(selected_output[var_name][mask], axis=None)
+                # weight = weights.weight()[cut]
+                values["weight"] = weight[mask]
+                output["histograms"][var_name].fill(**values)
+
+            # filling cutflow hist
+            cutflow_cuts = set()
+            output["cutflow"].fill(
+                dataset=selected_output["dataset"],
+                category=cat,
+                cutflow=np.array([0]),
+                weight=np.array([weights.weight().sum()]),
+            )
+            selection, categories = self.categories(selected_output)
+            for i, cutflow_cut in enumerate(categories[cat]):
+                cutflow_cuts.add(cutflow_cut)
+                cutflow_cut = selection.all(*cutflow_cuts)
+                output["cutflow"].fill(
+                    dataset=selected_output["dataset"],
+                    category=cat,
+                    cutflow=np.array([i + 1]),
+                    weight=np.array([weights.weight()[cutflow_cut].sum()]),
+                )
+
+        # output["n_events"] = len(MetPt)
         return output
 
     def postprocess(self, accumulator):
