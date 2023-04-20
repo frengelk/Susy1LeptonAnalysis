@@ -9,10 +9,12 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 import boost_histogram as bh
 import mplhep as hep
+import coffea
 from tqdm.auto import tqdm
 
 # other modules
 from tasks.coffea import CoffeaProcessor, CoffeaTask
+from tasks.grouping import GroupCoffea
 
 
 class ArrayPlotting(CoffeaTask):
@@ -130,3 +132,63 @@ class ArrayPlotting(CoffeaTask):
                         plt.savefig(self.output()[outputKey]["log"].path, bbox_inches="tight")
                     plt.gcf().clear()
                     plt.close
+
+
+class CutflowPlotting(CoffeaTask):
+
+    """
+    Plotting cutflow produced by coffea
+    Utility for doing log scale, only debug plotting
+    """
+
+    log_scale = luigi.BoolParameter()
+    def requires(self):
+        return GroupCoffea.req(self)
+
+    def output(self):
+        path = ""
+        if self.log_scale:
+            path += "_log"
+        out = {dat: self.local_target(dat + "_cutflow{}.pdf".format(path))
+        for dat in self.datasets_to_process}
+        return out
+
+    def run(self):
+        cutflow=self.input().load()
+        categories = [c.name for c in cutflow.axis("category").identifiers()]
+        #processes = [p.name for p in cutflow.axis("dataset").identifiers() if not "data" in p.name]
+        for dat in self.datasets_to_process:
+            fig, ax = plt.subplots(figsize=(12, 10))
+            hep.cms.text("Private work (CMS simulation)")
+            for i, category in enumerate(categories):
+                ax = coffea.hist.plot1d(
+                    cutflow[[dat], category, :].project("dataset", "cutflow"),
+                    overlay="dataset",
+                    #legend_opts={"labels":category}
+                )
+            n_cuts =len(self.config_inst.get_category(category).get_aux("cuts"))
+            ax.set_xticks(np.arange(0.5, n_cuts+1.5, 1))
+            ax.set_xticklabels(["total"] + self.config_inst.get_category(category).get_aux("cuts"), rotation=80, fontsize=12)
+            if self.log_scale:
+                ax.set_yscale("log")
+                ax.set_ylim(1e-8, 1e8) # potential zero bins
+            handles, labels = ax.get_legend_handles_labels()
+            #from IPython import embed; embed()
+            for i in range(len(labels)):
+                labels[i] = labels[i] + " " + categories[i]
+            ax.legend(handles, labels, title="Category: ", ncol=1, loc="best")
+            self.output()[dat].parent.touch()
+            plt.savefig(self.output()[dat].path, bbox_inches="tight")
+            ax.figure.clf()
+
+
+        """
+        N-1 Plots
+        allCuts = {"twoElectron", "noMuon", "leadPt20"}
+        for cut in allCuts:
+            nev = selection.all(*(allCuts - {cut})).sum()
+            print(f"Events passing all cuts, ignoring {cut}: {nev}")
+
+        nev = selection.all(*allCuts).sum()
+        print(f"Events passing all cuts: {nev}")
+        """

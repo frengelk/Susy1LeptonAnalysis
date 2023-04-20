@@ -61,3 +61,8 @@ def setup_variables(cfg):
     cfg.add_variable(name="jetPhi_2", expression="jetPhi_1", binning=(nBinsPhi, minPhi, maxPhi), x_title=r"$\Phi_{Jet}^{1}$")
     #########################
     cfg.add_variable(name="dPhi", expression="dPhi", binning=(nBinsPhi, 2 * minPhi, 2 * maxPhi), x_title=r"$ \Delta \Phi $")
+
+    # variables to check cuts
+    cfg.add_variable(name="correctedMetPt", expression="correctedMetPt", binning=(nBinsPt, minPt, maxPt), unit="GeV", x_title=r"Corrected $p_{T}^{miss}$")
+    cfg.add_variable(name="isoTrackPt", expression="isoTrackPt", binning=(nBinsPt, minPt, maxPt), unit="GeV", x_title=r"Corrected $p_{T}^{miss}$")
+    cfg.add_variable(name="isoTrackMt2", expression="isoTrackMt2", binning=(nBinsPt, minPt, maxPt), unit="GeV", x_title=r"Corrected $p_{T}^{miss}$")
