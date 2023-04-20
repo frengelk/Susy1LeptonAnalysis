@@ -44,7 +44,6 @@ class CoffeaTask(DatasetTask):
 
 
 class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
-
     """
     this is a HTCOndor workflow, normally it will get submitted with configurations defined
     in the htcondor_bottstrap.sh or the basetasks.HTCondorWorkflow
@@ -67,12 +66,24 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
 
     def output(self):
         files, job_number, job_number_dict = self.load_job_dict()
-        return {
+        out = {
             cat + "_" + dat.split("/")[0] + "_" + str(job): self.local_target(cat + "_" + dat.split("/")[0] + "_" + str(job) + ".npy")
             for cat in self.config_inst.categories.names()
             for job, dat in job_number_dict.items()
             # for i in range(job_number)  + "_" + str(job_number)
         }
+        if self.processor == "Histogramer":
+            #out = self.local_target("hists.coffea")
+            out = {
+                dat.split("/")[0] + "_" + str(job):
+                {"hists": self.local_target(dat.split("/")[0] + "_" + str(job) + "hists.coffea"),
+                "cutflow": self.local_target(dat.split("/")[0] + "_" + str(job) + "cutflow.coffea")
+                }
+                #for cat in self.config_inst.categories.names()
+                for job, dat in job_number_dict.items()
+                # for i in range(job_number)  + "_" + str(job_number)
+                }
+        return out
 
     def store_parts(self):
         parts = (self.analysis_choice, self.processor, self.lepton_selection)
@@ -103,6 +114,8 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
         # declare processor
         if self.processor == "ArrayExporter":
             processor_inst = ArrayExporter(self, Lepton=self.lepton_selection)
+        if self.processor == "Histogramer":
+            processor_inst = Histogramer(self)
         # building together the respective strings to use for the coffea call
         files, job_number, job_number_dict = self.load_job_dict()
         treename = self.lepton_selection
@@ -151,6 +164,12 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
             for cat in out["arrays"]:
                 self.output()[cat + "_" + str(self.branch)].dump(out["arrays"][cat]["hl"].value)
 
+        if self.processor == "Histogramer":
+            #self.output().dump(out["histograms"])
+            self.output().popitem()[1]["hists"].parent.touch()
+            self.output()[dataset + "_" + str(self.branch)]["hists"].dump(out["histograms"])
+            self.output()[dataset + "_" + str(self.branch)]["cutflow"].dump(out["cutflow"])
+
 
 class CollectCoffeaOutput(CoffeaTask):
     def requires(self):
@@ -160,7 +179,7 @@ class CollectCoffeaOutput(CoffeaTask):
                 lepton_selection=sel,
                 # workflow="local",
             )
-            for sel in ["Muon", "Electron"]
+            for sel in ["Electron", "Muon"]
         }
 
     # def output(self):
@@ -187,9 +206,9 @@ class CollectCoffeaOutput(CoffeaTask):
         signal_bin_counts = {k: 0 for k in signal_regions_0b.keys()}
         # iterate over the indices for each file
         for key, value in in_dict.items():
-            tot_events, signal_events = 0, 0
             np_dict = value["collection"].targets[0]
             for dat in self.datasets_to_process:
+                tot_events, signal_events = 0, 0
                 # different key for each file, we ignore it for now, only interested in values
                 for file, value in np_dict.items():
                     cat = "N0b"  # or loop over self.config_inst.categories.names()
@@ -207,21 +226,26 @@ class CollectCoffeaOutput(CoffeaTask):
 
                         # at some point, we have to define the signal regions
                         LT1_nj5 = np_0b[(LT > 250) & (LT < 450) & (Dphi > 1) & (HT > 500) & (n_jets == 5)]
-                        LT1_nj67 = np_0b[(LT > 250) & (LT < 450) & (Dphi > 1) & (HT > 500) & (n_jets > 5) & (n_jets < 8)]
-                        LT1_nj8i = np_0b[(LT > 250) & (LT < 450) & (Dphi > 1) & (HT > 500) & (n_jets > 7)]
+                        LT1_nj67 = np_0b[(LT > 250) & (LT < 450) & (Dphi > 1) & (HT > 500) & (n_jets >= 6) & (n_jets <= 7)]
+                        LT1_nj8i = np_0b[(LT > 250) & (LT < 450) & (Dphi > 1) & (HT > 500) & (n_jets >= 8)]
 
                         LT2_nj5 = np_0b[(LT > 450) & (LT < 650) & (Dphi > 0.75) & (HT > 500) & (n_jets == 5)]
-                        LT2_nj67 = np_0b[(LT > 450) & (LT < 650) & (Dphi > 0.75) & (HT > 500) & (n_jets > 5) & (n_jets < 8)]
-                        LT2_nj8i = np_0b[(LT > 450) & (LT < 650) & (Dphi > 0.75) & (HT > 500) & (n_jets > 7)]
+                        LT2_nj67 = np_0b[(LT > 450) & (LT < 650) & (Dphi > 0.75) & (HT > 500) & (n_jets >= 6) & (n_jets <= 7)]
+                        LT2_nj8i = np_0b[(LT > 450) & (LT < 650) & (Dphi > 0.75) & (HT > 500) & (n_jets >= 8)]
 
-                        LT3_nj5 = np_0b[(LT > 650) & (Dphi > 0.75) & (HT > 500) & (n_jets == 5)]
-                        LT3_nj67 = np_0b[(LT > 650) & (Dphi > 0.75) & (HT > 500) & (n_jets > 5) & (n_jets < 8)]
-                        LT3_nj8i = np_0b[(LT > 650) & (Dphi > 0.75) & (HT > 500) & (n_jets > 7)]
+                        LT3_nj5 = np_0b[(LT > 650) & (Dphi > 0.5) & (HT > 500) & (n_jets == 5)]
+                        LT3_nj67 = np_0b[(LT > 650) & (Dphi > 0.5) & (HT > 500) & (n_jets >= 6) & (n_jets <= 7)]
+                        LT3_nj8i = np_0b[(LT > 650) & (Dphi > 0.5) & (HT > 500) & (n_jets >= 8)]
 
                         signal_events += len(LT1_nj5) + len(LT1_nj67) + len(LT1_nj8i) + len(LT2_nj5) + len(LT2_nj67) + len(LT2_nj8i) + len(LT3_nj5) + len(LT3_nj67) + len(LT3_nj8i)
 
                         tot_events += len(np_0b)
 
+                        # print(signal_events)
+                        itot = 0
+                        for it in signal_bin_counts.values():
+                            itot += it
+                        # print(itot, "\n")
                 count_dict = {
                     key
                     + "_"
