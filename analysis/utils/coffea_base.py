@@ -195,7 +195,7 @@ class BaseSelection:
         # prevent double counting in data
         doubleCounting_XOR = (not events.metadata["isData"]) | ((events.metadata["PD"] == "isSingleElectron") & events.HLT_EleOr) | ((events.metadata["PD"] == "isSingleMuon") & events.HLT_MuonOr & ~events.HLT_EleOr) | ((events.metadata["PD"] == "isMet") & events.HLT_MetOr & ~events.HLT_MuonOr & ~events.HLT_EleOr)
         # HLT Combination
-        HLT_Or = events.HLT_MuonOr | events.HLT_MetOr | events.HLT_EleOr
+        HLT_Or = (not events.metadata["isData"]) | (events.HLT_MuonOr | events.HLT_MetOr | events.HLT_EleOr)
         # define selection
         selection = processor.PackedSelection()
         self.add_to_selection(selection, "doubleCounting_XOR", doubleCounting_XOR)
@@ -210,9 +210,12 @@ class BaseSelection:
         # if not process_obj.is_data:
         #    weights.add("xsecs", process_obj.xsecs[13.0].nominal)
         common = ["baselineSelection", "doubleCounting_XOR", "HLT_Or"]  # , "{}IdCut".format(events.metadata["treename"])]
+        # data cut for control plots
+        data_cut = (events.LT > 250) & (events.HT > 500) & (ak.num(goodJets) >= 3)
+        self.add_to_selection(selection, "data_cut", data_cut)
         # for cut in common:
         # print(cut, ak.sum(eval(cut)))
-        #categories = dict(N0b=common + ["zerob"], N1ib=common + ["multib"])  # common +
+        # categories = dict(N0b=common + ["zerob"], N1ib=common + ["multib"])  # common +
         categories = {cat.name: cat.get_aux("cuts") for cat in self.config.categories}
         return locals()
 

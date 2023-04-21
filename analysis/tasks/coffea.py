@@ -73,16 +73,13 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
             # for i in range(job_number)  + "_" + str(job_number)
         }
         if self.processor == "Histogramer":
-            #out = self.local_target("hists.coffea")
+            # out = self.local_target("hists.coffea")
             out = {
-                dat.split("/")[0] + "_" + str(job):
-                {"hists": self.local_target(dat.split("/")[0] + "_" + str(job) + "hists.coffea"),
-                "cutflow": self.local_target(dat.split("/")[0] + "_" + str(job) + "cutflow.coffea")
-                }
-                #for cat in self.config_inst.categories.names()
+                dat.split("/")[0] + "_" + str(job): {"hists": self.local_target(dat.split("/")[0] + "_" + str(job) + "hists.coffea"), "cutflow": self.local_target(dat.split("/")[0] + "_" + str(job) + "cutflow.coffea")}
+                # for cat in self.config_inst.categories.names()
                 for job, dat in job_number_dict.items()
                 # for i in range(job_number)  + "_" + str(job_number)
-                }
+            }
         return out
 
     def store_parts(self):
@@ -165,7 +162,7 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
                 self.output()[cat + "_" + str(self.branch)].dump(out["arrays"][cat]["hl"].value)
 
         if self.processor == "Histogramer":
-            #self.output().dump(out["histograms"])
+            # self.output().dump(out["histograms"])
             self.output().popitem()[1]["hists"].parent.touch()
             self.output()[dataset + "_" + str(self.branch)]["hists"].dump(out["histograms"])
             self.output()[dataset + "_" + str(self.branch)]["cutflow"].dump(out["cutflow"])

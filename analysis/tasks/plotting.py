@@ -14,7 +14,7 @@ from tqdm.auto import tqdm
 
 # other modules
 from tasks.coffea import CoffeaProcessor, CoffeaTask
-from tasks.grouping import GroupCoffea
+from tasks.grouping import GroupCoffea, MergeArrays
 
 
 class ArrayPlotting(CoffeaTask):
@@ -23,10 +23,14 @@ class ArrayPlotting(CoffeaTask):
     density = luigi.BoolParameter(default=False)
     divide_by_binwidth = luigi.BoolParameter(default=False)
     debug = luigi.BoolParameter(default=False)
+    merged = luigi.BoolParameter(default=False)
 
     def requires(self):
         if self.debug:
             return {sel: CoffeaProcessor.req(self, debug=True, workflow="local") for sel in self.channel}
+
+        if self.merged:
+            return {"merged": MergeArrays.req(self)}
 
         return {
             sel: CoffeaProcessor.req(
@@ -38,6 +42,18 @@ class ArrayPlotting(CoffeaTask):
         }
 
     def output(self):
+        if self.merged:
+            return {
+                var
+                + cat
+                + ending: {
+                    "nominal": self.local_target(cat + "/" + "density/" * self.density + var + "." + ending),
+                    "log": self.local_target(cat + "/" + "density/" * self.density + "/log/" + var + "." + ending),
+                }
+                for var in self.config_inst.variables.names()
+                for cat in self.config_inst.categories.names()
+                for ending in self.formats
+            }
         return {
             var
             + cat
@@ -56,6 +72,8 @@ class ArrayPlotting(CoffeaTask):
         parts = tuple()
         if self.debug:
             parts += ("debug",)
+        if self.merged:
+            parts += ("merged",)
         return super(ArrayPlotting, self).store_parts() + (self.analysis_choice,) + parts
 
     def construct_axis(self, binning, isRegular=True):
@@ -82,6 +100,8 @@ class ArrayPlotting(CoffeaTask):
             # iterating over lepton keys
             for lep in self.input().keys():
                 np_dict = self.input()[lep]["collection"].targets[0]
+                if self.merged:
+                    np_dict = self.input()[lep]
                 for cat in self.config_inst.categories.names():
                     sumOfHists = []
                     fig, ax = plt.subplots(figsize=(12, 10))
@@ -108,8 +128,9 @@ class ArrayPlotting(CoffeaTask):
                     # sorting the labels/handels of the plt hist by descending magnitude of integral
                     order = np.argsort((-1) * np.array(sumOfHists))
                     handles, labels = plt.gca().get_legend_handles_labels()
-                    handles = [h for _, h in sorted(zip(sumOfHists, handles))]
-                    labels = [l for _, l in sorted(zip(sumOfHists, labels))]
+                    if not self.merged:
+                        handles = [h for _, h in sorted(zip(sumOfHists, handles))]
+                        labels = [l for _, l in sorted(zip(sumOfHists, labels))]
                     ax.legend(
                         handles,
                         labels,
@@ -122,6 +143,8 @@ class ArrayPlotting(CoffeaTask):
                     ax.set_ylabel(var.get_full_y_title())
                     for ending in self.formats:
                         outputKey = var.name + cat + lep + ending
+                        if self.merged:
+                            outputKey = var.name + cat + ending
                         self.output()[outputKey]["nominal"].parent.touch()
                         self.output()[outputKey]["log"].parent.touch()
 
@@ -131,7 +154,7 @@ class ArrayPlotting(CoffeaTask):
                         ax.set_yscale("log")
                         plt.savefig(self.output()[outputKey]["log"].path, bbox_inches="tight")
                     plt.gcf().clear()
-                    plt.close
+                    plt.close(fig)
 
 
 class CutflowPlotting(CoffeaTask):
@@ -142,6 +165,7 @@ class CutflowPlotting(CoffeaTask):
     """
 
     log_scale = luigi.BoolParameter()
+
     def requires(self):
         return GroupCoffea.req(self)
 
@@ -149,14 +173,13 @@ class CutflowPlotting(CoffeaTask):
         path = ""
         if self.log_scale:
             path += "_log"
-        out = {dat: self.local_target(dat + "_cutflow{}.pdf".format(path))
-        for dat in self.datasets_to_process}
+        out = {dat: self.local_target(dat + "_cutflow{}.pdf".format(path)) for dat in self.datasets_to_process}
         return out
 
     def run(self):
-        cutflow=self.input().load()
+        cutflow = self.input().load()
         categories = [c.name for c in cutflow.axis("category").identifiers()]
-        #processes = [p.name for p in cutflow.axis("dataset").identifiers() if not "data" in p.name]
+        # processes = [p.name for p in cutflow.axis("dataset").identifiers() if not "data" in p.name]
         for dat in self.datasets_to_process:
             fig, ax = plt.subplots(figsize=(12, 10))
             hep.cms.text("Private work (CMS simulation)")
@@ -164,23 +187,22 @@ class CutflowPlotting(CoffeaTask):
                 ax = coffea.hist.plot1d(
                     cutflow[[dat], category, :].project("dataset", "cutflow"),
                     overlay="dataset",
-                    #legend_opts={"labels":category}
+                    # legend_opts={"labels":category}
                 )
-            n_cuts =len(self.config_inst.get_category(category).get_aux("cuts"))
-            ax.set_xticks(np.arange(0.5, n_cuts+1.5, 1))
+            n_cuts = len(self.config_inst.get_category(category).get_aux("cuts"))
+            ax.set_xticks(np.arange(0.5, n_cuts + 1.5, 1))
             ax.set_xticklabels(["total"] + self.config_inst.get_category(category).get_aux("cuts"), rotation=80, fontsize=12)
             if self.log_scale:
                 ax.set_yscale("log")
-                ax.set_ylim(1e-8, 1e8) # potential zero bins
+                ax.set_ylim(1e-8, 1e8)  # potential zero bins
             handles, labels = ax.get_legend_handles_labels()
-            #from IPython import embed; embed()
+            # from IPython import embed; embed()
             for i in range(len(labels)):
                 labels[i] = labels[i] + " " + categories[i]
             ax.legend(handles, labels, title="Category: ", ncol=1, loc="best")
             self.output()[dat].parent.touch()
             plt.savefig(self.output()[dat].path, bbox_inches="tight")
             ax.figure.clf()
-
 
         """
         N-1 Plots
