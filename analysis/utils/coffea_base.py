@@ -43,7 +43,8 @@ class BaseProcessor(processor.ProcessorABC):
             n_events=defaultdict_accumulator(int),
             sum_gen_weights=defaultdict_accumulator(float),
             object_cutflow=defaultdict_accumulator(int),
-            cutflow=hist.Hist("Counts", self.dataset_axis, self.category_axis, self.category_axis, hist.Bin("cutflow", "Cut index", 10, 0, 10)),
+            cutflow=hist.Hist("Counts", self.dataset_axis, self.category_axis, self.category_axis, hist.Bin("cutflow", "Cut", 12, 0, 12)),
+            n_minus1=hist.Hist("Counts", self.dataset_axis, self.category_axis, self.category_axis, hist.Bin("cutflow", "Cut", 12, 0, 12)),
         )
 
     @property
@@ -187,8 +188,49 @@ class BaseSelection:
         goodJets = (events.JetPt > 30) & (abs(events.JetEta) < 2.4)
         # iso_track = ((events.IsoTrackPt > 10) & (((events.IsoTrackMt2 < 60) & events.IsoTrackIsHadronicDecay) | ((events.IsoTrackMt2 < 80) & ~(events.IsoTrackIsHadronicDecay))))
         # iso_track_cut = ak.sum(iso_track, axis=-1) == 0
-        # Baseline PreSelection
-        baselineSelection = (sortedJets[:, 1] > 80) & (events.LT > 250) & (events.HT > 500) & (ak.num(goodJets) >= 3) & (~events.IsoTrackVeto)
+
+        # define selection
+        selection = processor.PackedSelection()
+        # Baseline PreSelection, split up now
+        # baselineSelection = (sortedJets[:, 1] > 80) & (events.LT > 250) & (events.HT > 500) & (ak.num(goodJets) >= 3) & (~events.IsoTrackVeto)
+        # subleading_jet = sortedJets[:, 1] > 80
+        # from IPython import embed; embed()
+        subleading_jet = ak.fill_none(ak.firsts(events.JetPt[:, 1:2] > 80), False)
+
+        """
+        checking for subleading jet
+        ak.sum(events.JetPt[:,1:2][events.nJet>=3])
+        Out[24]: 1240391.5
+
+        ak.sum(sortedJets[:,1][events.nJet>=3])
+        Out[25]: 1240391.5
+        """
+
+        # doing lep selection
+        mu_pt = ak.fill_none(ak.firsts(events.MuonPt[:, 0:1]), 0)
+        e_pt = ak.fill_none(ak.firsts(events.ElectronPt[:, 0:1]), 0)
+        mu_eta = ak.fill_none(ak.firsts(events.MuonEta[:, 0:1]), 0)
+        e_eta = ak.fill_none(ak.firsts(events.ElectronEta[:, 0:1]), 0)
+        mu_id = ak.fill_none(ak.firsts(events.MuonMediumId[:, 0:1]), False)
+        e_id = ak.fill_none(ak.firsts(events.ElectronTightId[:, 0:1]), False)
+
+        hard_lep = ((mu_pt > 25) | (e_pt > 25)) & ((abs(mu_eta) < 2.4) | (abs(e_eta) < 2.4))
+        selected = (mu_id | e_id) & ((events.nGoodMuon == 1) | (events.nGoodElectron == 1))
+        no_veto_lepton = (events.nVetoMuon - events.nGoodMuon == 0) & (events.nVetoElectron - events.nGoodElectron == 0)
+        self.add_to_selection(selection, "hard_lep", hard_lep)
+        self.add_to_selection(selection, "selected", selected)
+        self.add_to_selection(selection, "no_veto_lepton", no_veto_lepton)
+
+        LT_cut = events.LT > 250
+        HT_cut = events.HT > 500
+        njet_cut = ak.num(goodJets) >= 3
+        iso_cut = ~events.IsoTrackVeto
+        self.add_to_selection(selection, "subleading_jet", subleading_jet)
+        self.add_to_selection(selection, "LT_cut", LT_cut)
+        self.add_to_selection(selection, "HT_cut", HT_cut)
+        self.add_to_selection(selection, "njet_cut", njet_cut)
+        self.add_to_selection(selection, "iso_cut", iso_cut)
+
         # require correct lepton IDs, applay cut depending on tree name
         # ElectronIdCut = ak.fill_none(ak.firsts(events.ElectronTightId[:, 0:1]), False)
         # MuonIdCut = ak.fill_none(ak.firsts(events.MuonMediumId[:, 0:1]), False)
@@ -196,11 +238,12 @@ class BaseSelection:
         doubleCounting_XOR = (not events.metadata["isData"]) | ((events.metadata["PD"] == "isSingleElectron") & events.HLT_EleOr) | ((events.metadata["PD"] == "isSingleMuon") & events.HLT_MuonOr & ~events.HLT_EleOr) | ((events.metadata["PD"] == "isMet") & events.HLT_MetOr & ~events.HLT_MuonOr & ~events.HLT_EleOr)
         # HLT Combination
         HLT_Or = (not events.metadata["isData"]) | (events.HLT_MuonOr | events.HLT_MetOr | events.HLT_EleOr)
-        # define selection
-        selection = processor.PackedSelection()
+        # ghost muon filter
+        ghost_muon_filter = events.MetPt / events.CaloMET_pt <= 5
+        self.add_to_selection((selection), "ghost_muon_filter", ghost_muon_filter)
         self.add_to_selection(selection, "doubleCounting_XOR", doubleCounting_XOR)
         self.add_to_selection((selection), "HLT_Or", HLT_Or)
-        self.add_to_selection((selection), "baselineSelection", ak.fill_none(baselineSelection, False))
+        # self.add_to_selection((selection), "baselineSelection", ak.fill_none(baselineSelection, False))
         # self.add_to_selection((selection), "ElectronIdCut", ElectronIdCut)
         # self.add_to_selection((selection), "MuonIdCut", MuonIdCut)
         self.add_to_selection((selection), "zerob", locals()["zerob"])
@@ -213,10 +256,35 @@ class BaseSelection:
         # data cut for control plots
         data_cut = (events.LT > 250) & (events.HT > 500) & (ak.num(goodJets) >= 3)
         self.add_to_selection(selection, "data_cut", data_cut)
-        # for cut in common:
-        # print(cut, ak.sum(eval(cut)))
+        skim_cut = (events.LT > 150) & (events.HT > 350)
+        self.add_to_selection(selection, "skim_cut", skim_cut)
+
         # categories = dict(N0b=common + ["zerob"], N1ib=common + ["multib"])  # common +
         categories = {cat.name: cat.get_aux("cuts") for cat in self.config.categories}
+
+        triggers = [
+            "HLT_Ele115_CaloIdVT_GsfTrkIdT",
+            "HLT_Ele15_IsoVVVL_PFHT450",
+            "HLT_Ele35_WPTight_Gsf",
+            "HLT_Ele50_CaloIdVT_GsfTrkIdT_PFJet165",
+            "HLT_EleOr",
+            "HLT_IsoMu27",
+            "HLT_MetOr",
+            "HLT_Mu15_IsoVVVL_PFHT450",
+            "HLT_Mu50",
+            "HLT_MuonOr",
+            "HLT_PFMET100_PFMHT100_IDTight",
+            "HLT_PFMET110_PFMHT110_IDTight",
+            "HLT_PFMET120_PFMHT120_IDTight",
+            "HLT_PFMETNoMu100_PFMHTNoMu100_IDTight",
+            "HLT_PFMETNoMu110_PFMHTNoMu110_IDTight",
+            "HLT_PFMETNoMu120_PFMHTNoMu120_IDTight",
+        ]
+
+        for trig in triggers:
+            locals().update({trig: events[trig]})
+            self.add_to_selection(selection, trig, events[trig])
+
         return locals()
 
 
@@ -369,8 +437,22 @@ class Histogramer(BaseProcessor, BaseSelection):
                     cutflow=np.array([i + 1]),
                     weight=np.array([weights.weight()[cutflow_cut].sum()]),
                 )
-
-        # output["n_events"] = len(MetPt)
+            # filling N-1 plots
+            output["n_minus1"].fill(
+                dataset=selected_output["dataset"],
+                category=cat,
+                cutflow=np.array([0]),
+                weight=np.array([weights.weight().sum()]),
+            )
+            allCuts = set(categories[cat])
+            for i, cut in enumerate(categories[cat]):
+                output["n_minus1"].fill(
+                    dataset=selected_output["dataset"],
+                    category=cat,
+                    cutflow=np.array([i + 1]),
+                    weight=np.array([weights.weight()[selection.all(*(allCuts - {cut}))].sum()]),
+                )
+        output["n_events"]["sumAllEvents"] += selected_output["size"]
         return output
 
     def postprocess(self, accumulator):
