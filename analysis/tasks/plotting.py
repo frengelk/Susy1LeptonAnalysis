@@ -6,6 +6,7 @@ import order as od
 import luigi
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.ticker as tick
 from matplotlib.backends.backend_pdf import PdfPages
 import boost_histogram as bh
 import mplhep as hep
@@ -94,14 +95,14 @@ class ArrayPlotting(CoffeaTask):
     def run(self):
         # making clear which index belongs to which variable
         var_names = self.config_inst.variables.names()
-        # create dir
-        print(var_names)
         for var in tqdm(self.config_inst.variables):
             # iterating over lepton keys
             for lep in self.input().keys():
-                np_dict = self.input()[lep]["collection"].targets[0]
+                # accessing the input and unpacking the condor submission structure
                 if self.merged:
                     np_dict = self.input()[lep]
+                else:
+                    np_dict = self.input()[lep]["collection"].targets[0]
                 for cat in self.config_inst.categories.names():
                     sumOfHists = []
                     fig, ax = plt.subplots(figsize=(12, 10))
@@ -113,8 +114,7 @@ class ArrayPlotting(CoffeaTask):
                     # )
                     hep.cms.text("Private work (CMS simulation)")
                     for dat in self.datasets_to_process:
-                        # accessing the input and unpacking the condor submission structure
-                        boost_hist = bh.Histogram(self.construct_axis(var.binning, True))
+                        boost_hist = bh.Histogram(self.construct_axis(var.binning, not var.x_discrete))
                         for key, value in np_dict.items():
                             if cat in key and dat in key:
                                 boost_hist.fill(np.load(value.path)[:, var_names.index(var.name)])
@@ -145,6 +145,7 @@ class ArrayPlotting(CoffeaTask):
                         outputKey = var.name + cat + lep + ending
                         if self.merged:
                             outputKey = var.name + cat + ending
+                        # create dir
                         self.output()[outputKey]["nominal"].parent.touch()
                         self.output()[outputKey]["log"].parent.touch()
 
@@ -152,6 +153,10 @@ class ArrayPlotting(CoffeaTask):
                         plt.savefig(self.output()[outputKey]["nominal"].path, bbox_inches="tight")
 
                         ax.set_yscale("log")
+                        ax.set_ylim(5e-2, 2e8)
+                        # ax.set_yticks(np.arange(10))
+                        ax.set_yticks([10 ** (i - 2) for i in range(10)])
+                        # ax.get_yaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
                         plt.savefig(self.output()[outputKey]["log"].path, bbox_inches="tight")
                     plt.gcf().clear()
                     plt.close(fig)
@@ -161,7 +166,7 @@ class CutflowPlotting(CoffeaTask):
 
     """
     Plotting cutflow produced by coffea
-    Utility for doing log scale, only debug plotting
+    Utility for doing log scale
     """
 
     log_scale = luigi.BoolParameter()
@@ -173,11 +178,14 @@ class CutflowPlotting(CoffeaTask):
         path = ""
         if self.log_scale:
             path += "_log"
-        out = {dat: self.local_target(dat + "_cutflow{}.pdf".format(path)) for dat in self.datasets_to_process}
+        out = {
+            "cutflow": {dat: self.local_target(dat + "_cutflow{}.pdf".format(path)) for dat in self.datasets_to_process},
+            "n_minus1": {dat: self.local_target(dat + "_minus{}.pdf".format(path)) for dat in self.datasets_to_process},
+        }
         return out
 
     def run(self):
-        cutflow = self.input().load()
+        cutflow = self.input()["cutflow"].load()
         categories = [c.name for c in cutflow.axis("category").identifiers()]
         # processes = [p.name for p in cutflow.axis("dataset").identifiers() if not "data" in p.name]
         for dat in self.datasets_to_process:
@@ -189,6 +197,43 @@ class CutflowPlotting(CoffeaTask):
                     overlay="dataset",
                     # legend_opts={"labels":category}
                 )
+                # printing out numbers
+                print("\n Cuts for SingleMuon", category)
+                cuts = self.config_inst.get_category(category).get_aux("cuts")
+                val = cutflow.values()
+                for i, a in enumerate(val[("SingleMuon", category, category)]):
+                    if i >= len(cuts):
+                        break
+                    print(a, cuts[i])
+            n_cuts = len(self.config_inst.get_category(category).get_aux("cuts"))
+            ax.set_xticks(np.arange(0.5, n_cuts + 1.5, 1))
+            ax.set_xticklabels(["total"] + self.config_inst.get_category(category).get_aux("cuts"), rotation=80, fontsize=12)
+            if self.log_scale:
+                ax.set_yscale("log")
+                ax.set_ylim(1e-1, 1e8)  # potential zero bins
+                locmaj = tick.LogLocator(base=10, numticks=10)
+                ax.yaxis.set_major_locator(locmaj)
+                locmin = tick.LogLocator(base=10.0, subs=(0.2, 0.4, 0.6, 0.8), numticks=10)
+                ax.yaxis.set_minor_locator(locmin)
+                ax.yaxis.set_minor_formatter(tick.NullFormatter())
+            handles, labels = ax.get_legend_handles_labels()
+            for i in range(len(labels)):
+                labels[i] = labels[i] + " " + categories[i]
+            ax.legend(handles, labels, title="Category: ", ncol=1, loc="best")
+            self.output()["cutflow"][dat].parent.touch()
+            plt.savefig(self.output()["cutflow"][dat].path, bbox_inches="tight")
+            ax.figure.clf()
+
+        minus = self.input()["n_minus1"].load()
+        for dat in self.datasets_to_process:
+            fig, ax = plt.subplots(figsize=(12, 10))
+            hep.cms.text("Private work (CMS simulation)")
+            for i, category in enumerate(categories):
+                ax = coffea.hist.plot1d(
+                    minus[[dat], category, :].project("dataset", "cutflow"),
+                    overlay="dataset",
+                    # legend_opts={"labels":category}
+                )
             n_cuts = len(self.config_inst.get_category(category).get_aux("cuts"))
             ax.set_xticks(np.arange(0.5, n_cuts + 1.5, 1))
             ax.set_xticklabels(["total"] + self.config_inst.get_category(category).get_aux("cuts"), rotation=80, fontsize=12)
@@ -196,12 +241,11 @@ class CutflowPlotting(CoffeaTask):
                 ax.set_yscale("log")
                 ax.set_ylim(1e-8, 1e8)  # potential zero bins
             handles, labels = ax.get_legend_handles_labels()
-            # from IPython import embed; embed()
             for i in range(len(labels)):
                 labels[i] = labels[i] + " " + categories[i]
             ax.legend(handles, labels, title="Category: ", ncol=1, loc="best")
-            self.output()[dat].parent.touch()
-            plt.savefig(self.output()[dat].path, bbox_inches="tight")
+            self.output()["cutflow"][dat].parent.touch()
+            plt.savefig(self.output()["n_minus1"][dat].path, bbox_inches="tight")
             ax.figure.clf()
 
         """

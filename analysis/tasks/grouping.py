@@ -5,15 +5,13 @@ import law
 import order as od
 import luigi
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_pdf import PdfPages
-import boost_histogram as bh
-import mplhep as hep
+import uproot as up
 import coffea
-from tqdm.auto import tqdm
+
 
 # other modules
 from tasks.coffea import CoffeaProcessor, CoffeaTask
+from tasks.makefiles import WriteDatasetPathDict, WriteDatasets
 
 
 class GroupCoffea(CoffeaTask):
@@ -24,19 +22,24 @@ class GroupCoffea(CoffeaTask):
     """
 
     def requires(self):
-        return CoffeaProcessor.req(self, processor="Histogramer")
+        return CoffeaProcessor.req(self, processor="Histogramer", lepton_selection=self.lepton_selection)
 
     def output(self):
-        return self.local_target("cutflow.coffea")
+        return {
+            "cutflow": self.local_target("cutflow.coffea"),
+            "n_minus1": self.local_target("n_minus1.coffea"),
+        }
 
     def run(self):
         inp = self.input()["collection"].targets[0]
         cut0 = inp[list(inp.keys())[0]]["cutflow"].load()
-
+        minus0 = inp[list(inp.keys())[0]]["n_minus1"].load()
         for key in list(inp.keys())[1:]:
             cut0 += inp[key]["cutflow"].load()
+            minus0 += inp[key]["n_minus1"].load()
 
-        self.output().dump(cut0)
+        self.output()["cutflow"].dump(cut0)
+        self.output()["n_minus1"].dump(minus0)
 
 
 class MergeArrays(CoffeaTask):
@@ -54,8 +57,6 @@ class MergeArrays(CoffeaTask):
 
     def output(self):
         return {cat: self.local_target("merged_{}.npy".format(cat)) for cat in self.config_inst.categories.names()}
-
-        self.local_target("cutflow.npy")
 
     @law.decorator.timeit(publish_message=True)
     @law.decorator.safe_output
