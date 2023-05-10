@@ -89,7 +89,7 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
         return super(CoffeaProcessor, self).store_parts() + parts
 
     def load_job_dict(self):
-        with open(self.config_inst.get_aux("job_dict")) as f:
+        with open(self.config_inst.get_aux("job_dict").replace(".json", "_" + self.version + ".json")) as f:
             data_list = json.load(f)
         job_number = 0  # len(data_list.keys())
         job_number_dict = {}

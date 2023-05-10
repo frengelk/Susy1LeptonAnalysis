@@ -37,7 +37,8 @@ class WriteDatasets(BaseMakeFilesTask):
             json.dump(file_dict, out)
 
         # copy the json file directly to the aux part
-        os.system("cp {} {}".format(self.output().path, self.config_inst.get_aux("job_dict")))
+        print("Writing job dict to:", self.config_inst.get_aux("job_dict").replace(".json", "_" + self.version + ".json"))
+        os.system("cp {} {}".format(self.output().path, self.config_inst.get_aux("job_dict").replace(".json", "_" + self.version + ".json")))
 
 
 class WriteDatasetPathDict(BaseMakeFilesTask):
