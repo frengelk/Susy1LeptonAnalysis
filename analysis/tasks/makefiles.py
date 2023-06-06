@@ -42,6 +42,11 @@ class WriteDatasets(BaseMakeFilesTask):
 
 
 class WriteDatasetPathDict(BaseMakeFilesTask):
+
+    """
+    if processing self skimmed files, the provided path should end in the root/ or merged/ dir
+    """
+
     def requires(self):
         return WriteDatasets.req(self, directory_path=self.directory_path)
 
