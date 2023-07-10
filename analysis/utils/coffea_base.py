@@ -43,8 +43,8 @@ class BaseProcessor(processor.ProcessorABC):
             n_events=defaultdict_accumulator(int),
             sum_gen_weights=defaultdict_accumulator(float),
             object_cutflow=defaultdict_accumulator(int),
-            cutflow=hist.Hist("Counts", self.dataset_axis, self.category_axis, self.category_axis, hist.Bin("cutflow", "Cut", 12, 0, 12)),
-            n_minus1=hist.Hist("Counts", self.dataset_axis, self.category_axis, self.category_axis, hist.Bin("cutflow", "Cut", 12, 0, 12)),
+            cutflow=hist.Hist("Counts", self.dataset_axis, self.category_axis, self.category_axis, hist.Bin("cutflow", "Cut", 20, 0, 20)),
+            n_minus1=hist.Hist("Counts", self.dataset_axis, self.category_axis, self.category_axis, hist.Bin("cutflow", "Cut", 20, 0, 20)),
         )
 
     @property
@@ -97,16 +97,16 @@ class BaseSelection:
         return selection.add(name, ak.to_numpy(array, allow_missing=True))
 
     def get_base_variable(self, events):
-        ntFatJets = ak.fill_none(ak.firsts(events.FatJetDeepTagTvsQCD), value=0)
-        nWFatJets = ak.fill_none(ak.firsts(events.FatJetDeepTagWvsQCD), value=0)
-        jetMass_1 = ak.fill_none(ak.firsts(events.JetMass[:, 0:1]), value=0)
-        jetPt_1 = ak.fill_none(ak.firsts(events.JetPt[:, 0:1]), value=0)
-        jetEta_1 = ak.fill_none(ak.firsts(events.JetEta[:, 0:1]), value=0)
-        jetPhi_1 = ak.fill_none(ak.firsts(events.JetPhi[:, 0:1]), value=0)
-        jetMass_2 = ak.fill_none(ak.firsts(events.JetMass[:, 1:2]), value=0)
-        jetPt_2 = ak.fill_none(ak.firsts(events.JetPt[:, 1:2]), value=0)
-        jetEta_2 = ak.fill_none(ak.firsts(events.JetEta[:, 1:2]), value=0)
-        jetPhi_2 = ak.fill_none(ak.firsts(events.JetPhi[:, 1:2]), value=0)
+        ntFatJets = ak.fill_none(ak.firsts(events.FatJetDeepTagTvsQCD), value=-999)
+        nWFatJets = ak.fill_none(ak.firsts(events.FatJetDeepTagWvsQCD), value=-999)
+        jetMass_1 = ak.fill_none(ak.firsts(events.JetMass[:, 0:1]), value=-999)
+        jetPt_1 = ak.fill_none(ak.firsts(events.JetPt[:, 0:1]), value=-999)
+        jetEta_1 = ak.fill_none(ak.firsts(events.JetEta[:, 0:1]), value=-999)
+        jetPhi_1 = ak.fill_none(ak.firsts(events.JetPhi[:, 0:1]), value=-999)
+        jetMass_2 = ak.fill_none(ak.firsts(events.JetMass[:, 1:2]), value=-999)
+        jetPt_2 = ak.fill_none(ak.firsts(events.JetPt[:, 1:2]), value=-999)
+        jetEta_2 = ak.fill_none(ak.firsts(events.JetEta[:, 1:2]), value=-999)
+        jetPhi_2 = ak.fill_none(ak.firsts(events.JetPhi[:, 1:2]), value=-999)
         nJets = events.nJet
         LT = events.LT
         HT = events.HT
@@ -119,8 +119,8 @@ class BaseSelection:
         multib = nbJets >= 1
         # variables to check cuts
         correctedMetPt = events.CorrectedMetPt
-        isoTrackPt = ak.fill_none(ak.firsts(events.IsoTrackPt), value=0)
-        isoTrackMt2 = ak.fill_none(ak.firsts(events.IsoTrackMt2), value=0)
+        isoTrackPt = ak.fill_none(ak.firsts(events.IsoTrackPt), value=-999)
+        isoTrackMt2 = ak.fill_none(ak.firsts(events.IsoTrackMt2), value=-999)
         return locals()
 
     def get_gen_variable(self, events):
@@ -145,9 +145,9 @@ class BaseSelection:
     def get_muon_variables(self, events):
         # leptons variables
         nMuon = events.nMuon
-        leadMuonPt = ak.fill_none(ak.firsts(events.MuonPt[:, 0:1]), 0)
-        leadMuonEta = ak.fill_none(ak.firsts(events.MuonEta[:, 0:1]), 0)
-        leadMuonPhi = ak.fill_none(ak.firsts(events.MuonPhi[:, 0:1]), 0)
+        leadMuonPt = ak.fill_none(ak.firsts(events.MuonPt[:, 0:1]), -999)
+        leadMuonEta = ak.fill_none(ak.firsts(events.MuonEta[:, 0:1]), -999)
+        leadMuonPhi = ak.fill_none(ak.firsts(events.MuonPhi[:, 0:1]), -999)
         # MuonMass
         muonCharge = events.MuonCharge
         muonPdgId = events.MuonPdgId
@@ -158,9 +158,9 @@ class BaseSelection:
     def get_electron_variables(self, events):
         # leptons variables
         nElectron = events.nElectron
-        leadElectronPt = ak.fill_none(ak.firsts(events.ElectronPt[:, 0:1]), 0)
-        leadElectronEta = ak.fill_none(ak.firsts(events.ElectronEta[:, 0:1]), 0)
-        leadElectronPhi = ak.fill_none(ak.firsts(events.ElectronPhi[:, 0:1]), 0)
+        leadElectronPt = ak.fill_none(ak.firsts(events.ElectronPt[:, 0:1]), -999)
+        leadElectronEta = ak.fill_none(ak.firsts(events.ElectronEta[:, 0:1]), -999)
+        leadElectronPhi = ak.fill_none(ak.firsts(events.ElectronPhi[:, 0:1]), -999)
         # ElectronMass
         electronCharge = events.ElectronCharge
         electronPdgId = events.ElectronPdgId
@@ -207,29 +207,20 @@ class BaseSelection:
         """
 
         # doing lep selection
-        mu_pt = ak.fill_none(ak.firsts(events.MuonPt[:, 0:1]), 0)
-        e_pt = ak.fill_none(ak.firsts(events.ElectronPt[:, 0:1]), 0)
-        mu_eta = ak.fill_none(ak.firsts(events.MuonEta[:, 0:1]), 0)
-        e_eta = ak.fill_none(ak.firsts(events.ElectronEta[:, 0:1]), 0)
+        mu_pt = ak.fill_none(ak.firsts(events.MuonPt[:, 0:1]), -999)
+        e_pt = ak.fill_none(ak.firsts(events.ElectronPt[:, 0:1]), -999)
+        mu_eta = ak.fill_none(ak.firsts(events.MuonEta[:, 0:1]), -999)
+        e_eta = ak.fill_none(ak.firsts(events.ElectronEta[:, 0:1]), -999)
         mu_id = ak.fill_none(ak.firsts(events.MuonMediumId[:, 0:1]), False)
         e_id = ak.fill_none(ak.firsts(events.ElectronTightId[:, 0:1]), False)
 
         hard_lep = ((mu_pt > 25) | (e_pt > 25)) & ((abs(mu_eta) < 2.4) | (abs(e_eta) < 2.4))
         selected = (mu_id | e_id) & ((events.nGoodMuon == 1) | (events.nGoodElectron == 1))
         no_veto_lepton = (events.nVetoMuon - events.nGoodMuon == 0) & (events.nVetoElectron - events.nGoodElectron == 0)
-        self.add_to_selection(selection, "hard_lep", hard_lep)
-        self.add_to_selection(selection, "selected", selected)
-        self.add_to_selection(selection, "no_veto_lepton", no_veto_lepton)
 
-        LT_cut = events.LT > 250
-        HT_cut = events.HT > 500
-        njet_cut = ak.num(goodJets) >= 3
+        #njet_cut = ak.num(goodJets) >= 3
+        njet_cut = ak.sum(events.JetIsClean, axis=1) >= 3
         iso_cut = ~events.IsoTrackVeto
-        self.add_to_selection(selection, "subleading_jet", subleading_jet)
-        self.add_to_selection(selection, "LT_cut", LT_cut)
-        self.add_to_selection(selection, "HT_cut", HT_cut)
-        self.add_to_selection(selection, "njet_cut", njet_cut)
-        self.add_to_selection(selection, "iso_cut", iso_cut)
 
         # require correct lepton IDs, applay cut depending on tree name
         # ElectronIdCut = ak.fill_none(ak.firsts(events.ElectronTightId[:, 0:1]), False)
@@ -240,14 +231,6 @@ class BaseSelection:
         HLT_Or = (not events.metadata["isData"]) | (events.HLT_MuonOr | events.HLT_MetOr | events.HLT_EleOr)
         # ghost muon filter
         ghost_muon_filter = events.MetPt / events.CaloMET_pt <= 5
-        self.add_to_selection((selection), "ghost_muon_filter", ghost_muon_filter)
-        self.add_to_selection(selection, "doubleCounting_XOR", doubleCounting_XOR)
-        self.add_to_selection((selection), "HLT_Or", HLT_Or)
-        # self.add_to_selection((selection), "baselineSelection", ak.fill_none(baselineSelection, False))
-        # self.add_to_selection((selection), "ElectronIdCut", ElectronIdCut)
-        # self.add_to_selection((selection), "MuonIdCut", MuonIdCut)
-        self.add_to_selection((selection), "zerob", locals()["zerob"])
-        self.add_to_selection((selection), "multib", locals()["multib"])
         # apply some weights,  MC/data check beforehand
         weights = processor.Weights(size, storeIndividual=self.individal_weights)
         # if not process_obj.is_data:
@@ -255,12 +238,7 @@ class BaseSelection:
         common = ["baselineSelection", "doubleCounting_XOR", "HLT_Or"]  # , "{}IdCut".format(events.metadata["treename"])]
         # data cut for control plots
         data_cut = (events.LT > 250) & (events.HT > 500) & (ak.num(goodJets) >= 3)
-        self.add_to_selection(selection, "data_cut", data_cut)
         skim_cut = (events.LT > 150) & (events.HT > 350)
-        self.add_to_selection(selection, "skim_cut", skim_cut)
-
-        # categories = dict(N0b=common + ["zerob"], N1ib=common + ["multib"])  # common +
-        categories = {cat.name: cat.get_aux("cuts") for cat in self.config.categories}
 
         triggers = [
             "HLT_Ele115_CaloIdVT_GsfTrkIdT",
@@ -283,8 +261,20 @@ class BaseSelection:
 
         for trig in triggers:
             locals().update({trig: events[trig]})
-            self.add_to_selection(selection, trig, events[trig])
+            #self.add_to_selection(selection, trig, events[trig])
 
+        MET_Filter = "HLT_PFMET100_PFMHT100_IDTight | HLT_PFMET110_PFMHT110_IDTight | HLT_PFMET120_PFMHT120_IDTight | HLT_PFMETNoMu100_PFMHTNoMu100_IDTight | HLT_PFMETNoMu110_PFMHTNoMu110_IDTight |HLT_PFMETNoMu120_PFMHTNoMu120_IDTight"
+        METFilter = eval(MET_Filter)
+
+        for cat in self.config.categories:
+            for cut in cat.get_aux("cuts"):
+                if cut[1] == "cut":
+                    self.add_to_selection(selection, " ".join(cut), eval(cut[0]))
+                else:
+                    self.add_to_selection(selection, " ".join(cut), eval("events.{} {}".format(cut[0], cut[1])))
+
+        # categories = dict(N0b=common + ["zerob"], N1ib=common + ["multib"])  # common +
+        categories = {cat.name: [" ".join(cut) for cut in cat.get_aux("cuts")] for cat in self.config.categories}
         return locals()
 
 
