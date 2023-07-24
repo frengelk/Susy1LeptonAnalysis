@@ -33,6 +33,7 @@ class WriteDatasets(BaseMakeFilesTask):
                         file_list.append(directory + "/" + file)
                 file_dict.update({directory: file_list})  # self.directory_path + "/" +
 
+        file_dict.update({"directory_path": self.directory_path})  # self.directory_path + "/" +
         with open(self.output().path, "w") as out:
             json.dump(file_dict, out)
 

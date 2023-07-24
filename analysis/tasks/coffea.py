@@ -36,11 +36,11 @@ class CoffeaTask(DatasetTask):
         default="/nfs/dust/cms/user/frengelk/Code/cmssw/CMSSW_12_1_0/Batch/2022_11_24/2017/Data/root/SingleElectron_Run2017C-UL2017_MiniAODv2_NanoAODv9-v1_NANOAOD_1.0.root"
         # "/nfs/dust/cms/user/wiens/CMSSW/CMSSW_12_1_0/Testing/2022_11_10/TTJets/TTJets_1.root"
     )
-    job_number = IntParameter(default=1)
-    data_key = Parameter(default="SingleMuon")
+    # job_number = IntParameter(default=1)
+    # data_key = Parameter(default="SingleMuon")
     # parameter with selection we use coffea
     lepton_selection = Parameter(default="Muon")
-    datasets_to_process = ListParameter(default=["T5qqqqVV"])
+    datasets_to_process = ListParameter(default=["WJets"])
 
 
 class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
@@ -67,19 +67,11 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
     def output(self):
         files, job_number, job_number_dict = self.load_job_dict()
         out = {
-            cat + "_" + dat.split("/")[0] + "_" + str(job): self.local_target(cat + "_" + dat.split("/")[0] + "_" + str(job) + ".npy")
+            cat + "_" + dat.split("/")[0] + "_" + str(job): {"array": self.local_target(cat + "_" + dat.split("/")[0] + "_" + str(job) + ".npy"), "weights": self.local_target(cat + "_" + dat.split("/")[0] + "_" + str(job) + "_weights.npy"), "cutflow": self.local_target(cat + "_" + dat.split("/")[0] + "_" + str(job) + "cutflow.coffea"), "n_minus1": self.local_target(cat + "_" + dat.split("/")[0] + "_" + str(job) + "n_minus1.coffea")}
             for cat in self.config_inst.categories.names()
             for job, dat in job_number_dict.items()
             # for i in range(job_number)  + "_" + str(job_number)
         }
-        if self.processor == "Histogramer":
-            # out = self.local_target("hists.coffea")
-            out = {
-                dat.split("/")[0] + "_" + str(job): {"hists": self.local_target(dat.split("/")[0] + "_" + str(job) + "hists.coffea"), "cutflow": self.local_target(dat.split("/")[0] + "_" + str(job) + "cutflow.coffea"), "n_minus1": self.local_target(dat.split("/")[0] + "_" + str(job) + "n_minus1.coffea")}
-                # for cat in self.config_inst.categories.names()
-                for job, dat in job_number_dict.items()
-                # for i in range(job_number)  + "_" + str(job_number)
-            }
         return out
 
     def store_parts(self):
@@ -93,12 +85,27 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
             data_list = json.load(f)
         job_number = 0  # len(data_list.keys())
         job_number_dict = {}
+        data_path = data_list["directory_path"]
         for key, files in data_list.items():
-            if key not in self.datasets_to_process:
+            check_list = []
+            for dat in self.datasets_to_process:
+                if dat in key:
+                    check_list.append(True)
+
+            # this is so ugly, I want to do
+            # any(dat for dat in self.datasets_to_process if(dat in key))
+            if not any(check_list):
                 continue
             for i, file in enumerate(sorted(files)):
+                f = up.open(data_path + "/" + file)
+                # check for empty root file
+                if f.keys() == []:
+                    print("Empty file:", file)
+                    job_number -= 1
+                    continue
                 job_number_dict.update({job_number + i: file})
             job_number += len(files)
+
         if self.debug:
             job_number = 1
             job_number_dict = {0: job_number_dict[0]}
@@ -127,12 +134,22 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
             primaryDataset = file["MetaData"]["primaryDataset"].array()[0]
             isData = file["MetaData"]["IsData"].array()[0]
             isFastSim = file["MetaData"]["IsFastSim"].array()[0]
+            if not isData:
+                # all events with the same Xsec
+                assert abs(np.mean(file["MetaData"]["xSection"].array()) - file["MetaData"]["xSection"].array()[0]) < 1e-9
+                xSec = file["MetaData"]["xSection"].array()[0]
+                lumi = file["MetaData"]["Luminosity"].array()[0]
+            else:
+                # filler values so they are defined
+                xSec = 1
+                lumi = 1
         fileset = {
             dataset: {
                 "files": [data_path + "/" + subset],  # file for file in
-                "metadata": {"PD": primaryDataset, "isData": isData, "isFastSim": isFastSim},
+                "metadata": {"PD": primaryDataset, "isData": isData, "isFastSim": isFastSim, "xSec": xSec, "Luminosity": lumi},
             }
         }
+        print(fileset, treename)
         start = time.time()
         # call imported processor, magic happens here
         out = processor.run_uproot_job(
@@ -157,16 +174,13 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
         console.print(f"* Events / s: {all_events/total_time:.0f}")
         # save outputs, seperated for processor, both need different touch calls
         if self.processor == "ArrayExporter":
-            self.output().popitem()[1].parent.touch()
+            self.output().popitem()[1]["array"].parent.touch()
             for cat in out["arrays"]:
-                self.output()[cat + "_" + str(self.branch)].dump(out["arrays"][cat]["hl"].value)
-
-        if self.processor == "Histogramer":
-            # self.output().dump(out["histograms"])
-            self.output().popitem()[1]["hists"].parent.touch()
-            self.output()[dataset + "_" + str(self.branch)]["hists"].dump(out["histograms"])
-            self.output()[dataset + "_" + str(self.branch)]["cutflow"].dump(out["cutflow"])
-            self.output()[dataset + "_" + str(self.branch)]["n_minus1"].dump(out["n_minus1"])
+                #    reweighting by sum over genweights in whole dataset
+                self.output()[cat + "_" + str(self.branch)]["weights"].dump(out["arrays"][cat]["weights"].value / out["sum_gen_weights"][dataset])
+                self.output()[cat + "_" + str(self.branch)]["array"].dump(out["arrays"][cat]["hl"].value)
+                self.output()[cat + "_" + str(self.branch)]["cutflow"].dump(out["cutflow"])
+                self.output()[cat + "_" + str(self.branch)]["n_minus1"].dump(out["n_minus1"])
 
 
 class CollectCoffeaOutput(CoffeaTask):
@@ -211,7 +225,7 @@ class CollectCoffeaOutput(CoffeaTask):
                 for file, value in np_dict.items():
                     cat = "N0b"  # or loop over self.config_inst.categories.names()
                     if cat in file and dat in file:
-                        np_0b = np.load(np_dict[file].path)
+                        np_0b = np_dict[file]["array"].load()
                         # np_1ib = np.load(value["N1ib_" + dataset])
 
                         Dphi = np_0b[:, var_names.index("dPhi")]
