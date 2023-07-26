@@ -12,16 +12,19 @@ import boost_histogram as bh
 import mplhep as hep
 import coffea
 from tqdm.auto import tqdm
+from functools import total_ordering
 
 # other modules
 from tasks.coffea import CoffeaProcessor, CoffeaTask
 from tasks.grouping import GroupCoffea, MergeArrays
+from tasks.base import HTCondorWorkflow
 
 
-class ArrayPlotting(CoffeaTask):
+class ArrayPlotting(CoffeaTask):  # , HTCondorWorkflow, law.LocalWorkflow):
     channel = luigi.ListParameter(default=["Muon", "Electron"])
     formats = luigi.ListParameter(default=["png", "pdf"])
     density = luigi.BoolParameter(default=False)
+    unblinded = luigi.BoolParameter(default=False)
     divide_by_binwidth = luigi.BoolParameter(default=False)
     debug = luigi.BoolParameter(default=False)
     merged = luigi.BoolParameter(default=False)
@@ -75,6 +78,8 @@ class ArrayPlotting(CoffeaTask):
             parts += ("debug",)
         if self.merged:
             parts += ("merged",)
+        if self.unblinded:
+            parts += ("unblinded",)
         return super(ArrayPlotting, self).store_parts() + (self.analysis_choice,) + parts
 
     def construct_axis(self, binning, isRegular=True):
@@ -102,35 +107,77 @@ class ArrayPlotting(CoffeaTask):
                 if self.merged:
                     np_dict = self.input()[lep]
                 else:
-                    np_dict = self.input()[lep]["collection"].targets[0]
+                    np_dict = {}
+                    for key in self.input()[lep]["collection"].targets[0].keys():
+                        # for key in self.input()[lep].keys():
+                        np_dict.update({key: self.input()[lep]["collection"].targets[0][key]["array"]})
+                        # np_dict.update({key: self.input()[lep][key]})
                 for cat in self.config_inst.categories.names():
                     sumOfHists = []
-                    fig, ax = plt.subplots(figsize=(12, 10))
+                    if self.unblinded:
+                        fig, (ax, rax) = plt.subplots(2, 1, figsize=(12, 10), sharex=True, gridspec_kw={"height_ratios": [3, 1], "hspace": 0})
+                    else:
+                        fig, ax = plt.subplots(figsize=(12, 10))
+
                     # hep.style.use("CMS")
                     # hep.cms.label(
                     # label="Private Work",
                     # loc=0,
                     # ax=ax,
                     # )
-                    hep.cms.text("Private work (CMS simulation)")
+                    hep.cms.text("Private work (CMS simulation)", loc=0, ax=ax)
+                    # save histograms for ratio computing
+                    hist_counts = {}
+                    if self.unblinded:
+                        # filling all data in one boost_hist
+                        data_boost_hist = bh.Histogram(self.construct_axis(var.binning, not var.x_discrete))
+
                     for dat in self.datasets_to_process:
-                        boost_hist = bh.Histogram(self.construct_axis(var.binning, not var.x_discrete))
+                        proc = self.config_inst.get_process(dat)
+                        if not proc.aux["isData"]:
+                            boost_hist = bh.Histogram(self.construct_axis(var.binning, not var.x_discrete))
                         for key, value in np_dict.items():
                             if cat in key and dat in key:
-                                boost_hist.fill(np.load(value.path)[:, var_names.index(var.name)])
+                                if proc.aux["isData"] and self.unblinded:
+                                    data_boost_hist.fill(np.load(value["array"].path)[:, var_names.index(var.name)])  # , weight=np.load(value["weights"].path))
+                                elif not proc.aux["isData"]:
+                                    boost_hist.fill(np.load(value["array"].path)[:, var_names.index(var.name)], weight=np.load(value["weights"].path))
+
                         if self.divide_by_binwidth:
                             boost_hist = boost_hist / np.prod(hist.axes.widths, axis=0)
                         if self.density:
                             boost_hist = self.get_density(boost_hist)
-
-                        hep.histplot(boost_hist, label="{} {}: {}".format(lep, dat, boost_hist.sum()))
+                        if proc.aux["isData"]:
+                            continue
+                        hist_counts.update({dat: {"hist": boost_hist, "label": "{} {}: {}".format(proc.label, lep, boost_hist.sum()), "color": proc.color}})  # , histtype=proc.aux["histtype"])})
+                        # hep.histplot(boost_hist, label="{} {}: {}".format(proc.label, lep, boost_hist.sum()), color=proc.color, histtype=proc.aux["histtype"], ax=ax)
                         sumOfHists.append(-1 * boost_hist.sum())
+
                     # sorting the labels/handels of the plt hist by descending magnitude of integral
                     order = np.argsort((-1) * np.array(sumOfHists))
-                    handles, labels = plt.gca().get_legend_handles_labels()
-                    if not self.merged:
-                        handles = [h for _, h in sorted(zip(sumOfHists, handles))]
-                        labels = [l for _, l in sorted(zip(sumOfHists, labels))]
+
+                    # one histplot together, ordered by integral
+                    # can't stack seperate histplot calls, so we have do it like that
+                    hist_list, label_list, color_list = [], [], []
+                    for key in np.array(list(hist_counts.keys()))[order]:
+                        hist_list.append(hist_counts[key]["hist"])
+                        label_list.append(hist_counts[key]["label"])
+                        color_list.append(hist_counts[key]["color"])
+                    hep.histplot(hist_list, histtype="fill", stack=True, label=label_list, color=color_list, ax=ax)
+
+                    # deciated data plotting
+                    if self.unblinded:
+                        proc = self.config_inst.get_process("data")
+                        hep.histplot(data_boost_hist, label="{} {}: {}".format(proc.label, lep, data_boost_hist.sum()), color=proc.color, histtype=proc.aux["histtype"], ax=ax)
+                        sumOfHists.append(-1 * data_boost_hist.sum())
+                        hist_counts.update({"data": {"hist": data_boost_hist}})
+                        # missing boost hist divide and density
+
+                    handles, labels = ax.get_legend_handles_labels()
+                    # handles = [h for _, h in sorted(zip(sumOfHists, handles))]
+                    handles = [h for _, h in total_ordering(zip(sumOfHists, handles))]
+                    # labels = [l for _, l in sorted(zip(sumOfHists, labels))]
+                    labels = [l for _, l in total_ordering(zip(sumOfHists, labels))]
                     ax.legend(
                         handles,
                         labels,
@@ -139,8 +186,27 @@ class ArrayPlotting(CoffeaTask):
                         bbox_to_anchor=(1, 1),
                         borderaxespad=0,
                     )
-                    ax.set_xlabel(var.get_full_x_title())
                     ax.set_ylabel(var.get_full_y_title())
+
+                    if self.unblinded:
+                        MC_hist = bh.Histogram(self.construct_axis(var.binning, not var.x_discrete))
+                        data_hist = bh.Histogram(self.construct_axis(var.binning, not var.x_discrete))
+                        for dat, hist in hist_counts.items():
+                            proc = self.config_inst.get_process(dat)
+                            if proc.aux["isData"] == True:
+                                data_hist += hist["hist"]
+                            else:
+                                MC_hist += hist["hist"]
+                        ratio = data_hist / MC_hist
+                        stat_unc = np.sqrt(ratio * (ratio / MC_hist + ratio / data_hist))
+                        rax.axhline(1.0, color="black", linestyle="--")
+                        rax.fill_between(ratio.axes[0].centers, 1 - stat_unc, 1 + stat_unc, alpha=0.3, facecolor="black")
+                        hep.histplot(ratio, color="black", histtype="errorbar", stack=False, yerr=0, ax=rax)
+                        rax.set_xlabel(var.get_full_x_title())
+                        rax.set_ylim(0.5, 1.5)
+                    else:
+                        ax.set_xlabel(var.get_full_x_title())
+
                     for ending in self.formats:
                         outputKey = var.name + cat + lep + ending
                         if self.merged:

@@ -14,6 +14,7 @@ from tasks.coffea import CoffeaProcessor, CoffeaTask
 from tasks.makefiles import WriteDatasetPathDict, WriteDatasets
 from tasks.base import HTCondorWorkflow
 
+
 class GroupCoffea(CoffeaTask):
 
     """
@@ -22,7 +23,7 @@ class GroupCoffea(CoffeaTask):
     """
 
     def requires(self):
-        return CoffeaProcessor.req(self, processor="Histogramer", lepton_selection=self.lepton_selection)
+        return CoffeaProcessor.req(self, lepton_selection=self.lepton_selection)
 
     def output(self):
         return {
@@ -42,8 +43,12 @@ class GroupCoffea(CoffeaTask):
         self.output()["n_minus1"].dump(minus0)
 
 
-class MergeArrays(CoffeaTask):
-    channel = luigi.ListParameter(default=["Muon", "Electron"])
+class MergeArrays(CoffeaTask):  # , law.LocalWorkflow, HTCondorWorkflow):
+    channel = luigi.ListParameter(default=["Muon", "Electron"])  # , "Electron"])
+
+    def create_branch_map(self):
+        # 1 job only
+        return list(range(1))
 
     def requires(self):
         return {
@@ -51,28 +56,54 @@ class MergeArrays(CoffeaTask):
                 self,
                 lepton_selection=sel,
                 # workflow="local",
+                datasets_to_process=self.datasets_to_process,
             )
             for sel in self.channel
         }
 
     def output(self):
-        return {cat: self.local_target("merged_{}.npy".format(cat)) for cat in self.config_inst.categories.names()}
+        return {cat + "_" + dat: {"array": self.local_target("merged_{}_{}.npy".format(cat, dat)), "weights": self.local_target("weights_{}_{}.npy".format(cat, dat))} for cat in self.config_inst.categories.names() for dat in self.datasets_to_process}
 
     @law.decorator.timeit(publish_message=True)
     @law.decorator.safe_output
     def run(self):
-        for cat in self.config_inst.categories.names():
-            cat_list = []
-            for lep in self.input().keys():
-                np_dict = self.input()[lep]["collection"].targets[0]
-                for key, arr in np_dict.items():
-                    if cat in key:
-                        cat_list.append(arr.load())
+        sum_gen_weights_dict = {}
+        # sum weights same for both trees, do it once for muon
+        inp = self.input()["Muon"].collection.targets[0]
+        # set up dict
+        for key in inp.keys():
+            k = "_".join(key.split("_")[1:-1])
+            sum_gen_weights_dict.update({k: 0})
+        # fill it
+        for key in inp.keys():
+            s = inp[key]["sum_gen_weights"].load()
+            k = "_".join(key.split("_")[1:-1])
+            sum_gen_weights_dict[k] += s
 
-            # float 16 so arrays can be saved
-            full_arr = np.concatenate(cat_list, dtype=np.float16)
-            self.output()[cat].parent.touch()
-            self.output()[cat].dump(full_arr)
+        for dat in self.datasets_to_process:
+            for cat in self.config_inst.categories.names():
+                # if not "No_cuts" in cat:
+                # continue
+                cat_list = []
+                weights_list = []
+                for lep in self.input().keys():
+                    np_dict = self.input()[lep]["collection"].targets[0]
+                    # will be redone for next lep selction, but doesn't matter since sum should be the same
+                    for key, arr in np_dict.items():
+                        if cat in key and dat in key:
+                            cat_list.append(arr["array"].load())
+                            k = "_".join(key.split("_")[1:-1])
+                            sum_gen_weights = sum_gen_weights_dict[k]
+                            # divide each subfile belonging to same process, 1/sum (proc1 + proc2)
+                            weights_list.append(arr["weights"].load() / sum_gen_weights)
+
+                # float 16 so arrays can be saved easily
+                full_arr = np.concatenate(cat_list)  # , dtype=np.float16
+                weights_arr = np.concatenate(weights_list)  # , dtype=np.float16) -> leads to inf
+                self.output()[cat + "_" + dat]["array"].parent.touch()
+                self.output()[cat + "_" + dat]["array"].dump(full_arr)
+                self.output()[cat + "_" + dat]["weights"].dump(weights_arr)
+
 
 class ComputeEfficiencies(CoffeaTask):
     channel = luigi.Parameter(default="Synchro")
@@ -146,8 +177,8 @@ class YieldsFromArrays(CoffeaTask):
     @law.decorator.timeit(publish_message=True)
     @law.decorator.safe_output
     def run(self):
-        #np_0b = self.input()["No_cuts"].load()
-        np_0b = self.input()["Min_cuts"].load()
+        # np_0b = self.input()["No_cuts"].load()
+        np_0b = self.input()["No_cuts"].load()
 
         var_names = self.config_inst.variables.names()
         print(var_names)
@@ -158,15 +189,25 @@ class YieldsFromArrays(CoffeaTask):
         n_jets = np_0b[:, var_names.index("nJets")]
         jetPt_2 = np_0b[:, var_names.index("jetPt_2")]
 
-        cut_list = [("HT", ">2500"),("jetPt_2", ">80"),  ("nJets", ">7"), ("LT", ">50"), ("LT", "<500")
-        #,('ghost_muon_filter', "==1"),("iso_cut", "==1"), ('hard_lep', "==1"), ('selected', "==1"), ("no_veto_lepton", "==1"), ('HLT_Or', "==1"), ('doubleCounting_XOR', "==1")
-        #("LT", "> 250"), ("LT", "> 500"), ("LT", "> 1000"), ("LT", "> 1500"), ("LT", "> 2000"), ("LT", "> 2500"), ("LT", "> 5000")]
-        #[("nJets", ">2"), ("nJets", ">3"), ("nJets", ">4"), ("nJets", ">5"), ("nJets", ">6"), ("nJets", ">7"), ("nJets", ">8"), ("nJets", ">9")]
-        #[("HT", "> 2500"), ("LT", ">500"), ("nJets", ">2"), ("leadMuonPt", ">25")]
+        cut_list = [
+            ("HLT_Or", "==1"),
+            ("hard_lep", "==1"),
+            ("selected", "==1"),
+            ("no_veto_lepton", "==1"),
+            ("iso_cut", "==1"),
+            ("ghost_muon_filter", "==1"),
+            ("HT", ">500"),
+            ("jetPt_2", ">80"),
+            ("nJets", ">=3"),
+            ("LT", ">350"),
+            ("doubleCounting_XOR", "==1")
+            # ,('ghost_muon_filter', "==1"),("iso_cut", "==1"), ('hard_lep', "==1"), ('selected', "==1"), ("no_veto_lepton", "==1"), ('HLT_Or', "==1"), ('doubleCounting_XOR', "==1")
+            # ("LT", "> 250"), ("LT", "> 500"), ("LT", "> 1000"), ("LT", "> 1500"), ("LT", "> 2000"), ("LT", "> 2500"), ("LT", "> 5000")]
+            # [("nJets", ">2"), ("nJets", ">3"), ("nJets", ">4"), ("nJets", ">5"), ("nJets", ">6"), ("nJets", ">7"), ("nJets", ">8"), ("nJets", ">9")]
+            # [("HT", "> 2500"), ("LT", ">500"), ("nJets", ">2"), ("leadMuonPt", ">25")]
         ]
 
         yields = {}
-
         mask = np.full(len(np_0b), True)
         print("\nEntry point:", len(np_0b))
         for cut in cut_list:
