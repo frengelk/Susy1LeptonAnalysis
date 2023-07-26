@@ -34,6 +34,7 @@ def setup_processes(cfg):
         label=r"TT+Jets",
         label_short="TTJ",
         color=(0, 0, 255),
+        aux={"isData": False, "histtype": "fill"},
         processes=[
             od.Process(
                 "TTJets_sl_fromt",
@@ -100,6 +101,7 @@ def setup_processes(cfg):
         label=r"QCD Multijet",
         label_short="QCD",
         color=(139, 28, 98),
+        aux={"isData": False, "histtype": "fill"},
         processes=[
             od.Process(
                 "QCD_HT100to200",
@@ -165,11 +167,12 @@ def setup_processes(cfg):
     )
 
     cfg.add_process(
-        "WJets",
+        "WJetsToLNu_HT",  # "WJets",
         300,
         label=r"$W+Jets \rightarrow l \nu$",
         label_short="W+JEts",
         color=(255, 165, 0),
+        aux={"isData": False, "histtype": "fill"},
         processes=[
             od.Process(
                 "WJets_HT70to100",
@@ -239,7 +242,9 @@ def setup_processes(cfg):
         400,
         label=r"$DY \rightarrow l l$",
         label_short="DY",
-        color=(100, 100, 100),
+        # color=(100, 100, 100),
+        color=(210, 105, 30),
+        aux={"isData": False, "histtype": "fill"},
         processes=[
             od.Process(
                 "DY_HT70to100",
@@ -310,6 +315,7 @@ def setup_processes(cfg):
         label=r"Single t SM",
         label_short="st",
         color=(255, 0, 0),
+        aux={"isData": False, "histtype": "fill"},
         processes=[
             od.Process(
                 "st_tW_top",
@@ -372,6 +378,7 @@ def setup_processes(cfg):
         label=r"Rare Processes",
         label_short="rare",
         color=(0, 255, 0),
+        aux={"isData": False, "histtype": "fill"},
         processes=[
             od.Process(
                 "TTZ_llnunu",
@@ -380,6 +387,7 @@ def setup_processes(cfg):
                 xsecs={
                     13: sn.Number(0.253),
                 },
+                aux={"isData": False, "histtype": "fill"},
             ),
             od.Process(
                 "TTZ_qq",
@@ -388,6 +396,7 @@ def setup_processes(cfg):
                 xsecs={
                     13: sn.Number(0.530),
                 },
+                aux={"isData": False, "histtype": "fill"},
             ),
             od.Process(
                 "TTWjets_lnu",
@@ -396,6 +405,7 @@ def setup_processes(cfg):
                 xsecs={
                     13: sn.Number(0.204),
                 },
+                aux={"isData": False, "histtype": "fill"},
             ),
             od.Process(
                 "TTWjets_qq",
@@ -404,12 +414,14 @@ def setup_processes(cfg):
                 xsecs={
                     13: sn.Number(0.406),
                 },
+                aux={"isData": False, "histtype": "fill"},
             ),
             od.Process(
                 "WW_llnunu",
                 605,
                 label=r"WW ll nu nu",
                 xsecs={13: sn.Number(12.178)},
+                aux={"isData": False, "histtype": "fill"},
             ),
             od.Process(
                 "WW_lnuqq",
@@ -418,12 +430,14 @@ def setup_processes(cfg):
                 xsecs={
                     13: sn.Number(49.997),
                 },
+                aux={"isData": False, "histtype": "fill"},
             ),
             od.Process(
                 "WZ_lnuqq",
                 607,
                 label=r"WZ l nu qq",
                 xsecs={13: sn.Number(10.71)},
+                aux={"isData": False, "histtype": "fill"},
             ),
             od.Process(
                 "WZ_lnununu",
@@ -432,6 +446,7 @@ def setup_processes(cfg):
                 xsecs={
                     13: sn.Number(3.033),
                 },
+                aux={"isData": False, "histtype": "fill"},
             ),
             od.Process(
                 "WZ_llqq",
@@ -440,6 +455,7 @@ def setup_processes(cfg):
                 xsecs={
                     13: sn.Number(5.595),
                 },
+                aux={"isData": False, "histtype": "fill"},
             ),
             od.Process(
                 "ZZ_qqnunu",
@@ -448,6 +464,7 @@ def setup_processes(cfg):
                 xsecs={
                     13: sn.Number(4.033),
                 },
+                aux={"isData": False, "histtype": "fill"},
             ),
             od.Process(
                 "ZZ_llnunu",
@@ -456,12 +473,14 @@ def setup_processes(cfg):
                 xsecs={
                     13: sn.Number(0.564),
                 },
+                aux={"isData": False, "histtype": "fill"},
             ),
             od.Process(
                 "ZZ_ll_qq",
                 612,
                 label=r"ZZ ll qq",
                 xsecs={13: sn.Number(3.22)},
+                aux={"isData": False, "histtype": "fill"},
             ),
             od.Process(
                 "tZq_ll4f",
@@ -470,6 +489,7 @@ def setup_processes(cfg):
                 xsecs={
                     13: sn.Number(0.0758),
                 },
+                aux={"isData": False, "histtype": "fill"},
             ),
         ],
     )
@@ -477,11 +497,12 @@ def setup_processes(cfg):
     # write datasets, no crosssection, is_data flag instead
 
     cfg.add_process(
-        "data_electron",
+        "SingleElectron",  # "data_electron",
         700,
         label=r"data electron",
         label_short="dat ele",
         color=(0, 0, 0),
+        aux={"isData": True, "histtype": "errorbar"},
         processes=[
             od.Process("data_e_B", 702, label=r"data", is_data=True),
             # od.Process(
@@ -500,11 +521,12 @@ def setup_processes(cfg):
     )
 
     cfg.add_process(
-        "data_muon",
+        "SingleMuon",  # "data_muon",
         800,
         label=r"data muon",
         label_short="dat mu",
         color=(0, 0, 0),
+        aux={"isData": True, "histtype": "errorbar"},
         processes=[
             od.Process("data_mu_B", 802, label=r"data", is_data=True),
             # od.Process(
@@ -523,11 +545,12 @@ def setup_processes(cfg):
     )
     # blank MET data
     cfg.add_process(
-        "data_MET",
+        "MET",
         900,
         label=r"data MET",
         label_short="dat met",
         color=(0, 0, 0),
+        aux={"isData": True, "histtype": "errorbar"},
         processes=[
             od.Process("data_MET_B", 902, label=r"data", is_data=True),
             od.Process("data_MET_C", 903, label=r"data", is_data=True),
@@ -537,4 +560,12 @@ def setup_processes(cfg):
             od.Process("data_MET_G", 907, label=r"data", is_data=True),
             od.Process("data_MET_H", 908, label=r"data", is_data=True),
         ],
+    )
+    cfg.add_process(
+        "data",
+        789,
+        label=r"data all",
+        label_short="data",
+        color=(0, 0, 0),
+        aux={"isData": True, "histtype": "errorbar"},
     )
