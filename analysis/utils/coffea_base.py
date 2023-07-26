@@ -181,7 +181,7 @@ class BaseSelection:
             summary["sum_gen_weights"][dataset] = np.sum(events.GenWeight)
         else:
             # just filling a 1 for each event
-           summary["sum_gen_weights"][dataset] = 1.
+            summary["sum_gen_weights"][dataset] = 1.0
 
         # Get Variables used for Analysis and Selection
         locals().update(self.get_base_variable(events))
@@ -261,27 +261,27 @@ class BaseSelection:
         # apply weights,  MC/data check beforehand
         weights = processor.Weights(size, storeIndividual=self.individal_weights)
         if not events.metadata["isData"]:
-            weights.add("xSec", events.metadata["xSec"]*1000) # account for pb / fb
-            weights.add('Luminosity', events.metadata['Luminosity'])
+            weights.add("xSec", events.metadata["xSec"] * 1000)  # account for pb / fb
+            weights.add("Luminosity", events.metadata["Luminosity"])
             weights.add("GenWeight", events.GenWeight)
             if events.metadata["treename"] == "Muon":
-                sfs = ["MuonTightSf", "MuonTriggerSf", 'MuonMediumIsoSf']
+                sfs = ["MuonTightSf", "MuonTriggerSf", "MuonMediumIsoSf"]
                 for sf in sfs:
                     weights.add(
                         sf,
-                        getattr(events,sf)[:,0],
-                        weightDown=getattr(events,sf + "Down")[:,0],
-                        weightUp=getattr(events,sf + "Up")[:,0],
+                        getattr(events, sf)[:, 0],
+                        weightDown=getattr(events, sf + "Down")[:, 0],
+                        weightUp=getattr(events, sf + "Up")[:, 0],
                     )
 
             if events.metadata["treename"] == "Electron":
-                sfs = ['ElectronTightSf', 'ElectronRecoSf']
+                sfs = ["ElectronTightSf", "ElectronRecoSf"]
                 for sf in sfs:
                     weights.add(
                         sf,
-                        getattr(events,sf)[:,0],
-                        weightDown=getattr(events,sf + "Down")[:,0],
-                        weightUp=getattr(events,sf + "Up")[:,0],
+                        getattr(events, sf)[:, 0],
+                        weightDown=getattr(events, sf + "Down")[:, 0],
+                        weightUp=getattr(events, sf + "Up")[:, 0],
                     )
 
             # weights.add(
@@ -306,8 +306,8 @@ class BaseSelection:
             )
 
             # weights.add(
-                # 'JetDeepJetMediumSf',
-                # events.JetDeepJetMediumSf,
+            # 'JetDeepJetMediumSf',
+            # events.JetDeepJetMediumSf,
             # )
 
             # weights.add("JetMediumCSVBTagSF", events.JetMediumCSVBTagSF,
@@ -386,12 +386,12 @@ class ArrayExporter(BaseProcessor, BaseSelection):
         output = selected_output["summary"]
         arrays = self.get_selection_as_np(selected_output)
         # setting weights as extra axis in arrays
-        #arrays.setdefault("weights", np.stack([np.full_like(weights, 1), weights], axis=-1))
+        # arrays.setdefault("weights", np.stack([np.full_like(weights, 1), weights], axis=-1))
         arrays.setdefault("weights", weights)
         if self.dtype:
             arrays = {key: array.astype(self.dtype) for key, array in arrays.items()}
         output["arrays"] = dict_accumulator({category + "_" + selected_output["dataset"]: dict_accumulator({key: ArrayAccumulator(array[cut, ...]) for key, array in arrays.items()}) for category, cut in categories.items()})
-        arrays.setdefault("weight", np.stack([np.full_like(weights,1), weights], axis=-1))
+        arrays.setdefault("weight", np.stack([np.full_like(weights, 1), weights], axis=-1))
         return output
 
     def postprocess(self, accumulator):
