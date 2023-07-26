@@ -67,7 +67,7 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
     def output(self):
         files, job_number, job_number_dict = self.load_job_dict()
         out = {
-            cat + "_" + dat.split("/")[0] + "_" + str(job): {"array": self.local_target(cat + "_" + dat.split("/")[0] + "_" + str(job) + ".npy"), "weights": self.local_target(cat + "_" + dat.split("/")[0] + "_" + str(job) + "_weights.npy"), "cutflow": self.local_target(cat + "_" + dat.split("/")[0] + "_" + str(job) + "cutflow.coffea"), "n_minus1": self.local_target(cat + "_" + dat.split("/")[0] + "_" + str(job) + "n_minus1.coffea")}
+            cat + "_" + dat.split("/")[0] + "_" + str(job): {"array": self.local_target(cat + "_" + dat.split("/")[0] + "_" + str(job) + ".npy"), "weights": self.local_target(cat + "_" + dat.split("/")[0] + "_" + str(job) + "_weights.npy"), "sum_gen_weights": self.local_target(cat + "_" + dat.split("/")[0] + "_" + str(job) + "_sum_gen_weights.npy"), "cutflow": self.local_target(cat + "_" + dat.split("/")[0] + "_" + str(job) + "cutflow.coffea"), "n_minus1": self.local_target(cat + "_" + dat.split("/")[0] + "_" + str(job) + "n_minus1.coffea")}
             for cat in self.config_inst.categories.names()
             for job, dat in job_number_dict.items()
             # for i in range(job_number)  + "_" + str(job_number)
@@ -135,14 +135,16 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
             isData = file["MetaData"]["IsData"].array()[0]
             isFastSim = file["MetaData"]["IsFastSim"].array()[0]
             if not isData:
-                # all events with the same Xsec
-                assert abs(np.mean(file["MetaData"]["xSection"].array()) - file["MetaData"]["xSection"].array()[0]) < 1e-9
+                # assert all events with the same Xsec in scope with float precision
+                assert abs(np.mean(file["MetaData"]["xSection"].array()) - file["MetaData"]["xSection"].array()[0]) < file["MetaData"]["xSection"].array()[0] *1e-5
                 xSec = file["MetaData"]["xSection"].array()[0]
                 lumi = file["MetaData"]["Luminosity"].array()[0]
+                sum_gen_weight = np.sum(file["MetaData"]['SumGenWeight'].array())
             else:
                 # filler values so they are defined
                 xSec = 1
                 lumi = 1
+                sum_gen_weight = 1 # works if there is only one file per data, should rethink that
         fileset = {
             dataset: {
                 "files": [data_path + "/" + subset],  # file for file in
@@ -177,7 +179,8 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
             self.output().popitem()[1]["array"].parent.touch()
             for cat in out["arrays"]:
                 #    reweighting by sum over genweights in whole dataset
-                self.output()[cat + "_" + str(self.branch)]["weights"].dump(out["arrays"][cat]["weights"].value / out["sum_gen_weights"][dataset])
+                self.output()[cat + "_" + str(self.branch)]["weights"].dump(out["arrays"][cat]["weights"].value)
+                self.output()[cat + "_" + str(self.branch)]["sum_gen_weights"].dump(sum_gen_weight)
                 self.output()[cat + "_" + str(self.branch)]["array"].dump(out["arrays"][cat]["hl"].value)
                 self.output()[cat + "_" + str(self.branch)]["cutflow"].dump(out["cutflow"])
                 self.output()[cat + "_" + str(self.branch)]["n_minus1"].dump(out["n_minus1"])

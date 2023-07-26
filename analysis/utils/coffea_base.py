@@ -177,6 +177,11 @@ class BaseSelection:
         size = events.metadata["entrystop"] - events.metadata["entrystart"]
         summary["n_events"][dataset] = size
         summary["n_events"]["sumAllEvents"] = size
+        if not events.metadata["isData"]:
+            summary["sum_gen_weights"][dataset] = np.sum(events.GenWeight)
+        else:
+            # just filling a 1 for each event
+           summary["sum_gen_weights"][dataset] = 1.
 
         # Get Variables used for Analysis and Selection
         locals().update(self.get_base_variable(events))
@@ -197,15 +202,6 @@ class BaseSelection:
         # from IPython import embed; embed()
         subleading_jet = ak.fill_none(ak.firsts(events.JetPt[:, 1:2] > 80), False)
 
-        """
-        checking for subleading jet
-        ak.sum(events.JetPt[:,1:2][events.nJet>=3])
-        Out[24]: 1240391.5
-
-        ak.sum(sortedJets[:,1][events.nJet>=3])
-        Out[25]: 1240391.5
-        """
-
         # doing lep selection
         mu_pt = ak.fill_none(ak.firsts(events.MuonPt[:, 0:1]), -999)
         e_pt = ak.fill_none(ak.firsts(events.ElectronPt[:, 0:1]), -999)
@@ -218,7 +214,7 @@ class BaseSelection:
         selected = (mu_id | e_id) & ((events.nGoodMuon == 1) | (events.nGoodElectron == 1))
         no_veto_lepton = (events.nVetoMuon - events.nGoodMuon == 0) & (events.nVetoElectron - events.nGoodElectron == 0)
 
-        #njet_cut = ak.num(goodJets) >= 3
+        # njet_cut = ak.num(goodJets) >= 3
         njet_cut = ak.sum(events.JetIsClean, axis=1) >= 3
         iso_cut = ~events.IsoTrackVeto
 
@@ -231,14 +227,10 @@ class BaseSelection:
         HLT_Or = (not events.metadata["isData"]) | (events.HLT_MuonOr | events.HLT_MetOr | events.HLT_EleOr)
         # ghost muon filter
         ghost_muon_filter = events.MetPt / events.CaloMET_pt <= 5
-        # apply some weights,  MC/data check beforehand
-        weights = processor.Weights(size, storeIndividual=self.individal_weights)
-        # if not process_obj.is_data:
-        #    weights.add("xsecs", process_obj.xsecs[13.0].nominal)
         common = ["baselineSelection", "doubleCounting_XOR", "HLT_Or"]  # , "{}IdCut".format(events.metadata["treename"])]
         # data cut for control plots
         data_cut = (events.LT > 250) & (events.HT > 500) & (ak.num(goodJets) >= 3)
-        skim_cut = (events.LT > 150) & (events.HT > 350)
+        # skim_cut = (events.LT > 150) & (events.HT > 350)
 
         triggers = [
             "HLT_Ele115_CaloIdVT_GsfTrkIdT",
@@ -259,12 +251,69 @@ class BaseSelection:
             "HLT_PFMETNoMu120_PFMHTNoMu120_IDTight",
         ]
 
-        for trig in triggers:
-            locals().update({trig: events[trig]})
-            #self.add_to_selection(selection, trig, events[trig])
+        # for trig in triggers:
+        #    locals().update({trig: events[trig]})
+        # self.add_to_selection(selection, trig, events[trig])
 
-        MET_Filter = "HLT_PFMET100_PFMHT100_IDTight | HLT_PFMET110_PFMHT110_IDTight | HLT_PFMET120_PFMHT120_IDTight | HLT_PFMETNoMu100_PFMHTNoMu100_IDTight | HLT_PFMETNoMu110_PFMHTNoMu110_IDTight |HLT_PFMETNoMu120_PFMHTNoMu120_IDTight"
-        METFilter = eval(MET_Filter)
+        # MET_Filter = "HLT_PFMET100_PFMHT100_IDTight | HLT_PFMET110_PFMHT110_IDTight | HLT_PFMET120_PFMHT120_IDTight | HLT_PFMETNoMu100_PFMHTNoMu100_IDTight | HLT_PFMETNoMu110_PFMHTNoMu110_IDTight |HLT_PFMETNoMu120_PFMHTNoMu120_IDTight"
+        # METFilter = eval(MET_Filter)
+
+        # apply weights,  MC/data check beforehand
+        weights = processor.Weights(size, storeIndividual=self.individal_weights)
+        if not events.metadata["isData"]:
+            weights.add("xSec", events.metadata["xSec"]*1000) # account for pb / fb
+            weights.add('Luminosity', events.metadata['Luminosity'])
+            weights.add("GenWeight", events.GenWeight)
+            if events.metadata["treename"] == "Muon":
+                sfs = ["MuonTightSf", "MuonTriggerSf", 'MuonMediumIsoSf']
+                for sf in sfs:
+                    weights.add(
+                        sf,
+                        getattr(events,sf)[:,0],
+                        weightDown=getattr(events,sf + "Down")[:,0],
+                        weightUp=getattr(events,sf + "Up")[:,0],
+                    )
+
+            if events.metadata["treename"] == "Electron":
+                sfs = ['ElectronTightSf', 'ElectronRecoSf']
+                for sf in sfs:
+                    weights.add(
+                        sf,
+                        getattr(events,sf)[:,0],
+                        weightDown=getattr(events,sf + "Down")[:,0],
+                        weightUp=getattr(events,sf + "Up")[:,0],
+                    )
+
+            # weights.add(
+            # "nISRWeight_Mar17",
+            # events.nISRWeight_Mar17,
+            # weightDown=events.nISRWeightDown_Mar17,
+            # weightUp=events.nISRWeightDown_Mar17,
+            # )
+
+            weights.add(
+                "PileUpWeight",
+                events.PileUpWeight,
+                weightDown=events.PileUpWeightDown,
+                weightUp=events.PileUpWeightUp,
+            )
+
+            weights.add(
+                "PreFireWeight",
+                events.PreFireWeight,
+                weightDown=events.PreFireWeightDown,
+                weightUp=events.PreFireWeightUp,
+            )
+
+            # weights.add(
+                # 'JetDeepJetMediumSf',
+                # events.JetDeepJetMediumSf,
+            # )
+
+            # weights.add("JetMediumCSVBTagSF", events.JetMediumCSVBTagSF,
+            # weightUp = events.JetMediumCSVBTagSFUp,
+            # weightDown= events.JetMediumCSVBTagSFDown,
+            # )
 
         for cat in self.config.categories:
             for cut in cat.get_aux("cuts"):
@@ -333,12 +382,16 @@ class ArrayExporter(BaseProcessor, BaseSelection):
         # Applies indivudal selection per category and then combines them
         selected_output = self.select(events)
         categories = self.categories(selected_output)
-        # weights = selected_output["weights"]
+        weights = selected_output["weights"].weight()
         output = selected_output["summary"]
         arrays = self.get_selection_as_np(selected_output)
+        # setting weights as extra axis in arrays
+        #arrays.setdefault("weights", np.stack([np.full_like(weights, 1), weights], axis=-1))
+        arrays.setdefault("weights", weights)
         if self.dtype:
             arrays = {key: array.astype(self.dtype) for key, array in arrays.items()}
         output["arrays"] = dict_accumulator({category + "_" + selected_output["dataset"]: dict_accumulator({key: ArrayAccumulator(array[cut, ...]) for key, array in arrays.items()}) for category, cut in categories.items()})
+        arrays.setdefault("weight", np.stack([np.full_like(weights,1), weights], axis=-1))
         return output
 
     def postprocess(self, accumulator):
