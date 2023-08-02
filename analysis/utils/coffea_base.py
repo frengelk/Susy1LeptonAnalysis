@@ -11,6 +11,7 @@ import awkward as ak
 from coffea.nanoevents import NanoEventsFactory, NanoAODSchema
 from coffea import hist, processor
 from coffea.hist.hist_tools import DenseAxis, Hist
+import boost_histogram as bh
 
 from coffea.processor.accumulator import (
     dict_accumulator,
@@ -232,40 +233,39 @@ class BaseSelection:
         data_cut = (events.LT > 250) & (events.HT > 500) & (ak.num(goodJets) >= 3)
         # skim_cut = (events.LT > 150) & (events.HT > 350)
 
-        triggers = [
-            "HLT_Ele115_CaloIdVT_GsfTrkIdT",
-            "HLT_Ele15_IsoVVVL_PFHT450",
-            "HLT_Ele35_WPTight_Gsf",
-            "HLT_Ele50_CaloIdVT_GsfTrkIdT_PFJet165",
-            "HLT_EleOr",
-            "HLT_IsoMu27",
-            "HLT_MetOr",
-            "HLT_Mu15_IsoVVVL_PFHT450",
-            "HLT_Mu50",
-            "HLT_MuonOr",
-            "HLT_PFMET100_PFMHT100_IDTight",
-            "HLT_PFMET110_PFMHT110_IDTight",
-            "HLT_PFMET120_PFMHT120_IDTight",
-            "HLT_PFMETNoMu100_PFMHTNoMu100_IDTight",
-            "HLT_PFMETNoMu110_PFMHTNoMu110_IDTight",
-            "HLT_PFMETNoMu120_PFMHTNoMu120_IDTight",
-        ]
+        # triggers = [
+        # "HLT_Ele115_CaloIdVT_GsfTrkIdT",
+        # "HLT_Ele15_IsoVVVL_PFHT450",
+        # "HLT_Ele35_WPTight_Gsf",
+        # "HLT_Ele50_CaloIdVT_GsfTrkIdT_PFJet165",
+        # "HLT_EleOr",
+        # "HLT_IsoMu27",
+        # "HLT_MetOr",
+        # "HLT_Mu15_IsoVVVL_PFHT450",
+        # "HLT_Mu50",
+        # "HLT_MuonOr",
+        # "HLT_PFMET100_PFMHT100_IDTight",
+        # "HLT_PFMET110_PFMHT110_IDTight",
+        # "HLT_PFMET120_PFMHT120_IDTight",
+        # "HLT_PFMETNoMu100_PFMHTNoMu100_IDTight",
+        # "HLT_PFMETNoMu110_PFMHTNoMu110_IDTight",
+        # "HLT_PFMETNoMu120_PFMHTNoMu120_IDTight",
+        # ]
 
         # for trig in triggers:
         #    locals().update({trig: events[trig]})
         # self.add_to_selection(selection, trig, events[trig])
 
         # MET_Filter = "HLT_PFMET100_PFMHT100_IDTight | HLT_PFMET110_PFMHT110_IDTight | HLT_PFMET120_PFMHT120_IDTight | HLT_PFMETNoMu100_PFMHTNoMu100_IDTight | HLT_PFMETNoMu110_PFMHTNoMu110_IDTight |HLT_PFMETNoMu120_PFMHTNoMu120_IDTight"
-        # METFilter = eval(MET_Filter)
-
-        # apply weights,  MC/data check beforehand
+        # METFilter = eval(MET_Filter)        # apply weights,  MC/data check beforehand
         weights = processor.Weights(size, storeIndividual=self.individal_weights)
         if not events.metadata["isData"]:
             weights.add("xSec", events.metadata["xSec"] * 1000)  # account for pb / fb
             weights.add("Luminosity", events.metadata["Luminosity"])
             weights.add("GenWeight", events.GenWeight)
+            weights.add("sumGenWeight", 1 / events.metadata["sumGenWeight"])
             if events.metadata["treename"] == "Muon":
-                sfs = ["MuonTightSf", "MuonTriggerSf", "MuonMediumIsoSf"]
+                sfs = ["MuonMediumSf", "MuonTriggerSf", "MuonMediumIsoSf"]
                 for sf in sfs:
                     weights.add(
                         sf,
@@ -360,9 +360,10 @@ class ArrayExporter(BaseProcessor, BaseSelection):
     dtype = None
     sep = "_"
 
-    def __init__(self, task, Lepton):
+    def __init__(self, task, Lepton, additional_plots=False):
         super().__init__(task)
         self.Lepton = Lepton
+        self.additional_plots = additional_plots
 
         self._accumulator["arrays"] = dict_accumulator()
 
@@ -392,6 +393,47 @@ class ArrayExporter(BaseProcessor, BaseSelection):
             arrays = {key: array.astype(self.dtype) for key, array in arrays.items()}
         output["arrays"] = dict_accumulator({category + "_" + selected_output["dataset"]: dict_accumulator({key: ArrayAccumulator(array[cut, ...]) for key, array in arrays.items()}) for category, cut in categories.items()})
         arrays.setdefault("weight", np.stack([np.full_like(weights, 1), weights], axis=-1))
+
+        # option to do cutflow and N1 plots on the fly
+        if self.additional_plots:
+            weights = selected_output["weights"]
+            for cat in selected_output["categories"].keys():
+                # filling cutflow hist
+                cutflow_cuts = set()
+                output["cutflow"].fill(
+                    dataset=selected_output["dataset"],
+                    category=cat,
+                    cutflow=np.array([0]),
+                    weight=np.array([weights.weight().sum()]),
+                )
+                selection = selected_output.get("selection")
+                categories = selected_output.get("categories")
+                for i, cutflow_cut in enumerate(categories[cat]):
+                    cutflow_cuts.add(cutflow_cut)
+                    cutflow_cut = selection.all(*cutflow_cuts)
+                    output["cutflow"].fill(
+                        dataset=selected_output["dataset"],
+                        category=cat,
+                        cutflow=np.array([i + 1]),
+                        weight=np.array([weights.weight()[cutflow_cut].sum()]),
+                    )
+                # filling N-1 plots
+                output["n_minus1"].fill(
+                    dataset=selected_output["dataset"],
+                    category=cat,
+                    cutflow=np.array([0]),
+                    weight=np.array([weights.weight().sum()]),
+                )
+                allCuts = set(categories[cat])
+                for i, cut in enumerate(categories[cat]):
+                    output["n_minus1"].fill(
+                        dataset=selected_output["dataset"],
+                        category=cat,
+                        cutflow=np.array([i + 1]),
+                        weight=np.array([weights.weight()[selection.all(*(allCuts - {cut}))].sum()]),
+                    )
+                # from IPython import embed; embed()
+            # output["n_events"]["sumAllEvents"] += selected_output["size"]
         return output
 
     def postprocess(self, accumulator):

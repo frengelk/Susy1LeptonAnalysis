@@ -18,9 +18,9 @@ from rich.console import Console
 from tasks.base import DatasetTask, HTCondorWorkflow
 from utils.coffea_base import ArrayExporter
 from utils.signal_regions import signal_regions_0b
-from tasks.makefiles import WriteDatasetPathDict, WriteDatasets
+from tasks.makefiles import WriteDatasetPathDict, WriteDatasets, CollectInputData
 from tqdm import tqdm
-from utils.coffea_base import *
+from utils.coffea_base import ArrayExporter
 
 
 class CoffeaTask(DatasetTask):
@@ -42,8 +42,20 @@ class CoffeaTask(DatasetTask):
     lepton_selection = Parameter(default="Muon")
     datasets_to_process = ListParameter(default=["WJets"])
 
+    def get_proc_list(self, datasets):
+        # task to return subprocesses for list of datasets
+        proc_list = []
+        for dat in datasets:
+            proc = self.config_inst.get_process(dat)
+            if not proc.aux["isData"]:
+                proc_list.extend(proc.processes.names())
+            elif proc.aux["isData"]:
+                proc_list.append(proc.name)
+        return proc_list
+
 
 class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
+    additional_plots = BoolParameter(default=False)
     """
     this is a HTCOndor workflow, normally it will get submitted with configurations defined
     in the htcondor_bottstrap.sh or the basetasks.HTCondorWorkflow
@@ -56,7 +68,7 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
         super(CoffeaProcessor, self).__init__(*args, **kwargs)
 
     def requires(self):
-        return WriteDatasetPathDict.req(self)
+        return {"files": WriteDatasetPathDict.req(self), "weights": CollectInputData.req(self)}
         # return WriteDatasets.req(self)
 
     def create_branch_map(self):
@@ -74,7 +86,7 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
             + str(job): {
                 "array": self.local_target(cat + "_" + dat.split("/")[0] + "_" + str(job) + ".npy"),
                 "weights": self.local_target(cat + "_" + dat.split("/")[0] + "_" + str(job) + "_weights.npy"),
-                "sum_gen_weights": self.local_target(cat + "_" + dat.split("/")[0] + "_" + str(job) + "_sum_gen_weights.npy"),
+                # "sum_gen_weights": self.local_target(cat + "_" + dat.split("/")[0] + "_" + str(job) + "_sum_gen_weights.npy"),
                 "cutflow": self.local_target(cat + "_" + dat.split("/")[0] + "_" + str(job) + "cutflow.coffea"),
                 "n_minus1": self.local_target(cat + "_" + dat.split("/")[0] + "_" + str(job) + "n_minus1.coffea"),
             }
@@ -96,26 +108,25 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
         job_number = 0  # len(data_list.keys())
         job_number_dict = {}
         data_path = data_list["directory_path"]
-        for key, files in data_list.items():
-            check_list = []
-            for dat in self.datasets_to_process:
-                if dat in key:
-                    check_list.append(True)
-
-            # this is so ugly, I want to do
-            # any(dat for dat in self.datasets_to_process if(dat in key))
-            if not any(check_list):
-                continue
-            for i, file in enumerate(sorted(files)):
-                f = up.open(data_path + "/" + file)
-                # check for empty root file
-                if f.keys() == []:
-                    print("Empty file:", file)
-                    job_number -= 1
-                    continue
-                job_number_dict.update({job_number + i: file})
-            job_number += len(files)
-
+        # start with wanted process names, than check for leafs
+        for dat in self.datasets_to_process:
+            proc = self.config_inst.get_process(dat)
+            if not proc.aux["isData"]:
+                proc_list = proc.processes.names()
+            elif proc.aux["isData"]:
+                proc_list = [proc.name]
+            # for key, files in data_list.items():
+            for name in proc_list:
+                files = data_list[name]
+                for i, file in enumerate(sorted(files)):
+                    f = up.open(data_path + "/" + file)
+                    # check for empty root file
+                    if f.keys() == []:
+                        print("Empty file:", file)
+                        job_number -= 1
+                        continue
+                    job_number_dict.update({job_number + i: file})
+                job_number += len(files)
         if self.debug:
             job_number = 1
             job_number_dict = {0: job_number_dict[0]}
@@ -123,11 +134,12 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
 
     @law.decorator.timeit(publish_message=True)
     def run(self):
-        data_dict = self.input()["dataset_dict"].load()  # ["SingleMuon"]  # {self.dataset: [self.file]}
-        data_path = self.input()["dataset_path"].load()
+        data_dict = self.input()["files"]["dataset_dict"].load()  # ["SingleMuon"]  # {self.dataset: [self.file]}
+        data_path = self.input()["files"]["dataset_path"].load()
+        sum_gen_weights_dict = self.input()["weights"]["sum_gen_weights"].load()
         # declare processor
         if self.processor == "ArrayExporter":
-            processor_inst = ArrayExporter(self, Lepton=self.lepton_selection)
+            processor_inst = ArrayExporter(self, Lepton=self.lepton_selection, additional_plots=self.additional_plots)
         if self.processor == "Histogramer":
             processor_inst = Histogramer(self)
         # building together the respective strings to use for the coffea call
@@ -149,16 +161,15 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
                 assert abs(np.mean(file["MetaData"]["xSection"].array()) - file["MetaData"]["xSection"].array()[0]) < file["MetaData"]["xSection"].array()[0] * 1e-5
                 xSec = file["MetaData"]["xSection"].array()[0]
                 lumi = file["MetaData"]["Luminosity"].array()[0]
-                sum_gen_weight = np.sum(file["MetaData"]["SumGenWeight"].array())
+                # sum_gen_weight = np.sum(file["MetaData"]["SumGenWeight"].array())
             else:
                 # filler values so they are defined
                 xSec = 1
                 lumi = 1
-                sum_gen_weight = 1  # works if there is only one file per data, should rethink that
         fileset = {
             dataset: {
                 "files": [data_path + "/" + subset],  # file for file in
-                "metadata": {"PD": primaryDataset, "isData": isData, "isFastSim": isFastSim, "xSec": xSec, "Luminosity": lumi},
+                "metadata": {"PD": primaryDataset, "isData": isData, "isFastSim": isFastSim, "xSec": xSec, "Luminosity": lumi, "sumGenWeight": sum_gen_weights_dict[dataset]},
             }
         }
         print(fileset, treename)
@@ -188,9 +199,7 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
         if self.processor == "ArrayExporter":
             self.output().popitem()[1]["array"].parent.touch()
             for cat in out["arrays"]:
-                #    reweighting by sum over genweights in whole dataset
                 self.output()[cat + "_" + str(self.branch)]["weights"].dump(out["arrays"][cat]["weights"].value)
-                self.output()[cat + "_" + str(self.branch)]["sum_gen_weights"].dump(sum_gen_weight)
                 self.output()[cat + "_" + str(self.branch)]["array"].dump(out["arrays"][cat]["hl"].value)
                 self.output()[cat + "_" + str(self.branch)]["cutflow"].dump(out["cutflow"])
                 self.output()[cat + "_" + str(self.branch)]["n_minus1"].dump(out["n_minus1"])
