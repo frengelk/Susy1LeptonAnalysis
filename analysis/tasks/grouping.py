@@ -7,6 +7,7 @@ import luigi
 import numpy as np
 import uproot as up
 import coffea
+from tqdm import tqdm
 
 
 # other modules
@@ -19,16 +20,15 @@ class GroupCoffea(CoffeaTask):
 
     """
     Plotting cutflow produced by coffea
-    Utility for doing log scale, only debug plotting
     """
 
     def requires(self):
-        return CoffeaProcessor.req(self, lepton_selection=self.lepton_selection)
+        return CoffeaProcessor.req(self, lepton_selection=self.lepton_selection, additional_plots=True)
 
     def output(self):
         return {
-            "cutflow": self.local_target("cutflow.coffea"),
-            "n_minus1": self.local_target("n_minus1.coffea"),
+            self.lepton_selection + "_cutflow": self.local_target(self.lepton_selection + "_cutflow.coffea"),
+            self.lepton_selection + "_n_minus1": self.local_target(self.lepton_selection + "_n_minus1.coffea"),
         }
 
     def run(self):
@@ -39,19 +39,20 @@ class GroupCoffea(CoffeaTask):
             cut0 += inp[key]["cutflow"].load()
             minus0 += inp[key]["n_minus1"].load()
 
-        self.output()["cutflow"].dump(cut0)
-        self.output()["n_minus1"].dump(minus0)
+        print(cut0.values())
+        self.output()[self.lepton_selection + "_cutflow"].dump(cut0)
+        self.output()[self.lepton_selection + "_n_minus1"].dump(minus0)
 
 
 class MergeArrays(CoffeaTask):  # , law.LocalWorkflow, HTCondorWorkflow):
     channel = luigi.ListParameter(default=["Muon", "Electron"])  # , "Electron"])
 
-    def create_branch_map(self):
-        # 1 job only
-        return list(range(1))
+    # def create_branch_map(self):
+    # # 1 job only
+    # return list(range(1))
 
     def requires(self):
-        return {
+        inp = {
             sel: CoffeaProcessor.req(
                 self,
                 lepton_selection=sel,
@@ -60,42 +61,40 @@ class MergeArrays(CoffeaTask):  # , law.LocalWorkflow, HTCondorWorkflow):
             )
             for sel in self.channel
         }
+        inp.update({"sum_gen_weights": SumGenWeights.req(self)})
+        return inp
 
     def output(self):
-        return {cat + "_" + dat: {"array": self.local_target("merged_{}_{}.npy".format(cat, dat)), "weights": self.local_target("weights_{}_{}.npy".format(cat, dat))} for cat in self.config_inst.categories.names() for dat in self.datasets_to_process}
+        out = {cat + "_" + dat: {"array": self.local_target("merged_{}_{}.npy".format(cat, dat)), "weights": self.local_target("weights_{}_{}.npy".format(cat, dat))} for cat in self.config_inst.categories.names() for dat in self.datasets_to_process}
+        # out.update({"sum_gen_weights": self.local_target("sum_gen_weights.json")})
+        return out
 
     @law.decorator.timeit(publish_message=True)
     @law.decorator.safe_output
     def run(self):
-        sum_gen_weights_dict = {}
-        # sum weights same for both trees, do it once for muon
-        inp = self.input()["Muon"].collection.targets[0]
-        # set up dict
-        for key in inp.keys():
-            k = "_".join(key.split("_")[1:-1])
-            sum_gen_weights_dict.update({k: 0})
-        # fill it
-        for key in inp.keys():
-            s = inp[key]["sum_gen_weights"].load()
-            k = "_".join(key.split("_")[1:-1])
-            sum_gen_weights_dict[k] += s
-
-        for dat in self.datasets_to_process:
+        for dat in tqdm(self.datasets_to_process):
+            proc = self.config_inst.get_process(dat)
+            # check if job either in root process or leafes
+            proc_list = self.get_proc_list([dat])
             for cat in self.config_inst.categories.names():
-                # if not "No_cuts" in cat:
-                # continue
                 cat_list = []
                 weights_list = []
-                for lep in self.input().keys():
+                # merging different lepton channels together according to self.channel
+                for lep in self.channel:
                     np_dict = self.input()[lep]["collection"].targets[0]
-                    # will be redone for next lep selction, but doesn't matter since sum should be the same
-                    for key, arr in np_dict.items():
-                        if cat in key and dat in key:
-                            cat_list.append(arr["array"].load())
-                            k = "_".join(key.split("_")[1:-1])
-                            sum_gen_weights = sum_gen_weights_dict[k]
-                            # divide each subfile belonging to same process, 1/sum (proc1 + proc2)
-                            weights_list.append(arr["weights"].load() / sum_gen_weights)
+                    # looping over all keys each time is rather slow
+                    # but constructing keys yourself is tricky since there can be multiple jobs with different numbers
+                    # so now I loop over possible keys for each dataset and append the correct arrays
+                    for p in proc_list:
+                        for i in range(len(np_dict)):
+                            key = cat + "_" + p + "_" + str(i)
+                            if key in np_dict.keys():
+                                cat_list.append(np_dict[key]["array"].load())
+                                k = "_".join(key.split("_")[:-1])
+                                # sum_gen_weights = sum_gen_weights_dict[k]
+                                # divide each subfile belonging to same process, 1/sum (proc1 + proc2)
+                                weights_list.append(np_dict[key]["weights"].load())
+                                # / sum_gen_weights)
 
                 # float 16 so arrays can be saved easily
                 full_arr = np.concatenate(cat_list)  # , dtype=np.float16
