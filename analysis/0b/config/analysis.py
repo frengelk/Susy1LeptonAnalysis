@@ -30,8 +30,9 @@ for year, cfg in ("2016", config_2016), ("2017", config_2017):
     else:
         setup_datasets(cfg, campaign=campaign)
     setup_processes(cfg)
-    for dat in cfg.datasets:
-        dat.add_process(cfg.get_process(dat.name))
+    # maybe do that later again
+    # for dat in cfg.datasets:
+    #    dat.add_process(cfg.get_process(dat.name))
     setup_variables(cfg)
     setup_categories(cfg)
     cfg.set_aux(

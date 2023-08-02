@@ -2,6 +2,8 @@
 """
 Physics processes.
 If not stated otherwise, cross sections are given in pb.
+The cross sections are rather old, so we need to check them before use
+However, we use the xsec from metadata right now
 
 declare processes by overall process
  --binned processes according to files
@@ -27,33 +29,26 @@ def setup_processes(cfg):
         },
     )
     cfg.add_process("T1tttt", 2, label=r"T1tttt", label_short="T1", color=(150, 150, 150), xsecs={13: sn.Number(0.1)})  # FIXME,
+
     #### MC ####
     cfg.add_process(
-        "TTJets",
+        "TTbar",
         100,
-        label=r"TT+Jets",
-        label_short="TTJ",
+        label=r"$t \bar{t}$",
+        label_short="TT",
         color=(0, 0, 255),
         aux={"isData": False, "histtype": "fill"},
         processes=[
             od.Process(
-                "TTJets_sl_fromt",
-                101,
-                label=r"TTJets sl t",
-                xsecs={
-                    13: sn.Number(182.18),
-                },
-            ),
-            od.Process(
-                "TTJets_sl_fromtbar",
+                "TTToSemiLeptonic_TuneCP5_13TeV-powheg-pythia8",
                 102,
                 label=r"TTJets sl tbar",
                 xsecs={
-                    13: sn.Number(182.18),
+                    13: sn.Number(364.36),  # FIXME
                 },
             ),
             od.Process(
-                "TTJets_dilep",
+                "TTTo2L2Nu_TuneCP5_13TeV-powheg-pythia8",
                 103,
                 label=r"TTJets dl",
                 xsecs={
@@ -61,7 +56,7 @@ def setup_processes(cfg):
                 },
             ),
             od.Process(
-                "TTJets_HT600to800",
+                "TTJets_HT-600to800_TuneCP5_13TeV-madgraphMLM-pythia8",
                 104,
                 label=r"TTJets HT 600-800",
                 xsecs={
@@ -69,7 +64,7 @@ def setup_processes(cfg):
                 },
             ),
             od.Process(
-                "TTJets_HT800to1200",
+                "TTJets_HT-800to1200_TuneCP5_13TeV-madgraphMLM-pythia8",
                 105,
                 label=r"TTJets HT 800-1200",
                 xsecs={
@@ -77,7 +72,7 @@ def setup_processes(cfg):
                 },
             ),
             od.Process(
-                "TTJets_HT1200to2500",
+                "TTJets_HT-1200to2500_TuneCP5_13TeV-madgraphMLM-pythia8",
                 106,
                 label=r"TTJets HT 1200-2500",
                 xsecs={
@@ -85,7 +80,7 @@ def setup_processes(cfg):
                 },
             ),
             od.Process(
-                "TTJets_HT2500toInf",
+                "TTJets_HT-2500toInf_TuneCP5_13TeV-madgraphMLM-pythia8",
                 107,
                 label=r"TTJets HT 2500-Inf",
                 xsecs={
@@ -104,7 +99,7 @@ def setup_processes(cfg):
         aux={"isData": False, "histtype": "fill"},
         processes=[
             od.Process(
-                "QCD_HT100to200",
+                "QCD_HT100to200_TuneCP5_13TeV-madgraphMLM-pythia8",
                 201,
                 label=r"QCD HT 100-200",
                 xsecs={
@@ -112,7 +107,7 @@ def setup_processes(cfg):
                 },
             ),
             od.Process(
-                "QCD_HT200to300",
+                "QCD_HT200to300_TuneCP5_13TeV-madgraphMLM-pythia8",
                 202,
                 label=r"QCD HT 200-300",
                 xsecs={
@@ -120,7 +115,7 @@ def setup_processes(cfg):
                 },
             ),
             od.Process(
-                "QCD_HT300to500",
+                "QCD_HT300to500_TuneCP5_13TeV-madgraphMLM-pythia8",
                 203,
                 label=r"QCD HT 300-500",
                 xsecs={
@@ -128,7 +123,7 @@ def setup_processes(cfg):
                 },
             ),
             od.Process(
-                "QCD_HT500to700",
+                "QCD_HT500to700_TuneCP5_13TeV-madgraphMLM-pythia8",
                 204,
                 label=r"QCD HT 500-700",
                 xsecs={
@@ -136,13 +131,13 @@ def setup_processes(cfg):
                 },
             ),
             od.Process(
-                "QCD_HT700to1000",
+                "QCD_HT700to1000_TuneCP5_13TeV-madgraphMLM-pythia8",
                 205,
                 label=r"QCD HT 700-1000",
                 xsecs={13: sn.Number(6831)},
             ),
             od.Process(
-                "QCD_HT1000to1500",
+                "QCD_HT1000to1500_TuneCP5_13TeV-madgraphMLM-pythia8",
                 206,
                 label=r"QCD HT 1000-1500",
                 xsecs={
@@ -150,13 +145,13 @@ def setup_processes(cfg):
                 },
             ),
             od.Process(
-                "QCD_HT1500to2000",
+                "QCD_HT1500to2000_TuneCP5_13TeV-madgraphMLM-pythia8",
                 207,
                 label=r"QCD HT 1500-2000",
                 xsecs={13: sn.Number(119.9)},
             ),
             od.Process(
-                "QCD_HT2000toInf",
+                "QCD_HT2000toInf_TuneCP5_13TeV-madgraphMLM-pythia8",
                 208,
                 label=r"QCD HT 2000-Inf",
                 xsecs={
@@ -167,7 +162,7 @@ def setup_processes(cfg):
     )
 
     cfg.add_process(
-        "WJetsToLNu_HT",  # "WJets",
+        "WJets",
         300,
         label=r"$W+Jets \rightarrow l \nu$",
         label_short="W+JEts",
@@ -175,7 +170,7 @@ def setup_processes(cfg):
         aux={"isData": False, "histtype": "fill"},
         processes=[
             od.Process(
-                "WJets_HT70to100",
+                "WJetsToLNu_HT-70To100_TuneCP5_13TeV-madgraphMLM-pythia8",
                 301,
                 label=r"WJets HT 70-100",
                 xsecs={
@@ -183,7 +178,7 @@ def setup_processes(cfg):
                 },
             ),
             od.Process(
-                "WJets_HT100to200",
+                "WJetsToLNu_HT-100To200_TuneCP5_13TeV-madgraphMLM-pythia8",
                 302,
                 label=r"WJets HT 100-200",
                 xsecs={
@@ -191,7 +186,7 @@ def setup_processes(cfg):
                 },
             ),
             od.Process(
-                "WJets_HT200to400",
+                "WJetsToLNu_HT-200To400_TuneCP5_13TeV-madgraphMLM-pythia8",
                 303,
                 label=r"WJets HT 200-400",
                 xsecs={
@@ -199,7 +194,7 @@ def setup_processes(cfg):
                 },
             ),
             od.Process(
-                "WJets_HT400to600",
+                "WJetsToLNu_HT-400To600_TuneCP5_13TeV-madgraphMLM-pythia8",
                 304,
                 label=r"WJets HT 400-600",
                 xsecs={
@@ -207,13 +202,13 @@ def setup_processes(cfg):
                 },
             ),
             od.Process(
-                "WJets_HT600to800",
+                "WJetsToLNu_HT-600To800_TuneCP5_13TeV-madgraphMLM-pythia8",
                 305,
                 label=r"WJets HT 600-800",
                 xsecs={13: sn.Number(14.581)},
             ),
             od.Process(
-                "WJets_HT800to1200",
+                "WJetsToLNu_HT-800To1200_TuneCP5_13TeV-madgraphMLM-pythia8",
                 306,
                 label=r"WJets HT 800-1200",
                 xsecs={
@@ -221,13 +216,13 @@ def setup_processes(cfg):
                 },
             ),
             od.Process(
-                "WJets_HT1200to2500",
+                "WJetsToLNu_HT-1200To2500_TuneCP5_13TeV-madgraphMLM-pythia8",
                 307,
                 label=r"WJets HT 1200-2500",
                 xsecs={13: sn.Number(1.608)},
             ),
             od.Process(
-                "WJets_HT2500toInf",
+                "WJetsToLNu_HT-2500ToInf_TuneCP5_13TeV-madgraphMLM-pythia8",
                 308,
                 label=r"WJets HT 2500-Inf",
                 xsecs={
@@ -247,7 +242,7 @@ def setup_processes(cfg):
         aux={"isData": False, "histtype": "fill"},
         processes=[
             od.Process(
-                "DY_HT70to100",
+                "DYJetsToLL_M-50_HT-70to100_TuneCP5_PSweights_13TeV-madgraphMLM-pythia8",
                 401,
                 label=r"DY HT 70-100",
                 xsecs={
@@ -255,7 +250,7 @@ def setup_processes(cfg):
                 },
             ),
             od.Process(
-                "DY_HT100to200",
+                "DYJetsToLL_M-50_HT-100to200_TuneCP5_PSweights_13TeV-madgraphMLM-pythia8",
                 402,
                 label=r"DY HT 100-200",
                 xsecs={
@@ -263,7 +258,7 @@ def setup_processes(cfg):
                 },
             ),
             od.Process(
-                "DY_HT200to400",
+                "DYJetsToLL_M-50_HT-200to400_TuneCP5_PSweights_13TeV-madgraphMLM-pythia8",
                 403,
                 label=r"DY HT 200-400",
                 xsecs={
@@ -271,7 +266,7 @@ def setup_processes(cfg):
                 },
             ),
             od.Process(
-                "DY_HT400to600",
+                "DYJetsToLL_M-50_HT-400to600_TuneCP5_PSweights_13TeV-madgraphMLM-pythia8",
                 404,
                 label=r"DY HT 400-600",
                 xsecs={
@@ -279,13 +274,13 @@ def setup_processes(cfg):
                 },
             ),
             od.Process(
-                "DY_HT600to800",
+                "DYJetsToLL_M-50_HT-600to800_TuneCP5_PSweights_13TeV-madgraphMLM-pythia8",
                 405,
                 label=r"DY HT 600-800",
                 xsecs={13: sn.Number(1.681)},
             ),
             od.Process(
-                "DY_HT800to1200",
+                "DYJetsToLL_M-50_HT-800to1200_TuneCP5_PSweights_13TeV-madgraphMLM-pythia8",
                 406,
                 label=r"DY HT 800-1200",
                 xsecs={
@@ -293,13 +288,13 @@ def setup_processes(cfg):
                 },
             ),
             od.Process(
-                "DY_HT1200to2500",
+                "DYJetsToLL_M-50_HT-1200to2500_TuneCP5_PSweights_13TeV-madgraphMLM-pythia8",
                 407,
                 label=r"DY HT 1200-2500",
                 xsecs={13: sn.Number(0.186)},
             ),
             od.Process(
-                "DY_HT2500toInf",
+                "DYJetsToLL_M-50_HT-2500toInf_TuneCP5_PSweights_13TeV-madgraphMLM-pythia8",
                 408,
                 label=r"DY HT 2500-Inf",
                 xsecs={
@@ -308,17 +303,16 @@ def setup_processes(cfg):
             ),
         ],
     )
-
     cfg.add_process(
-        "st",
+        "SingleTop",
         500,
-        label=r"Single t SM",
+        label=r"Single top",
         label_short="st",
         color=(255, 0, 0),
         aux={"isData": False, "histtype": "fill"},
         processes=[
             od.Process(
-                "st_tW_top",
+                "ST_tW_top_5f_inclusiveDecays_TuneCP5_13TeV-powheg-pythia8",
                 501,
                 label=r"st tW top",
                 xsecs={
@@ -326,7 +320,7 @@ def setup_processes(cfg):
                 },
             ),
             od.Process(
-                "st_tW_antitop",
+                "ST_tW_antitop_5f_inclusiveDecays_TuneCP5_13TeV-powheg-pythia8",
                 502,
                 label=r"st tW antitop",
                 xsecs={
@@ -334,29 +328,30 @@ def setup_processes(cfg):
                 },
             ),
             od.Process(
-                "st_tW_antitop_no_fh",
+                "ST_tW_antitop_5f_NoFullyHadronicDecays_TuneCP5_13TeV-powheg-pythia8",
                 503,
                 label=r"s antitop no fh",
                 xsecs={
                     13: sn.Number(16.295),
                 },
             ),
+            # FIXME
+            # od.Process(
+            # "ST_tW_top_5f_NoFullyHadronicDecays_TuneCP5_13TeV-powheg-pythia",
+            # 504,
+            # label=r"s top no fh",
+            # xsecs={
+            # 13: sn.Number(16.295),
+            # },
+            # ),
             od.Process(
-                "st_tW_top_no_fh",
-                504,
-                label=r"s top no fh",
-                xsecs={
-                    13: sn.Number(16.295),
-                },
-            ),
-            od.Process(
-                "st_schannel_4f",
+                "ST_s-channel_4f_leptonDecays_TuneCP5_13TeV-amcatnlo-pythia8",
                 505,
                 label=r"st s 4f",
                 xsecs={13: sn.Number(3.360)},
             ),
             od.Process(
-                "st_tchannel_4f_incl",
+                "ST_t-channel_top_4f_InclusiveDecays_TuneCP5_13TeV-powheg-madspin-pythia8",
                 506,
                 label=r"st t_ch incl",
                 xsecs={
@@ -364,7 +359,7 @@ def setup_processes(cfg):
                 },
             ),
             od.Process(
-                "st_tchannel_antitop_4f_incl",
+                "ST_t-channel_antitop_4f_InclusiveDecays_TuneCP5_13TeV-powheg-madspin-pythia8",
                 507,
                 label=r"santit t_ch incl",
                 xsecs={13: sn.Number(80.97)},
@@ -373,7 +368,7 @@ def setup_processes(cfg):
     )
 
     cfg.add_process(
-        "rare",
+        "Rare",
         600,
         label=r"Rare Processes",
         label_short="rare",
@@ -381,7 +376,8 @@ def setup_processes(cfg):
         aux={"isData": False, "histtype": "fill"},
         processes=[
             od.Process(
-                "TTZ_llnunu",
+                # TTZ -> ll missing?
+                "TTZToNuNu_TuneCP5_13TeV-amcatnlo-pythia8",
                 601,
                 label=r"TTZ ll nu nu",
                 xsecs={
@@ -390,7 +386,7 @@ def setup_processes(cfg):
                 aux={"isData": False, "histtype": "fill"},
             ),
             od.Process(
-                "TTZ_qq",
+                "TTZToQQ_TuneCP5_13TeV-amcatnlo-pythia8",
                 602,
                 label=r"TTZ qq",
                 xsecs={
@@ -399,7 +395,7 @@ def setup_processes(cfg):
                 aux={"isData": False, "histtype": "fill"},
             ),
             od.Process(
-                "TTWjets_lnu",
+                "TTWJetsToLNu_TuneCP5_13TeV-amcatnloFXFX-madspin-pythia8",
                 603,
                 label=r"TTW+jets l nu",
                 xsecs={
@@ -408,7 +404,7 @@ def setup_processes(cfg):
                 aux={"isData": False, "histtype": "fill"},
             ),
             od.Process(
-                "TTWjets_qq",
+                "TTWJetsToQQ_TuneCP5_13TeV-amcatnloFXFX-madspin-pythia8",
                 604,
                 label=r"TTW+jets qq",
                 xsecs={
@@ -417,57 +413,57 @@ def setup_processes(cfg):
                 aux={"isData": False, "histtype": "fill"},
             ),
             od.Process(
-                "WW_llnunu",
+                "WWTo2L2Nu_TuneCP5_13TeV-powheg-pythia8",
                 605,
                 label=r"WW ll nu nu",
                 xsecs={13: sn.Number(12.178)},
                 aux={"isData": False, "histtype": "fill"},
             ),
+            # od.Process(
+            # "WW_lnuqq",
+            # 606,
+            # label=r"WW l nu qq",
+            # xsecs={
+            # 13: sn.Number(49.997),
+            # },
+            # aux={"isData": False, "histtype": "fill"},
+            # ),
             od.Process(
-                "WW_lnuqq",
-                606,
-                label=r"WW l nu qq",
-                xsecs={
-                    13: sn.Number(49.997),
-                },
-                aux={"isData": False, "histtype": "fill"},
-            ),
-            od.Process(
-                "WZ_lnuqq",
+                "WZTo1L1Nu2Q_4f_TuneCP5_13TeV-amcatnloFXFX-pythia8",
                 607,
                 label=r"WZ l nu qq",
                 xsecs={13: sn.Number(10.71)},
                 aux={"isData": False, "histtype": "fill"},
             ),
+            # od.Process(
+            # 'WZTo1L3Nu_4f_TuneCP5_13TeV-amcatnloFXFX-pythia8',
+            # 608,
+            # label=r"WZ l nununu",
+            # xsecs={
+            # 13: sn.Number(3.033),
+            # },
+            # aux={"isData": False, "histtype": "fill"},
+            # ),
+            # od.Process(
+            # "WZ_llqq",
+            # 609,
+            # label=r"WZ ll qq",
+            # xsecs={
+            # 13: sn.Number(5.595),
+            # },
+            # aux={"isData": False, "histtype": "fill"},
+            # ),
+            # od.Process(
+            # "ZZ_qqnunu",
+            # 610,
+            # label=r"ZZ qq nunu",
+            # xsecs={
+            # 13: sn.Number(4.033),
+            # },
+            # aux={"isData": False, "histtype": "fill"},
+            # ),
             od.Process(
-                "WZ_lnununu",
-                608,
-                label=r"WZ l nununu",
-                xsecs={
-                    13: sn.Number(3.033),
-                },
-                aux={"isData": False, "histtype": "fill"},
-            ),
-            od.Process(
-                "WZ_llqq",
-                609,
-                label=r"WZ ll qq",
-                xsecs={
-                    13: sn.Number(5.595),
-                },
-                aux={"isData": False, "histtype": "fill"},
-            ),
-            od.Process(
-                "ZZ_qqnunu",
-                610,
-                label=r"ZZ qq nunu",
-                xsecs={
-                    13: sn.Number(4.033),
-                },
-                aux={"isData": False, "histtype": "fill"},
-            ),
-            od.Process(
-                "ZZ_llnunu",
+                "ZZTo2L2Nu_TuneCP5_13TeV_powheg_pythia8",
                 611,
                 label=r"ZZ ll nunu",
                 xsecs={
@@ -476,14 +472,14 @@ def setup_processes(cfg):
                 aux={"isData": False, "histtype": "fill"},
             ),
             od.Process(
-                "ZZ_ll_qq",
+                "ZZTo2Q2L_mllmin4p0_TuneCP5_13TeV-amcatnloFXFX-pythia8",
                 612,
                 label=r"ZZ ll qq",
                 xsecs={13: sn.Number(3.22)},
                 aux={"isData": False, "histtype": "fill"},
             ),
             od.Process(
-                "tZq_ll4f",
+                "tZq_ll_4f_ckm_NLO_TuneCP5_13TeV-amcatnlo-pythia8",
                 613,
                 label=r"tZq ll 4f",
                 xsecs={
