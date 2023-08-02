@@ -1,6 +1,7 @@
 import os
 import law
 import uproot as up
+import numpy as np
 from luigi import Parameter, BoolParameter
 from tasks.base import *
 import json
@@ -71,7 +72,7 @@ class WriteDatasetPathDict(BaseMakeFilesTask):
                 file_dict.update({directory: file_list})  # self.directory_path + "/" +
         assert len(file_dict.keys()) > 0, "No files found in {}".format(self.directory_path)
         job_number_dict = {}
-        for k in file_dict.keys():
+        for k in sorted(file_dict.keys()):
             print(k, len(file_dict[k]))
             job_number_dict.update({k: len(file_dict[k])})
         self.output()["dataset_dict"].dump(file_dict)
@@ -148,3 +149,59 @@ class WriteFileset(BaseMakeFilesTask):
 
         with open(self.output().path, "w") as file:
             json.dump(fileset, file)
+
+
+class CollectInputData(BaseMakeFilesTask):
+    def requires(self):
+        # return {
+        # sel: CoffeaProcessor.req(
+        # self,
+        # lepton_selection=sel,
+        # # workflow="local",
+        # datasets_to_process=self.datasets_to_process,
+        # )
+        # for sel in self.channel[:1]
+        # }
+        return WriteDatasetPathDict.req(self)
+
+    def output(self):
+        return {
+            "sum_gen_weights": self.local_target("sum_gen_weights.json"),
+            "cutflow": self.local_target("cutflow_dict.json"),
+        }
+
+    @law.decorator.safe_output
+    def run(self):
+        sum_gen_weights_dict = {}
+        cutflow_dict = {
+            "Muon": {},
+            "Electron": {},
+        }
+        # sum weights same for both trees, do it once
+        inp = self.input()  # [self.channel[0]].collection.targets[0]
+        data_path = inp["dataset_path"].load()
+        dataset_dict = inp["dataset_dict"].load()
+        for key in dataset_dict.keys():
+            for path in dataset_dict[key]:
+                with up.open(data_path + "/" + path) as file:
+                    sum_gen_weight = float(np.sum(file["MetaData;1"]["SumGenWeight"].array()))
+                    # keys should do the same for both dicts
+                    if key not in sum_gen_weights_dict.keys():
+                        # cutflow_dict["Muon"][key] = file['cutflow_Muon;1'].values()
+                        # cutflow_dict["Electron"][key] = file['cutflow_Electron;1'].values()
+                        muon_arr = file["cutflow_Muon;1"].values()
+                        electron_arr = file["cutflow_Electron;1"].values()
+                        sum_gen_weights_dict[key] = sum_gen_weight
+                    elif key in sum_gen_weights_dict.keys():
+                        sum_gen_weights_dict[key] += sum_gen_weight
+                        muon_arr += file["cutflow_Muon;1"].values()
+                        electron_arr += file["cutflow_Electron;1"].values()
+
+            cutflow_dict["Muon"][key] = muon_arr[muon_arr > 0].tolist()
+            cutflow_dict["Electron"][key] = electron_arr[electron_arr > 0].tolist()
+
+            # that is our data
+            if key in ["MET", "SingleMuon", "SingleElectron"]:
+                sum_gen_weights_dict[key] = 1
+        self.output()["sum_gen_weights"].dump(sum_gen_weights_dict)
+        self.output()["cutflow"].dump(cutflow_dict)
