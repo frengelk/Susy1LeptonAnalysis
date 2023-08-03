@@ -61,7 +61,6 @@ class MergeArrays(CoffeaTask):  # , law.LocalWorkflow, HTCondorWorkflow):
             )
             for sel in self.channel
         }
-        inp.update({"sum_gen_weights": SumGenWeights.req(self)})
         return inp
 
     def output(self):
