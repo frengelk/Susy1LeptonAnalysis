@@ -268,18 +268,20 @@ class StitchingPlot(CoffeaTask):
 
         for dat in tqdm(self.datasets_to_process, unit="dataset"):
             base_dict = {}
+            proc_list = self.get_proc_list([dat])
 
             # need to combine filesets in case there were multiple for a sub process
             for key in inp_dict.keys():
-                if dat in key:
-                    k = "_".join(key.split("_")[1:-1])
-                    base_dict.update({k: {"array": np.array([]), "weights": np.array([]), "sum_gen_weights": 0}})
+                for pro in proc_list:
+                    if pro in key:
+                        k = "_".join(key.split("_")[1:-1])
+                        base_dict.update({k: {"array": np.array([]), "weights": np.array([])}})
             for key in inp_dict.keys():
-                if dat in key:
-                    k = "_".join(key.split("_")[1:-1])
-                    base_dict[k]["array"] = np.append(base_dict[k]["array"], inp_dict[key]["array"].load()[:, var_names.index(var.name)])
-                    base_dict[k]["weights"] = np.append(base_dict[k]["weights"], inp_dict[key]["weights"].load())
-                    base_dict[k]["sum_gen_weights"] += inp_dict[key]["sum_gen_weights"].load()
+                for pro in proc_list:
+                    if pro in key:
+                        k = "_".join(key.split("_")[1:-1])
+                        base_dict[k]["array"] = np.append(base_dict[k]["array"], inp_dict[key]["array"].load()[:, var_names.index(var.name)])
+                        base_dict[k]["weights"] = np.append(base_dict[k]["weights"], inp_dict[key]["weights"].load())
 
             fig, ax = plt.subplots(figsize=(12, 10))
             hep.cms.text("Private work (CMS simulation)", loc=0, ax=ax)
@@ -296,11 +298,11 @@ class StitchingPlot(CoffeaTask):
             hist_list, label_list = [], []
             for key, dic in base_dict.items():
                 boost_hist = bh.Histogram(self.construct_axis(var.binning, not var.x_discrete))
-                boost_hist.fill(dic["array"], weight=dic["weights"] / dic["sum_gen_weights"])
+                boost_hist.fill(dic["array"], weight=dic["weights"]) # / dic["sum_gen_weights"])
                 hist_list.append(boost_hist)
                 label_list.append(key)
 
-                # hep.histplot(boost_hist, histtype="step", label=key, ax=ax)
+            # hep.histplot(boost_hist, histtype="step", label=key, ax=ax)
             hep.histplot(hist_list, histtype="fill", stack=True, label=label_list, ax=ax)
 
             ax.set_ylabel(var.get_full_y_title())
