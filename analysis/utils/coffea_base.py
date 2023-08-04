@@ -392,8 +392,6 @@ class ArrayExporter(BaseProcessor, BaseSelection):
         if self.dtype:
             arrays = {key: array.astype(self.dtype) for key, array in arrays.items()}
         output["arrays"] = dict_accumulator({category + "_" + selected_output["dataset"]: dict_accumulator({key: ArrayAccumulator(array[cut, ...]) for key, array in arrays.items()}) for category, cut in categories.items()})
-        arrays.setdefault("weight", np.stack([np.full_like(weights, 1), weights], axis=-1))
-
         # option to do cutflow and N1 plots on the fly
         if self.additional_plots:
             weights = selected_output["weights"]

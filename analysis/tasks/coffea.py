@@ -26,6 +26,7 @@ from utils.coffea_base import ArrayExporter
 class CoffeaTask(DatasetTask):
     """
     token task to define attributes
+    shared functions between tasks also defined here
     """
 
     processor = Parameter(default="ArrayExporter")
@@ -52,6 +53,38 @@ class CoffeaTask(DatasetTask):
             elif proc.aux["isData"]:
                 proc_list.append(proc.name)
         return proc_list
+
+
+    def load_job_dict(self):
+        with open(self.config_inst.get_aux("job_dict").replace(".json", "_" + self.version + ".json")) as f:
+            data_list = json.load(f)
+        job_number = 0  # len(data_list.keys())
+        job_number_dict = {}
+        data_path = data_list["directory_path"]
+        # start with wanted process names, than check for leafs
+        for dat in self.datasets_to_process:
+            proc = self.config_inst.get_process(dat)
+            if not proc.aux["isData"]:
+                proc_list = proc.processes.names()
+            elif proc.aux["isData"]:
+                proc_list = [proc.name]
+            # for key, files in data_list.items():
+            for name in proc_list:
+                files = data_list[name]
+                for i, file in enumerate(sorted(files)):
+                    # This section is designed to catch empty files causing uproot to crash
+                    # f = up.open(data_path + "/" + file)
+                    # # check for empty root file
+                    # if f.keys() == []:
+                        # print("Empty file:", file)
+                        # job_number -= 1
+                        # continue
+                    job_number_dict.update({job_number + i: file})
+                job_number += len(files)
+        if self.debug:
+            job_number = 1
+            job_number_dict = {0: job_number_dict[0]}
+        return data_list, job_number, job_number_dict
 
 
 class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
@@ -102,35 +135,6 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
             parts += ("debug",)
         return super(CoffeaProcessor, self).store_parts() + parts
 
-    def load_job_dict(self):
-        with open(self.config_inst.get_aux("job_dict").replace(".json", "_" + self.version + ".json")) as f:
-            data_list = json.load(f)
-        job_number = 0  # len(data_list.keys())
-        job_number_dict = {}
-        data_path = data_list["directory_path"]
-        # start with wanted process names, than check for leafs
-        for dat in self.datasets_to_process:
-            proc = self.config_inst.get_process(dat)
-            if not proc.aux["isData"]:
-                proc_list = proc.processes.names()
-            elif proc.aux["isData"]:
-                proc_list = [proc.name]
-            # for key, files in data_list.items():
-            for name in proc_list:
-                files = data_list[name]
-                for i, file in enumerate(sorted(files)):
-                    f = up.open(data_path + "/" + file)
-                    # check for empty root file
-                    if f.keys() == []:
-                        print("Empty file:", file)
-                        job_number -= 1
-                        continue
-                    job_number_dict.update({job_number + i: file})
-                job_number += len(files)
-        if self.debug:
-            job_number = 1
-            job_number_dict = {0: job_number_dict[0]}
-        return data_list, job_number, job_number_dict
 
     @law.decorator.timeit(publish_message=True)
     def run(self):
