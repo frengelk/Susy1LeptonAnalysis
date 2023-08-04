@@ -71,10 +71,23 @@ class MergeArrays(CoffeaTask):  # , law.LocalWorkflow, HTCondorWorkflow):
     @law.decorator.timeit(publish_message=True)
     @law.decorator.safe_output
     def run(self):
+        # construct an inverse map to corrently assign coffea outputs to respective datasets
+        procs = self.get_proc_list(self.datasets_to_process)
+        _, _, job_number_dict = self.load_job_dict()
+        inverse_np_dict = {}
+        for p in procs:
+            for ind, file in job_number_dict.items():
+                if p == file.split("/")[0]:
+                    if p not in inverse_np_dict.keys():
+                        inverse_np_dict[p] = [ind]
+                    else:
+                        inverse_np_dict[p] += [ind]
+
         for dat in tqdm(self.datasets_to_process):
-            proc = self.config_inst.get_process(dat)
             # check if job either in root process or leafes
             proc_list = self.get_proc_list([dat])
+            if dat == "TTbar":
+                proc_list = [p for p in proc_list if "TTTo" in p]
             for cat in self.config_inst.categories.names():
                 cat_list = []
                 weights_list = []
@@ -85,19 +98,17 @@ class MergeArrays(CoffeaTask):  # , law.LocalWorkflow, HTCondorWorkflow):
                     # but constructing keys yourself is tricky since there can be multiple jobs with different numbers
                     # so now I loop over possible keys for each dataset and append the correct arrays
                     for p in proc_list:
-                        for i in range(len(np_dict)):
-                            key = cat + "_" + p + "_" + str(i)
-                            if key in np_dict.keys():
-                                cat_list.append(np_dict[key]["array"].load())
-                                k = "_".join(key.split("_")[:-1])
-                                # sum_gen_weights = sum_gen_weights_dict[k]
-                                # divide each subfile belonging to same process, 1/sum (proc1 + proc2)
-                                weights_list.append(np_dict[key]["weights"].load())
-                                # / sum_gen_weights)
+                        for ind in inverse_np_dict[p]:
+                            key = cat + "_" + p + "_" + str(ind)
+                            print(key)
+                            cat_list.append(np_dict[key]["array"].load())
+                            # get weights as well for each process
+                            weights_list.append(np_dict[key]["weights"].load())
 
                 # float 16 so arrays can be saved easily
                 full_arr = np.concatenate(cat_list)  # , dtype=np.float16
                 weights_arr = np.concatenate(weights_list)  # , dtype=np.float16) -> leads to inf
+                print(dat, cat, full_arr, weights_arr)
                 self.output()[cat + "_" + dat]["array"].parent.touch()
                 self.output()[cat + "_" + dat]["array"].dump(full_arr)
                 self.output()[cat + "_" + dat]["weights"].dump(weights_arr)

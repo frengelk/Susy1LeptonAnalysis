@@ -137,15 +137,27 @@ class ArrayPlotting(CoffeaTask):  # , HTCondorWorkflow, law.LocalWorkflow):
                         proc = self.config_inst.get_process(dat)
                         if not proc.aux["isData"]:
                             boost_hist = bh.Histogram(self.construct_axis(var.binning, not var.x_discrete))
-                        for key, value in np_dict.items():
+                        # for key, value in np_dict.items():
+                        # for pro in self.get_proc_list([dat]):
+                        key = cat + "_" + dat
+                        # this will only be true for merged
+                        if key in np_dict.keys():
+                            if proc.aux["isData"] and self.unblinded:
+                                data_boost_hist.fill(np_dict[key]["array"].load()[:, var_names.index(var.name)])
+                                # np.load(value["array"].path)  # , weight=np.load(value["weights"].path))
+                            elif not proc.aux["isData"]:
+                                boost_hist.fill(np_dict[key]["array"].load()[:, var_names.index(var.name)], weight=np_dict[key]["weights"].load())
+                        if not self.merged:
                             for pro in self.get_proc_list([dat]):
-                                if cat in key and pro in key:
-                                    if proc.aux["isData"] and self.unblinded:
-                                        data_boost_hist.fill(np.load(value["array"].path)[:, var_names.index(var.name)])  # , weight=np.load(value["weights"].path))
-                                    elif not proc.aux["isData"]:
-                                        boost_hist.fill(np.load(value["array"].path)[:, var_names.index(var.name)], weight=np.load(value["weights"].path))
+                                boost_hist = bh.Histogram(self.construct_axis(var.binning, not var.x_discrete))
+                                k = cat + "_" + pro
+                                for key in np_dict.keys():
+                                    if k in key:
+                                        boost_hist.fill(np_dict[key]["array"].load()[:, var_names.index(var.name)], weight=np_dict[key]["weights"].load())
+                                hep.histplot(boost_hist, label=k, histtype="step", ax=ax)
 
                         if self.divide_by_binwidth:
+                            # FIXME hist not defined?
                             boost_hist = boost_hist / np.prod(hist.axes.widths, axis=0)
                         if self.density:
                             boost_hist = self.get_density(boost_hist)
@@ -165,7 +177,8 @@ class ArrayPlotting(CoffeaTask):  # , HTCondorWorkflow, law.LocalWorkflow):
                         hist_list.append(hist_counts[key]["hist"])
                         label_list.append(hist_counts[key]["label"])
                         color_list.append(hist_counts[key]["color"])
-                    hep.histplot(hist_list, histtype="fill", stack=True, label=label_list, color=color_list, ax=ax)
+                    if self.merged:
+                        hep.histplot(hist_list, histtype="fill", stack=True, label=label_list, color=color_list, ax=ax)
 
                     # deciated data plotting
                     if self.unblinded:
@@ -174,12 +187,12 @@ class ArrayPlotting(CoffeaTask):  # , HTCondorWorkflow, law.LocalWorkflow):
                         sumOfHists.append(data_boost_hist.sum())
                         hist_counts.update({"data": {"hist": data_boost_hist}})
                         # missing boost hist divide and density
-
                     handles, labels = ax.get_legend_handles_labels()
-                    # handles = [h for _, h in sorted(zip(sumOfHists, handles))]
-                    handles = [h for _, h in total_ordering(zip(sumOfHists, handles))]
-                    # labels = [l for _, l in sorted(zip(sumOfHists, labels))]
-                    labels = [l for _, l in total_ordering(zip(sumOfHists, labels))]
+                    if self.merged:
+                        # handles = [h for _, h in sorted(zip(sumOfHists, handles))]
+                        handles = [h for _, h in total_ordering(zip(sumOfHists, handles))]
+                        # labels = [l for _, l in sorted(zip(sumOfHists, labels))]
+                        labels = [l for _, l in total_ordering(zip(sumOfHists, labels))]
                     ax.legend(
                         handles,
                         labels,
@@ -286,6 +299,24 @@ class StitchingPlot(CoffeaTask):
             fig, ax = plt.subplots(figsize=(12, 10))
             hep.cms.text("Private work (CMS simulation)", loc=0, ax=ax)
 
+            hist_list, label_list = [], []
+            for key, dic in base_dict.items():
+                if not "TTTo" in key:
+                    boost_hist = bh.Histogram(self.construct_axis(var.binning, not var.x_discrete))
+                    boost_hist.fill(dic["array"], weight=dic["weights"])  # / dic["sum_gen_weights"])
+                    hist_list.append(boost_hist)
+                    label_list.append(key)
+
+            # hep.histplot(boost_hist, histtype="step", label=key, ax=ax)
+            hep.histplot(hist_list, histtype="fill", stack=True, label=label_list, ax=ax)
+
+            # in that order so lines are on top of stacked plot
+            for key, dic in base_dict.items():
+                if "TTTo" in key:
+                    boost_hist = bh.Histogram(self.construct_axis(var.binning, not var.x_discrete))
+                    boost_hist.fill(dic["array"], weight=dic["weights"])  # / dic["sum_gen_weights"])
+                    hep.histplot(boost_hist, histtype="step", label=key, ax=ax, linewidth=3)
+
             for k in list(merged.keys()):
                 if dat in k:
                     pro = k
@@ -294,16 +325,6 @@ class StitchingPlot(CoffeaTask):
             merged_boost_hist = bh.Histogram(self.construct_axis(var.binning, not var.x_discrete))
             merged_boost_hist.fill(merged[pro]["array"].load()[:, var_names.index(var.name)], weight=merged[pro]["weights"].load())
             hep.histplot(merged_boost_hist, label=proc.label, histtype="step", ax=ax, linewidth=2)
-
-            hist_list, label_list = [], []
-            for key, dic in base_dict.items():
-                boost_hist = bh.Histogram(self.construct_axis(var.binning, not var.x_discrete))
-                boost_hist.fill(dic["array"], weight=dic["weights"]) # / dic["sum_gen_weights"])
-                hist_list.append(boost_hist)
-                label_list.append(key)
-
-            # hep.histplot(boost_hist, histtype="step", label=key, ax=ax)
-            hep.histplot(hist_list, histtype="fill", stack=True, label=label_list, ax=ax)
 
             ax.set_ylabel(var.get_full_y_title())
             ax.set_xlabel(var.get_full_x_title())
