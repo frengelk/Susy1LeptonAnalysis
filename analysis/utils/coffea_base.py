@@ -44,6 +44,7 @@ class BaseProcessor(processor.ProcessorABC):
             n_events=defaultdict_accumulator(int),
             sum_gen_weights=defaultdict_accumulator(float),
             object_cutflow=defaultdict_accumulator(int),
+            # cutflow = bh.Histogram(bh.axis.Regular(20, 0, 20)),
             cutflow=hist.Hist("Counts", self.dataset_axis, self.category_axis, self.category_axis, hist.Bin("cutflow", "Cut", 20, 0, 20)),
             n_minus1=hist.Hist("Counts", self.dataset_axis, self.category_axis, self.category_axis, hist.Bin("cutflow", "Cut", 20, 0, 20)),
         )

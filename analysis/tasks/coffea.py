@@ -54,7 +54,6 @@ class CoffeaTask(DatasetTask):
                 proc_list.append(proc.name)
         return proc_list
 
-
     def load_job_dict(self):
         with open(self.config_inst.get_aux("job_dict").replace(".json", "_" + self.version + ".json")) as f:
             data_list = json.load(f)
@@ -76,9 +75,9 @@ class CoffeaTask(DatasetTask):
                     # f = up.open(data_path + "/" + file)
                     # # check for empty root file
                     # if f.keys() == []:
-                        # print("Empty file:", file)
-                        # job_number -= 1
-                        # continue
+                    # print("Empty file:", file)
+                    # job_number -= 1
+                    # continue
                     job_number_dict.update({job_number + i: file})
                 job_number += len(files)
         if self.debug:
@@ -134,7 +133,6 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
         if self.debug:
             parts += ("debug",)
         return super(CoffeaProcessor, self).store_parts() + parts
-
 
     @law.decorator.timeit(publish_message=True)
     def run(self):
