@@ -220,6 +220,12 @@ class BaseSelection:
         njet_cut = ak.sum(events.JetIsClean, axis=1) >= 3
         iso_cut = ~events.IsoTrackVeto
 
+        # stitch ttbar at events.LHE_HTIncoming < 600
+        if events.metadata["dataset"] == "TTToSemiLeptonic_TuneCP5_13TeV-powheg-pythia8" or events.metadata["dataset"] == "TTTo2L2Nu_TuneCP5_13TeV-powheg-pythia8":
+            LHE_HT_cut = events.LHE_HTIncoming < 600
+            # plug it on onto iso_cut, so cutflow is consistent
+            iso_cut = iso_cut & LHE_HT_cut
+
         # require correct lepton IDs, applay cut depending on tree name
         # ElectronIdCut = ak.fill_none(ak.firsts(events.ElectronTightId[:, 0:1]), False)
         # MuonIdCut = ak.fill_none(ak.firsts(events.MuonMediumId[:, 0:1]), False)
@@ -233,7 +239,6 @@ class BaseSelection:
         # data cut for control plots
         data_cut = (events.LT > 250) & (events.HT > 500) & (ak.num(goodJets) >= 3)
         # skim_cut = (events.LT > 150) & (events.HT > 350)
-
         # triggers = [
         # "HLT_Ele115_CaloIdVT_GsfTrkIdT",
         # "HLT_Ele15_IsoVVVL_PFHT450",

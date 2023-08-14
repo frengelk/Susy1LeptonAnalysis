@@ -160,8 +160,9 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
             isFastSim = file["MetaData"]["IsFastSim"].array()[0]
             if not isData:
                 # assert all events with the same Xsec in scope with float precision
-                assert abs(np.mean(file["MetaData"]["xSection"].array()) - file["MetaData"]["xSection"].array()[0]) < file["MetaData"]["xSection"].array()[0] * 1e-5
-                xSec = file["MetaData"]["xSection"].array()[0]
+                # assert abs(np.mean(file["MetaData"]["xSection"].array()) - file["MetaData"]["xSection"].array()[0]) < file["MetaData"]["xSection"].array()[0] * 1e-5
+                # FIXME xSec = file["MetaData"]["xSection"].array()[0]
+                xSec = self.config_inst.get_process(dataset).xsecs[13].nominal
                 lumi = file["MetaData"]["Luminosity"].array()[0]
                 # sum_gen_weight = np.sum(file["MetaData"]["SumGenWeight"].array())
             else:
