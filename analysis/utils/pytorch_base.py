@@ -49,11 +49,9 @@ class ClassifierDataset(data.Dataset):
 
 
 # Custom dataset collecting all numpy arrays and bundles them for training
-#class DataModuleClass(pl.LightningModule):
+# class DataModuleClass(pl.LightningModule):
 class DataModuleClass(pl.LightningDataModule):
-    def __init__(
-        self, X_train, y_train, X_val, y_val, batch_size, n_processes, steps_per_epoch
-    ):
+    def __init__(self, X_train, y_train, X_val, y_val, batch_size, n_processes, steps_per_epoch):
         super().__init__()
         # define data
         self.X_train = X_train
@@ -80,9 +78,7 @@ class DataModuleClass(pl.LightningDataModule):
             torch.from_numpy(self.X_train).float(),
             torch.from_numpy(self.y_train).float(),
         )
-        self.val_dataset = ClassifierDataset(
-            torch.from_numpy(self.X_val).float(), torch.from_numpy(self.y_val).float()
-        )
+        self.val_dataset = ClassifierDataset(torch.from_numpy(self.X_val).float(), torch.from_numpy(self.y_val).float())
         # do this somewhere else
         # self.test_dataset = ClassifierDataset(
         #    torch.from_numpy(self.X_test).float(), torch.from_numpy(self.y_test).float()
@@ -100,15 +96,15 @@ class DataModuleClass(pl.LightningDataModule):
             #    self.n_processes,
             #    self.steps_per_epoch,
             # ),
-            num_workers=8,
+            num_workers=0,  # 8,
         )
 
     def val_dataloader(self):
         return data.DataLoader(
             dataset=self.val_dataset,
             batch_size=10 * self.batch_size,  # , shuffle=True  # len(val_dataset
-            num_workers=8,
-        )  # =1
+            num_workers=0,  # 8,
+        )
 
     # def test_dataloader(self):
     # return data.DataLoader(
@@ -119,12 +115,8 @@ class DataModuleClass(pl.LightningDataModule):
 
 
 # torch Multiclassifer
-class MulticlassClassification(
-    pl.LightningModule
-):  # nn.Module core.lightning.LightningModule
-    def __init__(
-        self, num_feature, num_class, means, stds, dropout, class_weights, n_nodes
-    ):
+class MulticlassClassification(pl.LightningModule):  # nn.Module core.lightning.LightningModule
+    def __init__(self, num_feature, num_class, means, stds, dropout, class_weights, n_nodes):
         super(MulticlassClassification, self).__init__()
 
         # Attribute failure
@@ -182,7 +174,6 @@ class MulticlassClassification(
         return x
 
     def validation_step(self, batch, batch_idx):
-
         x, y = batch
         logits = self(x)
         # loss = nn.functional.nll_loss()
@@ -196,9 +187,8 @@ class MulticlassClassification(
         self.log("val_loss", loss_step, prog_bar=True)
         self.log("val_acc", acc_step, prog_bar=True)
 
-        #print("val_loss", loss_step, "val_acc", acc_step)
+        # print("val_loss", loss_step, "val_acc", acc_step)
         return {"val_loss": loss_step, "val_acc": acc_step}
-
 
     def test_step(self, batch, batch_idx):
         # Here we just reuse the validation_step for testing
@@ -246,7 +236,7 @@ class MulticlassClassification(
         self.training_step_outputs.append({"loss": loss_step, "acc": acc_step})
         return {"loss": loss_step, "acc": acc_step}
 
-    def on_train_epoch_end(self): # , outputs
+    def on_train_epoch_end(self):  # , outputs
         # aggregating information over complete training
         acc_mean = np.mean([out["acc"].item() for out in self.training_step_outputs])
         loss_mean = np.mean([out["loss"].item() for out in self.training_step_outputs])
@@ -269,7 +259,7 @@ class MulticlassClassification(
         # Has to return NONE
         # return outputs
 
-    def on_validation_epoch_end(self): #, outputs)
+    def on_validation_epoch_end(self):  # , outputs)
         # average over batches, and save extra computed values
         loss_mean = np.mean([out["val_loss"].item() for out in self.validation_step_outputs])
         acc_mean = np.mean([out["val_acc"].item() for out in self.validation_step_outputs])
@@ -277,22 +267,21 @@ class MulticlassClassification(
         self.loss_stats["val"].append(loss_mean)
         self.accuracy_stats["val"].append(acc_mean)
 
-        #print("val loss acc:", loss_mean, acc_mean)
+        # print("val loss acc:", loss_mean, acc_mean)
 
         # epoch_average = torch.stack(self.validation_step_outputs).mean()
         # self.log("validation_epoch_average", epoch_average)
         self.validation_step_outputs.clear()  # free memory
 
-
     def configure_optimizers(self):
         return optim.Adam(self.parameters(), lr=1e-3)
 
     # def get_metrics(self):
-        # # don't show the version number, does not really seem to work
-        # # maybe do it in the progressbar
-        # items = super().get_metrics()
-        # items.pop("v_num", None)
-        # return items
+    # # don't show the version number, does not really seem to work
+    # # maybe do it in the progressbar
+    # items = super().get_metrics()
+    # items.pop("v_num", None)
+    # return items
 
 
 class NormalizeInputs(nn.Module):
@@ -322,7 +311,6 @@ class EventBatchSampler(data.Sampler):
         sub_batch_size = self.batch_size // self.n_processes
         # arr_list = []
         for i in range(self.steps_per_epoch):
-
             try:
                 batch_counter
             except:
@@ -330,7 +318,6 @@ class EventBatchSampler(data.Sampler):
 
             indices_for_batch = []
             for j in range(self.n_processes):
-
                 batch_counter[j] += 1
 
                 # get correct indices for process
@@ -349,13 +336,7 @@ class EventBatchSampler(data.Sampler):
                 # indices_for_batch.append(indices[choice])
 
                 # append next sliced batch
-                indices_for_batch.append(
-                    indices[
-                        sub_batch_size
-                        * batch_counter[j] : sub_batch_size
-                        * (batch_counter[j] + 1)
-                    ]
-                )
+                indices_for_batch.append(indices[sub_batch_size * batch_counter[j] : sub_batch_size * (batch_counter[j] + 1)])
 
                 # check[indices[choice]] all True
 

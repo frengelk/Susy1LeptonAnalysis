@@ -76,6 +76,24 @@ class ConfigTask(AnalysisTask):
         return parts
 
 
+class DNNTask(ConfigTask):
+    """
+    define parameters here for all relevant tasks
+    """
+
+    channel = luigi.Parameter(default="0b", description="channel to train on")
+    epochs = luigi.IntParameter(default=100)
+    batch_size = luigi.IntParameter(default=10000)
+    learning_rate = luigi.FloatParameter(default=0.01)
+    debug = luigi.BoolParameter(default=False)
+    n_layers = luigi.IntParameter(default=3)
+    n_nodes = luigi.IntParameter(default=256)
+    dropout = luigi.FloatParameter(default=0.2)
+
+    def __init__(self, *args, **kwargs):
+        super(DNNTask, self).__init__(*args, **kwargs)
+
+
 class ShiftTask(ConfigTask):
     shift = luigi.Parameter(
         default="nominal",
@@ -134,10 +152,10 @@ class HTCondorWorkflow(law.htcondor.HTCondorWorkflow):
     """
 
     def create_branch_map(self):
-        n = 10
-        n = n * 1
-        if self.debug:
-            n = 1
+        n = 1
+        # n = n * 1
+        # if self.debug:
+        # n = 1
         return list(range(n))
 
     def htcondor_post_submit_delay(self):
