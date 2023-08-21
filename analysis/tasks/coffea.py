@@ -16,7 +16,7 @@ from rich.console import Console
 
 # other modules
 from tasks.base import DatasetTask, HTCondorWorkflow
-from utils.coffea_base import ArrayExporter
+from utils.coffea_base import ArrayExporter, ArrayAccumulator
 from utils.signal_regions import signal_regions_0b
 from tasks.makefiles import WriteDatasetPathDict, WriteDatasets, CollectInputData
 from tqdm import tqdm
@@ -170,7 +170,7 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
                 # if empty skip and construct placeholder output
                 if len(file[treename]["Event"].array()) == 0:
                     empty = True
-                    out = {"cutflow": hist.Hist("Counts", hist.Bin("cutflow", "Cut", 20, 0, 20)), "n_minus1": hist.Hist("Counts", hist.Bin("Nminus1", "Cut", 20, 0, 20)), "arrays": {"N0b_QCD_HT2000toInf_TuneCP5_13TeV-madgraphMLM-pythia8": {"hl": np.array([0]), "weights": np.array([0])}, "N1ib_QCD_HT2000toInf_TuneCP5_13TeV-madgraphMLM-pythia8": {"hl": np.array([0]), "weights": np.array([0])}}}
+                    out = {"cutflow": hist.Hist("Counts", hist.Bin("cutflow", "Cut", 20, 0, 20)), "n_minus1": hist.Hist("Counts", hist.Bin("Nminus1", "Cut", 20, 0, 20)), "arrays": {"N0b_" + dataset: {"hl": ArrayAccumulator(np.reshape(np.array([], dtype=np.float64), (0, 24))), "weights": ArrayAccumulator(np.array([], dtype=np.float64))}, "N1ib_" + dataset: {"hl": ArrayAccumulator(np.reshape(np.array([], dtype=np.float64), (0, 24))), "weights": ArrayAccumulator(np.array([], dtype=np.float64))}}}
                 # sum_gen_weight = np.sum(file["MetaData"]["SumGenWeight"].array())
             else:
                 # filler values so they are defined
@@ -207,13 +207,13 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
             console.print(f"* Events / s: {all_events/total_time:.0f}")
         # save outputs, seperated for processor, both need different touch calls
         if self.processor == "ArrayExporter":
+            print("saving", subset)
             self.output().popitem()[1]["array"].parent.touch()
             for cat in out["arrays"]:
-                if not empty:
-                    self.output()[cat + "_" + str(self.branch)]["weights"].dump(out["arrays"][cat]["weights"].value)
-                    self.output()[cat + "_" + str(self.branch)]["array"].dump(out["arrays"][cat]["hl"].value)
-                    self.output()[cat + "_" + str(self.branch)]["cutflow"].dump(out["cutflow"])
-                    self.output()[cat + "_" + str(self.branch)]["n_minus1"].dump(out["n_minus1"])
+                self.output()[cat + "_" + str(self.branch)]["weights"].dump(out["arrays"][cat]["weights"].value)
+                self.output()[cat + "_" + str(self.branch)]["array"].dump(out["arrays"][cat]["hl"].value)
+                self.output()[cat + "_" + str(self.branch)]["cutflow"].dump(out["cutflow"])
+                self.output()[cat + "_" + str(self.branch)]["n_minus1"].dump(out["n_minus1"])
 
 
 class CollectCoffeaOutput(CoffeaTask):
