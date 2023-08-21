@@ -46,7 +46,7 @@ class BaseProcessor(processor.ProcessorABC):
             object_cutflow=defaultdict_accumulator(int),
             # cutflow = bh.Histogram(bh.axis.Regular(20, 0, 20)),
             cutflow=hist.Hist("Counts", self.dataset_axis, self.category_axis, self.category_axis, hist.Bin("cutflow", "Cut", 20, 0, 20)),
-            n_minus1=hist.Hist("Counts", self.dataset_axis, self.category_axis, self.category_axis, hist.Bin("cutflow", "Cut", 20, 0, 20)),
+            n_minus1=hist.Hist("Counts", self.dataset_axis, self.category_axis, self.category_axis, hist.Bin("Nminus1", "Cut", 20, 0, 20)),
         )
 
     @property
@@ -173,7 +173,7 @@ class BaseSelection:
     def base_select(self, events):
         dataset = events.metadata["dataset"]
         # dataset_obj = self.config.get_dataset(dataset)
-        # process_obj = self.config.get_process(dataset)
+        proc = self.config.get_process(dataset)
 
         summary = self.accumulator.identity()
         size = events.metadata["entrystop"] - events.metadata["entrystart"]
@@ -225,6 +225,11 @@ class BaseSelection:
             LHE_HT_cut = events.LHE_HTIncoming < 600
             # plug it on onto iso_cut, so cutflow is consistent
             iso_cut = iso_cut & LHE_HT_cut
+
+        if events.metadata["dataset"] == "SMS-T5qqqqVV_TuneCP2_13TeV-madgraphMLM-pythia8":
+            mGlu_cut = events.mGluino == proc.aux["masspoint"][0]
+            mNeu_cut = events.mNeutralino == proc.aux["masspoint"][1]
+            iso_cut = iso_cut & (mGlu_cut) & (mNeu_cut)
 
         # require correct lepton IDs, applay cut depending on tree name
         # ElectronIdCut = ak.fill_none(ak.firsts(events.ElectronTightId[:, 0:1]), False)
@@ -303,17 +308,17 @@ class BaseSelection:
                 weightDown=events.PileUpWeightDown,
                 weightUp=events.PileUpWeightUp,
             )
-
-            weights.add(
-                "PreFireWeight",
-                events.PreFireWeight,
-                weightDown=events.PreFireWeightDown,
-                weightUp=events.PreFireWeightUp,
-            )
+            if not dataset == "SMS-T5qqqqVV_TuneCP2_13TeV-madgraphMLM-pythia8":
+                weights.add(
+                    "PreFireWeight",
+                    events.PreFireWeight,
+                    weightDown=events.PreFireWeightDown,
+                    weightUp=events.PreFireWeightUp,
+                )
 
             # weights.add(
             # 'JetDeepJetMediumSf',
-            # events.JetDeepJetMediumSf,
+            # events.JetDeepJetMediumSf[:,0],
             # )
 
             # weights.add("JetMediumCSVBTagSF", events.JetMediumCSVBTagSF,

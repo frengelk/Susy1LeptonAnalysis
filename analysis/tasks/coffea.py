@@ -9,7 +9,7 @@ import law
 import law.contrib.coffea
 import numpy as np
 import uproot as up
-from coffea import processor
+from coffea import processor, hist
 from coffea.nanoevents import BaseSchema, NanoAODSchema, TreeMakerSchema
 from luigi import BoolParameter, IntParameter, ListParameter, Parameter
 from rich.console import Console
@@ -153,6 +153,9 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
         if dataset == "merged":
             dataset = data_path.split("/")[-2]
 
+        # check for empty dataset
+        empty = False
+
         with up.open(data_path + "/" + subset) as file:
             # data_path + "/" + subset[self.branch]
             primaryDataset = file["MetaData"]["primaryDataset"].array()[0]
@@ -164,6 +167,10 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
                 # FIXME xSec = file["MetaData"]["xSection"].array()[0]
                 xSec = self.config_inst.get_process(dataset).xsecs[13].nominal
                 lumi = file["MetaData"]["Luminosity"].array()[0]
+                # if empty skip and construct placeholder output
+                if len(file[treename]["Event"].array()) == 0:
+                    empty = True
+                    out = {"cutflow": hist.Hist("Counts", hist.Bin("cutflow", "Cut", 20, 0, 20)), "n_minus1": hist.Hist("Counts", hist.Bin("Nminus1", "Cut", 20, 0, 20)), "arrays": {"N0b_QCD_HT2000toInf_TuneCP5_13TeV-madgraphMLM-pythia8": {"hl": np.array([0]), "weights": np.array([0])}, "N1ib_QCD_HT2000toInf_TuneCP5_13TeV-madgraphMLM-pythia8": {"hl": np.array([0]), "weights": np.array([0])}}}
                 # sum_gen_weight = np.sum(file["MetaData"]["SumGenWeight"].array())
             else:
                 # filler values so they are defined
@@ -175,37 +182,38 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
                 "metadata": {"PD": primaryDataset, "isData": isData, "isFastSim": isFastSim, "xSec": xSec, "Luminosity": lumi, "sumGenWeight": sum_gen_weights_dict[dataset]},
             }
         }
-        print(fileset, treename)
-        start = time.time()
-        # call imported processor, magic happens here
-        out = processor.run_uproot_job(
-            fileset,
-            treename=treename,
-            processor_instance=processor_inst,
-            # pre_executor=processor.futures_executor,
-            # pre_args=dict(workers=32),
-            executor=processor.iterative_executor,
-            executor_args=dict(status=False),  # desc="", unit="Trolling"), # , desc="Trolling"
-            # metadata_cache = 'MetaData',
-            # schema=BaseSchema,),
-            chunksize=10000,
-        )
-        # show summary
-        console = Console()
-        all_events = out["n_events"]["sumAllEvents"]
-        total_time = time.time() - start
-        console.print("\n[u][bold magenta]Summary metrics:[/bold magenta][/u]")
-        console.print(f"* Total time: {total_time:.2f}s")
-        console.print(f"* Total events: {all_events:e}")
-        console.print(f"* Events / s: {all_events/total_time:.0f}")
+        if not empty:
+            start = time.time()
+            # call imported processor, magic happens here
+            out = processor.run_uproot_job(
+                fileset,
+                treename=treename,
+                processor_instance=processor_inst,
+                # pre_executor=processor.futures_executor,
+                # pre_args=dict(workers=32),
+                executor=processor.iterative_executor,
+                executor_args=dict(status=False),  # desc="", unit="Trolling"), # , desc="Trolling"
+                # metadata_cache = 'MetaData',
+                # schema=BaseSchema,),
+                chunksize=10000,
+            )
+            # show summary
+            console = Console()
+            all_events = out["n_events"]["sumAllEvents"]
+            total_time = time.time() - start
+            console.print("\n[u][bold magenta]Summary metrics:[/bold magenta][/u]")
+            console.print(f"* Total time: {total_time:.2f}s")
+            console.print(f"* Total events: {all_events:e}")
+            console.print(f"* Events / s: {all_events/total_time:.0f}")
         # save outputs, seperated for processor, both need different touch calls
         if self.processor == "ArrayExporter":
             self.output().popitem()[1]["array"].parent.touch()
             for cat in out["arrays"]:
-                self.output()[cat + "_" + str(self.branch)]["weights"].dump(out["arrays"][cat]["weights"].value)
-                self.output()[cat + "_" + str(self.branch)]["array"].dump(out["arrays"][cat]["hl"].value)
-                self.output()[cat + "_" + str(self.branch)]["cutflow"].dump(out["cutflow"])
-                self.output()[cat + "_" + str(self.branch)]["n_minus1"].dump(out["n_minus1"])
+                if not empty:
+                    self.output()[cat + "_" + str(self.branch)]["weights"].dump(out["arrays"][cat]["weights"].value)
+                    self.output()[cat + "_" + str(self.branch)]["array"].dump(out["arrays"][cat]["hl"].value)
+                    self.output()[cat + "_" + str(self.branch)]["cutflow"].dump(out["cutflow"])
+                    self.output()[cat + "_" + str(self.branch)]["n_minus1"].dump(out["n_minus1"])
 
 
 class CollectCoffeaOutput(CoffeaTask):

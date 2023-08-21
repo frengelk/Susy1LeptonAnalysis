@@ -100,7 +100,6 @@ class MergeArrays(CoffeaTask):  # , law.LocalWorkflow, HTCondorWorkflow):
                     for p in proc_list:
                         for ind in inverse_np_dict[p]:
                             key = cat + "_" + p + "_" + str(ind)
-                            print(key)
                             cat_list.append(np_dict[key]["array"].load())
                             # get weights as well for each process
                             weights_list.append(np_dict[key]["weights"].load())
@@ -108,7 +107,7 @@ class MergeArrays(CoffeaTask):  # , law.LocalWorkflow, HTCondorWorkflow):
                 # float 16 so arrays can be saved easily
                 full_arr = np.concatenate(cat_list)  # , dtype=np.float16
                 weights_arr = np.concatenate(weights_list)  # , dtype=np.float16) -> leads to inf
-                print(dat, cat, full_arr, weights_arr)
+                # print(dat, cat, full_arr, weights_arr)
                 self.output()[cat + "_" + dat]["array"].parent.touch()
                 self.output()[cat + "_" + dat]["array"].dump(full_arr)
                 self.output()[cat + "_" + dat]["weights"].dump(weights_arr)
