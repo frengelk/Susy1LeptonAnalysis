@@ -116,7 +116,6 @@ class ArrayPlotting(CoffeaTask):  # , HTCondorWorkflow, law.LocalWorkflow):
             ind = var_names.index(var.name)
             if var.x_discrete:
                 ind = var_names.index(var.name.split("_")[0])
-            print(var.name, var_names[ind])
 
             # iterating over lepton keys
             for lep in self.input().keys():
