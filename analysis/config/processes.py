@@ -19,14 +19,46 @@ from config.constants import *
 def setup_processes(cfg):
     ### signal ###
     cfg.add_process(
-        "T5qqqqVV",
-        1,
+        "T5qqqqVV_2200_100",
+        2200100,
         label=r"T5qqqqVV",
         label_short="T5",
         color=(100, 100, 100),
-        xsecs={
-            13: sn.Number(0.1),  # FIXME
-        },
+        aux={"isData": False, "histtype": "step", "isSignal": True},
+        processes=[
+            od.Process(
+                "SMS-T5qqqqVV_TuneCP2_13TeV-madgraphMLM-pythia8",
+                102,
+                label=r"T5qqqqWW (2200, 100)",
+                xsecs={
+                    13: sn.Number(1.0),
+                },
+                label_short="T5",
+                color=(100, 100, 100),
+                aux={"isData": False, "isSignal": True, "masspoint": (2200, 100), "histtype": "step", "isSignal": True},
+            )
+        ],
+    )
+    cfg.add_process(
+        "T5qqqqVV_1800_1300",
+        18001300,
+        label=r"T5qqqqVV",
+        label_short="T5",
+        color=(100, 100, 100),
+        aux={"isData": False, "histtype": "step", "isSignal": True},
+        processes=[
+            od.Process(
+                "SMS-T5qqqqVV_TuneCP2_13TeV-madgraphMLM-pythia8",
+                103,
+                label=r"T5qqqqWW (1800, 1300)",
+                xsecs={
+                    13: sn.Number(1.0),
+                },
+                label_short="T5",
+                color=(100, 100, 100),
+                aux={"isData": False, "isSignal": True, "masspoint": (1800, 1300), "histtype": "step", "isSignal": True},
+            )
+        ],
     )
     cfg.add_process("T1tttt", 2, label=r"T1tttt", label_short="T1", color=(150, 150, 150), xsecs={13: sn.Number(0.1)})  # FIXME,
 
@@ -36,8 +68,8 @@ def setup_processes(cfg):
         100,
         label=r"$t \bar{t}$",
         label_short="TT",
-        color=(0, 0, 255),
-        aux={"isData": False, "histtype": "fill"},
+        color="#00BFFF",  # Deep Sky Blue"#ADD8E6",  #(0, 0, 255),
+        aux={"isData": False, "histtype": "fill", "isSignal": False},
         processes=[
             od.Process(
                 "TTToSemiLeptonic_TuneCP5_13TeV-powheg-pythia8",
@@ -95,9 +127,17 @@ def setup_processes(cfg):
         200,
         label=r"QCD Multijet",
         label_short="QCD",
-        color=(139, 28, 98),
-        aux={"isData": False, "histtype": "fill"},
+        color="#9400D3",  # Dark Violet"#E0FFFF",  #(139, 28, 98),
+        aux={"isData": False, "histtype": "fill", "isSignal": False},
         processes=[
+            od.Process(
+                "QCD_HT50to100_TuneCP5_13TeV-madgraphMLM-pythia8",
+                209,
+                label=r"QCD HT 50-100",
+                xsecs={
+                    13: sn.Number(187700000.0),
+                },
+            ),
             od.Process(
                 "QCD_HT100to200_TuneCP5_13TeV-madgraphMLM-pythia8",
                 201,
@@ -166,8 +206,8 @@ def setup_processes(cfg):
         300,
         label=r"$W+Jets \rightarrow l \nu$",
         label_short="W+JEts",
-        color=(255, 165, 0),
-        aux={"isData": False, "histtype": "fill"},
+        color="#FFD700",  # Gold"#B0C4DE",  #(255, 165, 0),
+        aux={"isData": False, "histtype": "fill", "isSignal": False},
         processes=[
             od.Process(
                 "WJetsToLNu_HT-70To100_TuneCP5_13TeV-madgraphMLM-pythia8",
@@ -237,9 +277,8 @@ def setup_processes(cfg):
         400,
         label=r"$DY \rightarrow l l$",
         label_short="DY",
-        # color=(100, 100, 100),
-        color=(210, 105, 30),
-        aux={"isData": False, "histtype": "fill"},
+        color="#FF8C00",  # Dark Orange"#D8BFD8",  #(210, 105, 30),
+        aux={"isData": False, "histtype": "fill", "isSignal": False},
         processes=[
             od.Process(
                 "DYJetsToLL_M-50_HT-70to100_TuneCP5_PSweights_13TeV-madgraphMLM-pythia8",
@@ -308,8 +347,8 @@ def setup_processes(cfg):
         500,
         label=r"Single top",
         label_short="st",
-        color=(255, 0, 0),
-        aux={"isData": False, "histtype": "fill"},
+        color="#B22222",  # Firebrick"#E6E6FA",  #(255, 0, 0),
+        aux={"isData": False, "histtype": "fill", "isSignal": False},
         processes=[
             od.Process(
                 "ST_tW_top_5f_inclusiveDecays_TuneCP5_13TeV-powheg-pythia8",
@@ -372,8 +411,8 @@ def setup_processes(cfg):
         600,
         label=r"Rare Processes",
         label_short="rare",
-        color=(0, 255, 0),
-        aux={"isData": False, "histtype": "fill"},
+        color="#3CB371",  # Medium Sea Green"#FFFFE0",  #(0, 255, 0),
+        aux={"isData": False, "histtype": "fill", "isSignal": False},
         processes=[
             od.Process(
                 # TTZ -> ll missing?
@@ -490,7 +529,13 @@ def setup_processes(cfg):
         ],
     )
 
-    # write datasets, no crosssection, is_data flag instead
+    # extra colors
+    # "#FFE4B5",  # Moccasin
+    # "#FFFACD"   # Lemon Chiffon
+    # "#FF1493",  # Deep Pink
+    # "#000080"   # Navy
+
+    # write data, no crosssection, is_data flag instead
 
     cfg.add_process(
         "SingleElectron",  # "data_electron",
@@ -498,7 +543,7 @@ def setup_processes(cfg):
         label=r"data electron",
         label_short="dat ele",
         color=(0, 0, 0),
-        aux={"isData": True, "histtype": "errorbar"},
+        aux={"isData": True, "histtype": "errorbar", "isSignal": False},
         processes=[
             od.Process("data_e_B", 702, label=r"data", is_data=True),
             # od.Process(
@@ -522,7 +567,7 @@ def setup_processes(cfg):
         label=r"data muon",
         label_short="dat mu",
         color=(0, 0, 0),
-        aux={"isData": True, "histtype": "errorbar"},
+        aux={"isData": True, "histtype": "errorbar", "isSignal": False},
         processes=[
             od.Process("data_mu_B", 802, label=r"data", is_data=True),
             # od.Process(
@@ -546,7 +591,7 @@ def setup_processes(cfg):
         label=r"data MET",
         label_short="dat met",
         color=(0, 0, 0),
-        aux={"isData": True, "histtype": "errorbar"},
+        aux={"isData": True, "histtype": "errorbar", "isSignal": False},
         processes=[
             od.Process("data_MET_B", 902, label=r"data", is_data=True),
             od.Process("data_MET_C", 903, label=r"data", is_data=True),
@@ -563,5 +608,5 @@ def setup_processes(cfg):
         label=r"data all",
         label_short="data",
         color=(0, 0, 0),
-        aux={"isData": True, "histtype": "errorbar"},
+        aux={"isData": True, "histtype": "errorbar", "isSignal": False},
     )

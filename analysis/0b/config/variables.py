@@ -10,7 +10,7 @@ def setup_variables(cfg):
     """
     from numpy import pi
 
-    nBinsPt = 100
+    nBinsPt = 35  # 100
     nBinsEta = 32
     minEta = -pi
     maxEta = pi
@@ -20,12 +20,12 @@ def setup_variables(cfg):
     nBinsMass = 25
     minMass = 0
     maxMass = 1000
-    nBinsHt = 25
-    minHt = 500
-    maxHt = 5000
-    nBinsLt = 25
-    minLt = 250
-    maxLt = 2000
+    nBinsHt = 42  # 25
+    minHt = 0  # 500
+    maxHt = 3000  # 5000
+    nBinsLt = 35  # 25
+    minLt = 0  # 250
+    maxLt = 1200  # 2000
     nJets = 20
     minNJets = 0
     maxNJets = 20
@@ -34,16 +34,16 @@ def setup_variables(cfg):
     nLep = 5
     minLep = 0
     maxLep = 5
+    nIso = 20
+    minIso = 0
+    maxIso = 1000
     nBool = 2
     minBool = 0
     maxBool = 1
-
     cfg.add_variable(name="metPt", expression="metPt", binning=(nBinsPt, minPt, maxPt), unit="GeV", x_title=r"$p_{T}^{miss}$", x_discrete=False)
     cfg.add_variable(name="WBosonMt", expression="WBosonMt", binning=(nBinsMass, minMass, maxMass), unit="GeV", x_title=r"$m_{t}^{W}$", x_discrete=False)
     cfg.add_variable(name="LT", expression="LT", binning=(nBinsHt, minLt, maxLt), unit="GeV", x_title="LT", x_discrete=False)
-    # cfg.add_variable(name="LT", expression="LT", binning=[250,350,450,600,1000], unit="GeV", x_title="LT", x_discrete=True)
     cfg.add_variable(name="HT", expression="HT", binning=(nBinsLt, minHt, maxHt), unit="GeV", x_title="HT", x_discrete=False)
-    # cfg.add_variable(name="HT", expression="HT", binning=[500,750,1000,1250,2500], unit="GeV", x_title="HT", x_discrete=True)
     cfg.add_variable(name="nJets", expression="nJets", binning=(nJets, minNJets, maxNJets), x_discrete=False)
     # cfg.add_variable(name="nbJets", expression="nbJets", binning=(nJets, minNJets, maxNJets), x_discrete=False)
     cfg.add_variable(name="nWFatJets", expression="nWFatJets", binning=(nJets, minNJets, maxNJets), x_discrete=False)
@@ -80,3 +80,7 @@ def setup_variables(cfg):
     # cfg.add_variable(name="HLT_Or", expression="HLT_Or", binning=(nBool, minBool, maxBool), x_discrete=False)
     # cfg.add_variable(name="hard_lep", expression="hard_lep", binning=(nBool, minBool, maxBool), x_discrete=False)
     # cfg.add_variable(name="selected", expression="selected", binning=(nBool, minBool, maxBool), x_discrete=False)
+
+    # other binning, important to put them last
+    # cfg.add_variable(name="HT_binned", expression="HT", binning=[500,750,1000,1250,2500], unit="GeV", x_title="HT rebinned", x_discrete=True)
+    # cfg.add_variable(name="LT_binned", expression="LT", binning=[250,350,450,600,1000], unit="GeV", x_title="LT rebinne", x_discrete=True)
