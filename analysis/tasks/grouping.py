@@ -86,8 +86,8 @@ class MergeArrays(CoffeaTask):  # , law.LocalWorkflow, HTCondorWorkflow):
         for dat in tqdm(self.datasets_to_process):
             # check if job either in root process or leafes
             proc_list = self.get_proc_list([dat])
-            if dat == "TTbar":
-                proc_list = [p for p in proc_list if "TTTo" in p]
+            # if dat == "TTbar":
+            # proc_list = [p for p in proc_list if "TTTo" in p]
             for cat in self.config_inst.categories.names():
                 cat_list = []
                 weights_list = []
