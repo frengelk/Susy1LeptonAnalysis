@@ -28,6 +28,6 @@ def setup_categories(cfg):
     # Otherwise declare variable from skimmed root file with respective cut
     # ("hard_lep", "cut"), ("selected", "cut"), ("no_veto_lepton", "cut"), ("nJet", ">=3"), ("HLT_Or", "cut"),
     N0b = cfg.add_category("N0b", label="0 btagged jets", label_short="0 btag", aux={"cuts": [("LT", ">250"), ("HT", ">500"), ("ghost_muon_filter", "cut"), ("JetPt_2", ">80"), ("nDeepJetMediumBTag", "==0"), ("iso_cut", "cut"), ("doubleCounting_XOR", "cut")]})
-    N1ib = cfg.add_category("N1ib", label=">=1 btagged jets", label_short="1i btag", aux={"cuts": [("LT", ">250"), ("HT", ">500"), ("ghost_muon_filter", "cut"), ("JetPt_2", ">80"), ("nDeepJetMediumBTag", ">=1"), ("iso_cut", "cut"), ("doubleCounting_XOR", "cut")]})
+    # N1ib = cfg.add_category("N1ib", label=">=1 btagged jets", label_short="1i btag", aux={"cuts": [("LT", ">250"), ("HT", ">500"), ("ghost_muon_filter", "cut"), ("JetPt_2", ">80"), ("nDeepJetMediumBTag", ">=1"), ("iso_cut", "cut"), ("doubleCounting_XOR", "cut")]})
     # Min_cuts = cfg.add_category("Min_cuts", label="Min_cuts", label_short="min cuts", aux={"cuts": [("LT", "> 350"), ("HT", ">500")]})
     # No_cuts = cfg.add_category("No_cuts", label="No_cuts", label_short="No cuts", aux={"cuts": []})

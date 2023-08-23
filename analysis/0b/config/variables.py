@@ -14,7 +14,7 @@ def setup_variables(cfg):
     nBinsEta = 32
     minEta = -pi
     maxEta = pi
-    nBinsPhi = 32
+    nBinsPhi = 30
     minPhi = -pi
     maxPhi = pi
     nBinsMass = 25
@@ -67,7 +67,7 @@ def setup_variables(cfg):
     cfg.add_variable(name="jetEta_2", expression="jetEta_1", binning=(nBinsEta, minEta, maxEta), x_title=r"$\eta_{Jet}^{1}$", x_discrete=False)
     cfg.add_variable(name="jetPhi_2", expression="jetPhi_1", binning=(nBinsPhi, minPhi, maxPhi), x_title=r"$\Phi_{Jet}^{1}$", x_discrete=False)
     #########################
-    cfg.add_variable(name="dPhi", expression="dPhi", binning=(nBinsPhi, 2 * minPhi, 2 * maxPhi), x_title=r"$ \Delta \Phi $", x_discrete=False)
+    cfg.add_variable(name="dPhi", expression="dPhi", binning=(nBinsPhi, minPhi, maxPhi), x_title=r"$ \Delta \Phi $", x_discrete=False)
 
     # variables to check cuts
     # cfg.add_variable(name="correctedMetPt", expression="correctedMetPt", binning=(nBinsPt, minPt, maxPt), unit="GeV", x_title=r"Corrected $p_{T}^{miss}$", x_discrete=False)
