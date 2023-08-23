@@ -90,7 +90,7 @@ class ArrayPlotting(CoffeaTask):  # , HTCondorWorkflow, law.LocalWorkflow):
             parts += ("unblinded",)
         if self.signal:
             parts += ("signal",)
-        return super(ArrayPlotting, self).store_parts() + (self.analysis_choice,) + parts
+        return super(ArrayPlotting, self).store_parts() + ("_".join(self.channel),) + parts
 
     def construct_axis(self, binning, isRegular=True):
         if isRegular:
@@ -116,7 +116,6 @@ class ArrayPlotting(CoffeaTask):  # , HTCondorWorkflow, law.LocalWorkflow):
             ind = var_names.index(var.name)
             if var.x_discrete:
                 ind = var_names.index(var.name.split("_")[0])
-            print(var.name, var_names[ind])
 
             # iterating over lepton keys
             for lep in self.input().keys():
@@ -143,6 +142,7 @@ class ArrayPlotting(CoffeaTask):  # , HTCondorWorkflow, law.LocalWorkflow):
                     # ax=ax,
                     # )
                     hep.cms.text("Private work (CMS simulation)", loc=0, ax=ax)
+                    hep.cms.lumitext(text=str(np.round(self.config_inst.get_aux("lumi") / 1000, 2)) + r"$fb^{-1}$", ax=ax)
                     # save histograms for ratio computing
                     hist_counts = {}
                     if self.unblinded:
@@ -173,7 +173,7 @@ class ArrayPlotting(CoffeaTask):  # , HTCondorWorkflow, law.LocalWorkflow):
                                 for key in np_dict.keys():
                                     if k in key:
                                         boost_hist.fill(np_dict[key]["array"].load()[:, ind], weight=np_dict[key]["weights"].load())
-                                hep.histplot(boost_hist, label=k, histtype="step", ax=ax)
+                                hep.histplot(boost_hist, label=k, histtype="step", ax=ax)  # flow="sum",
 
                         if self.divide_by_binwidth:
                             # FIXME hist not defined?
@@ -185,8 +185,20 @@ class ArrayPlotting(CoffeaTask):  # , HTCondorWorkflow, law.LocalWorkflow):
                             continue
                         if proc.aux["isSignal"]:
                             continue
-                        hist_counts.update({dat: {"hist": boost_hist, "label": "{} {}: {}".format(proc.label, lep, np.round(boost_hist.sum(), 2)), "color": proc.color}})  # , histtype=proc.aux["histtype"])})
-                        # hep.histplot(boost_hist, label="{} {}: {}".format(proc.label, lep, boost_hist.sum()), color=proc.color, histtype=proc.aux["histtype"], ax=ax)
+                        hist_counts.update(
+                            {
+                                dat: {
+                                    "hist": boost_hist,
+                                    "label": "{} {}".format(
+                                        proc.label,
+                                        lep,
+                                    ),
+                                    "color": proc.color,
+                                }
+                            }
+                        )  # , histtype=proc.aux["histtype"])})
+                        # if you want yields, incorporate them like this:
+                        # hist_counts.update({dat: {"hist": boost_hist, "label": "{} {}: {}".format(proc.label, lep, np.round(boost_hist.sum(), 2)), "color": proc.color}})
                         sumOfHists.append(boost_hist.sum())
                     # sorting the labels/handels of the plt hist by descending magnitude of integral
                     order = np.argsort(np.array(sumOfHists))
@@ -199,17 +211,17 @@ class ArrayPlotting(CoffeaTask):  # , HTCondorWorkflow, law.LocalWorkflow):
                         label_list.append(hist_counts[key]["label"])
                         color_list.append(hist_counts[key]["color"])
                     if self.merged:
-                        hep.histplot(hist_list, histtype="fill", stack=True, label=label_list, color=color_list, ax=ax)
+                        hep.histplot(hist_list, histtype="fill", stack=True, label=label_list, color=color_list, ax=ax)  # flow="sum",
                     # deciated data plotting
                     if self.unblinded:
                         proc = self.config_inst.get_process("data")
-                        hep.histplot(data_boost_hist, label="{} {}: {}".format(proc.label, lep, np.round(data_boost_hist.sum(), 2)), color=proc.color, histtype=proc.aux["histtype"], ax=ax)
+                        hep.histplot(data_boost_hist, label="{} {}".format(proc.label, lep), color=proc.color, histtype=proc.aux["histtype"], ax=ax)  # , flow="sum"
                         sumOfHists.append(data_boost_hist.sum())
                         hist_counts.update({"data": {"hist": data_boost_hist}})
                     # plot signal last
                     if self.signal:
                         prc = {"0b": self.config_inst.get_process("SMS-T5qqqqVV_TuneCP2_13TeV-madgraphMLM-pythia8"), "mb": self.config_inst.get_process("T1tttt")}[self.analysis_choice]
-                        hep.histplot(signal_boost_hist, label="{} {}: {}".format(prc.label, lep, np.round(signal_boost_hist.sum(), 2)), color=prc.color, histtype=prc.aux["histtype"], ax=ax)
+                        hep.histplot(signal_boost_hist, label="{} {}".format(prc.label, lep), color=prc.color, histtype=prc.aux["histtype"], ax=ax)  # ,flow="sum"
                         sumOfHists.append(signal_boost_hist.sum())
                         hist_counts.update({prc.name: {"hist": signal_boost_hist}})
                     # missing boost hist divide and density
@@ -222,15 +234,17 @@ class ArrayPlotting(CoffeaTask):  # , HTCondorWorkflow, law.LocalWorkflow):
                     ax.legend(
                         handles,
                         labels,
-                        ncol=1,
-                        title=cat,
+                        ncol=2,
+                        # title=cat,
                         loc="upper right",
                         bbox_to_anchor=(1, 1),
                         borderaxespad=0,
-                        prop={"size": 12},
+                        prop={"size": 14},
                     )
                     ax.set_ylabel(var.get_full_y_title(), fontsize=18)
                     ax.tick_params(axis="both", which="major", labelsize=18)
+                    if var.x_discrete:
+                        ax.set_xlim(var.binning[0], var.binning[-1])
                     if not var.x_discrete:
                         ax.set_xlim(var.binning[1], var.binning[2])
 
@@ -283,13 +297,13 @@ class ArrayPlotting(CoffeaTask):  # , HTCondorWorkflow, law.LocalWorkflow):
 class StitchingPlot(CoffeaTask):
     "task to print distribution of binned MC samples"
     # channel = luigi.Parameter(default="Muon")
-    channel = luigi.ListParameter(default=["Muon", "Electron"])
+    channel = luigi.ListParameter(default=["Muon"])  # , "Electron"
     formats = luigi.ListParameter(default=["png", "pdf"])
     variable = luigi.Parameter(default="HT")
 
     def requires(self):
         return {
-            "merged": MergeArrays.req(self, channel=self.channel, datasets_to_process=self.datasets_to_process),
+            "merged": MergeArrays.req(self, channel=self.channel[:1], datasets_to_process=self.datasets_to_process),
             "base": CoffeaProcessor.req(
                 self,
                 lepton_selection=self.channel[0],
@@ -300,6 +314,9 @@ class StitchingPlot(CoffeaTask):
 
     def output(self):
         return {dat + ending: self.local_target("{}_weighted_stitching_plot.{}".format(dat, ending)) for dat in self.datasets_to_process for ending in self.formats}
+
+    def store_parts(self):
+        return super(StitchingPlot, self).store_parts() + (self.channel[0],)
 
     def construct_axis(self, binning, isRegular=True):
         if isRegular:
@@ -341,12 +358,15 @@ class StitchingPlot(CoffeaTask):
                     boost_hist = bh.Histogram(self.construct_axis(var.binning, not var.x_discrete))
                     boost_hist.fill(dic["array"], weight=dic["weights"])  # / dic["sum_gen_weights"])
                     hist_list.append(boost_hist)
+                    # print(key, boost_hist.values())
                     label_list.append(key)
+
+            # print("summed_hists", sum(hist_list).values())
 
             # hep.histplot(boost_hist, histtype="step", label=key, ax=ax)
             hep.histplot(hist_list, histtype="fill", stack=True, label=label_list, ax=ax)
 
-            # in that order so lines are on top of stacked plot
+            # in that order so lines are drawn on top of stacked plot
             for key, dic in base_dict.items():
                 if "TTTo" in key:
                     boost_hist = bh.Histogram(self.construct_axis(var.binning, not var.x_discrete))
@@ -356,11 +376,12 @@ class StitchingPlot(CoffeaTask):
             for k in list(merged.keys()):
                 if dat in k:
                     pro = k
-            proc = self.config_inst.get_process(pro.split("_")[1])
+            proc = self.config_inst.get_process("_".join(pro.split("_")[1:]))
 
             merged_boost_hist = bh.Histogram(self.construct_axis(var.binning, not var.x_discrete))
             merged_boost_hist.fill(merged[pro]["array"].load()[:, var_names.index(var.name)], weight=merged[pro]["weights"].load())
             hep.histplot(merged_boost_hist, label=proc.label, histtype="step", ax=ax, linewidth=2)
+            # print(pro, merged_boost_hist.values())
 
             ax.set_ylabel(var.get_full_y_title())
             ax.set_xlabel(var.get_full_x_title())
@@ -371,7 +392,6 @@ class StitchingPlot(CoffeaTask):
                 bbox_to_anchor=(1, 1),
                 borderaxespad=0,
             )
-
             for ending in self.formats:
                 self.output()[dat + ending].parent.touch()
                 plt.savefig(self.output()[dat + ending].path, bbox_inches="tight")
@@ -708,7 +728,7 @@ class DNNEvaluationPlotting(DNNTask):
         plt.ylabel("tpr", fontsize=16)
         # plt.title("ROC", fontsize=16)
         plt.legend(title="ROC")
-        hep.cms.text("Private work (CMS simulation)", loc=0, fontsize=12)
+        hep.cms.text("Private work (CMS simulation)", loc=0, fontsize=10)
         plt.savefig(self.output()["ROC_png"].path, bbox_inches="tight")
         plt.savefig(self.output()["ROC_pdf"].path, bbox_inches="tight")
         plt.gcf().clear()
@@ -724,7 +744,7 @@ class DNNEvaluationPlotting(DNNTask):
 
         print(pred_matrix)
         # TODO
-        fig = plt.figure(figsize=(12, 9))
+        fig = plt.figure()  # figsize=(12, 9)
         ax = fig.add_subplot(111)
         # cax = ax.matshow(pred_matrix, vmin=-1, vmax=1)
         cax = ax.imshow(pred_matrix, vmin=0, vmax=1, cmap="plasma")
@@ -738,17 +758,17 @@ class DNNEvaluationPlotting(DNNTask):
                     ha="center",
                     va="center",
                     color="white",
-                    fontsize=18,
+                    fontsize=16,
                 )
         ticks = np.arange(0, n_processes, 1)
         # Let the horizontal axes labeling appear on bottom
         ax.tick_params(top=False, bottom=True, labeltop=False, labelbottom=True)
         ax.set_xticks(ticks)
         ax.set_yticks(ticks)
-        ax.set_xticklabels(all_processes)
-        ax.set_yticklabels(all_processes)
-        ax.set_xlabel("Predicted Processes", fontsize=18)
-        ax.set_ylabel("Real Processes", fontsize=18)
+        ax.set_xticklabels(all_processes, fontsize=14)
+        ax.set_yticklabels(all_processes, fontsize=14)
+        ax.set_xlabel("Predicted Processes", fontsize=16)
+        ax.set_ylabel("Real Processes", fontsize=16)
         hep.cms.text("Private work (CMS simulation)", loc=0, fontsize=14, ax=ax)
         # ax.grid(linestyle="--", alpha=0.5)
         plt.savefig(self.output()["confusion_matrix_png"].path, bbox_inches="tight")
