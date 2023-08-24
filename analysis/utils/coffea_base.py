@@ -271,10 +271,22 @@ class BaseSelection:
         # METFilter = eval(MET_Filter)        # apply weights,  MC/data check beforehand
         weights = processor.Weights(size, storeIndividual=self.individal_weights)
         if not events.metadata["isData"]:
-            weights.add("xSec", events.metadata["xSec"] * 1000)  # account for pb / fb
             weights.add("Luminosity", events.metadata["Luminosity"])
             weights.add("GenWeight", events.GenWeight)
             weights.add("sumGenWeight", 1 / events.metadata["sumGenWeight"])
+
+            # not well defined for signal
+            if not events.metadata["isSignal"]:
+                weights.add("xSec", events.metadata["xSec"] * 1000)  # account for pb / fb
+                weights.add(
+                    "PreFireWeight",
+                    events.PreFireWeight,
+                    weightDown=events.PreFireWeightDown,
+                    weightUp=events.PreFireWeightUp,
+                )
+            if events.metadata["isSignal"]:
+                weights.add("xSec", events.susyXSectionNLLO * 1000)
+
             if events.metadata["treename"] == "Muon":
                 sfs = ["MuonMediumSf", "MuonTriggerSf", "MuonMediumIsoSf"]
                 for sf in sfs:
@@ -308,13 +320,6 @@ class BaseSelection:
                 weightDown=events.PileUpWeightDown,
                 weightUp=events.PileUpWeightUp,
             )
-            if not dataset == "SMS-T5qqqqVV_TuneCP2_13TeV-madgraphMLM-pythia8":
-                weights.add(
-                    "PreFireWeight",
-                    events.PreFireWeight,
-                    weightDown=events.PreFireWeightDown,
-                    weightUp=events.PreFireWeightUp,
-                )
 
             # weights.add(
             # 'JetDeepJetMediumSf',
@@ -335,6 +340,7 @@ class BaseSelection:
 
         # categories = dict(N0b=common + ["zerob"], N1ib=common + ["multib"])  # common +
         categories = {cat.name: [" ".join(cut) for cut in cat.get_aux("cuts")] for cat in self.config.categories}
+
         return locals()
 
 
@@ -403,6 +409,7 @@ class ArrayExporter(BaseProcessor, BaseSelection):
         if self.dtype:
             arrays = {key: array.astype(self.dtype) for key, array in arrays.items()}
         output["arrays"] = dict_accumulator({category + "_" + selected_output["dataset"]: dict_accumulator({key: ArrayAccumulator(array[cut, ...]) for key, array in arrays.items()}) for category, cut in categories.items()})
+
         # option to do cutflow and N1 plots on the fly
         if self.additional_plots:
             weights = selected_output["weights"]
@@ -441,7 +448,6 @@ class ArrayExporter(BaseProcessor, BaseSelection):
                         cutflow=np.array([i + 1]),
                         weight=np.array([weights.weight()[selection.all(*(allCuts - {cut}))].sum()]),
                     )
-                # from IPython import embed; embed()
             # output["n_events"]["sumAllEvents"] += selected_output["size"]
         return output
 
