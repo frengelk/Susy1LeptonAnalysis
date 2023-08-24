@@ -21,9 +21,9 @@ def setup_processes(cfg):
     cfg.add_process(
         "T5qqqqVV_2200_100",
         2200100,
-        label=r"T5qqqqVV",
+        label=r"T5qqqqVV (2200, 100)",
         label_short="T5",
-        color=(100, 100, 100),
+        color="#FF1493",  # Deep Pink
         aux={"isData": False, "histtype": "step", "isSignal": True},
         processes=[
             od.Process(
@@ -31,20 +31,22 @@ def setup_processes(cfg):
                 102,
                 label=r"T5qqqqWW (2200, 100)",
                 xsecs={
-                    13: sn.Number(1.0),
+                    13: sn.Number(1.0), # placeholder
                 },
                 label_short="T5",
-                color=(100, 100, 100),
+                color="#FF1493",  # Deep Pink
                 aux={"isData": False, "isSignal": True, "masspoint": (2200, 100), "histtype": "step", "isSignal": True},
             )
         ],
     )
+
+    
     cfg.add_process(
         "T5qqqqVV_1800_1300",
         18001300,
-        label=r"T5qqqqVV",
+        label=r"T5qqqqVV (1800, 1300)",
         label_short="T5",
-        color=(100, 100, 100),
+        color= "#000080",   # Navy
         aux={"isData": False, "histtype": "step", "isSignal": True},
         processes=[
             od.Process(
@@ -52,10 +54,10 @@ def setup_processes(cfg):
                 103,
                 label=r"T5qqqqWW (1800, 1300)",
                 xsecs={
-                    13: sn.Number(1.0),
+                    13: sn.Number(1.0), # placeholder
                 },
                 label_short="T5",
-                color=(100, 100, 100),
+                color= "#000080",   # Navy
                 aux={"isData": False, "isSignal": True, "masspoint": (1800, 1300), "histtype": "step", "isSignal": True},
             )
         ],
