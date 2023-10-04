@@ -4,22 +4,15 @@ Here we apply our selection and define the categories used for the analysis
 Also this write our arrays
 """
 
-import coffea
 import numpy as np
-import uproot as up
 import awkward as ak
-from coffea.nanoevents import NanoEventsFactory, NanoAODSchema
 from coffea import hist, processor
-from coffea.hist.hist_tools import DenseAxis, Hist
-import boost_histogram as bh
 
 from coffea.processor.accumulator import (
     dict_accumulator,
     defaultdict_accumulator,
     column_accumulator,
-    set_accumulator,
 )
-from coffea.processor.executor import WorkQueueExecutor
 
 # register our candidate behaviors
 # from coffea.nanoevents.methods import candidate
@@ -93,7 +86,9 @@ class BaseSelection:
         pass
 
     def get_selection_as_np(self, X):
-        return dict(hl=np.stack([ak.to_numpy(X[var]).astype(np.float32) for var in self.config.variables.names()], axis=-1))
+        ret = dict(hl=np.stack([ak.to_numpy(X[var]).astype(np.float32) for var in self.config.variables.names()], axis=-1))
+        ret.update(dict(DNNId=ak.to_numpy(X["DNNId"]).astype(np.float32)))
+        return ret
 
     def add_to_selection(self, selection, name, array):
         return selection.add(name, ak.to_numpy(array, allow_missing=True))
@@ -114,7 +109,8 @@ class BaseSelection:
         HT = events.HT
         metPt = events.MetPt
         WBosonMt = events.WBosonMt
-        dPhi = events.DeltaPhi
+        # doing abs to stay in sync with old plots
+        dPhi = abs(events.DeltaPhi)
         nbJets = events.nDeepJetMediumBTag
         # name with underscores lead to problems
         zerob = nbJets == 0
@@ -185,6 +181,11 @@ class BaseSelection:
             # just filling a 1 for each event
             summary["sum_gen_weights"][dataset] = 1.0
 
+        # Defining which net to use per event:
+        # For now, slightly overpresenting the 1 compared to -1 because it always starts with 1
+        # FIXME
+        DNNId = np.resize([1, -1], size)
+
         # Get Variables used for Analysis and Selection
         locals().update(self.get_base_variable(events))
         # if events.metadata["isFastSim"]:
@@ -226,10 +227,15 @@ class BaseSelection:
             # plug it on onto iso_cut, so cutflow is consistent
             iso_cut = iso_cut & LHE_HT_cut
 
-        if events.metadata["dataset"] == "SMS-T5qqqqVV_TuneCP2_13TeV-madgraphMLM-pythia8":
-            mGlu_cut = events.mGluino == proc.aux["masspoint"][0]
-            mNeu_cut = events.mNeutralino == proc.aux["masspoint"][1]
+        if events.metadata["isSignal"]:
+            if proc.has_aux("masspoint"):
+                mGlu_cut = events.mGluino == proc.aux["masspoint"][0]
+                mNeu_cut = events.mNeutralino == proc.aux["masspoint"][1]
+            else:
+                mGlu_cut = events.mGluino % 5 == 0
+                mNeu_cut = events.mNeutralino % 5 == 0
             iso_cut = iso_cut & (mGlu_cut) & (mNeu_cut)
+            # from IPython import embed; embed()
 
         # require correct lepton IDs, applay cut depending on tree name
         # ElectronIdCut = ak.fill_none(ak.firsts(events.ElectronTightId[:, 0:1]), False)
@@ -340,7 +346,6 @@ class BaseSelection:
 
         # categories = dict(N0b=common + ["zerob"], N1ib=common + ["multib"])  # common +
         categories = {cat.name: [" ".join(cut) for cut in cat.get_aux("cuts")] for cat in self.config.categories}
-
         return locals()
 
 
@@ -412,7 +417,6 @@ class ArrayExporter(BaseProcessor, BaseSelection):
 
         # option to do cutflow and N1 plots on the fly
         if self.additional_plots:
-            weights = selected_output["weights"]
             for cat in selected_output["categories"].keys():
                 # filling cutflow hist
                 cutflow_cuts = set()

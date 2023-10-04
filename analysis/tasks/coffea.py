@@ -31,12 +31,10 @@ class CoffeaTask(DatasetTask):
 
     processor = Parameter(default="ArrayExporter")
     debug = BoolParameter(default=False)
-    debug_dataset = Parameter(default="data_mu_C")  # take a small set to reduce computing time
-    debug_str = Parameter(default="/nfs/dust/cms/user/wiens/CMSSW/CMSSW_12_1_0/Testing/2022_11_10/TTJets/TTJets_1.root")
-    file = Parameter(
-        default="/nfs/dust/cms/user/frengelk/Code/cmssw/CMSSW_12_1_0/Batch/2022_11_24/2017/Data/root/SingleElectron_Run2017C-UL2017_MiniAODv2_NanoAODv9-v1_NANOAOD_1.0.root"
-        # "/nfs/dust/cms/user/wiens/CMSSW/CMSSW_12_1_0/Testing/2022_11_10/TTJets/TTJets_1.root"
-    )
+    # debug_dataset = Parameter(default="data_mu_C")  # take a small set to reduce computing time
+    # debug_str = Parameter(default="/nfs/dust/cms/user/wiens/CMSSW/CMSSW_12_1_0/Testing/2022_11_10/TTJets/TTJets_1.root")
+    # file = Parameter(
+    # default="/nfs/dust/cms/user/frengelk/Code/cmssw/CMSSW_12_1_0/Batch/2022_11_24/2017/Data/root/SingleElectron_Run2017C-UL2017_MiniAODv2_NanoAODv9-v1_NANOAOD_1.0.root")
     # job_number = IntParameter(default=1)
     # data_key = Parameter(default="SingleMuon")
     # parameter with selection we use coffea
@@ -57,8 +55,17 @@ class CoffeaTask(DatasetTask):
     def load_job_dict(self):
         with open(self.config_inst.get_aux("job_dict").replace(".json", "_" + self.version + ".json")) as f:
             data_list = json.load(f)
+        # redoing datalist to incorporate mass points for signal
+        """
+        for dat in list(data_list.keys()):
+            if self.config_inst.get_aux("signal_process") in dat:
+                for masspoint in self.config_inst.get_aux("signal_masspoints"):
+                    new_dat = dat + "_{}_{}".format(masspoint[0], masspoint[1])
+                    data_list[new_dat] = data_list[dat]
+        """
+
         job_number = 0  # len(data_list.keys())
-        job_number_dict = {}
+        job_number_dict, process_dict = {}, {}
         data_path = data_list["directory_path"]
         # start with wanted process names, than check for leafs
         for dat in self.datasets_to_process:
@@ -79,11 +86,12 @@ class CoffeaTask(DatasetTask):
                     # job_number -= 1
                     # continue
                     job_number_dict.update({job_number + i: file})
+                    process_dict.update({job_number + i: name})
                 job_number += len(files)
         if self.debug:
             job_number = 1
             job_number_dict = {0: job_number_dict[0]}
-        return data_list, job_number, job_number_dict
+        return data_list, job_number, job_number_dict, process_dict
 
 
 class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
@@ -109,21 +117,23 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
         return list(range(job_number))
 
     def output(self):
-        files, job_number, job_number_dict = self.load_job_dict()
+        files, job_number, job_number_dict, process_dict = self.load_job_dict()
         out = {
             cat
             + "_"
             + dat.split("/")[0]
             + "_"
             + str(job): {
-                "array": self.local_target(cat + "_" + dat.split("/")[0] + "_" + str(job) + ".npy"),
-                "weights": self.local_target(cat + "_" + dat.split("/")[0] + "_" + str(job) + "_weights.npy"),
+                "array": self.local_target(cat + "_" + dat + "_" + str(job) + ".npy"),
+                "weights": self.local_target(cat + "_" + dat + "_" + str(job) + "_weights.npy"),
+                "DNNId": self.local_target(cat + "_" + dat + "_" + str(job) + "_DNNId.npy"),
                 # "sum_gen_weights": self.local_target(cat + "_" + dat.split("/")[0] + "_" + str(job) + "_sum_gen_weights.npy"),
-                "cutflow": self.local_target(cat + "_" + dat.split("/")[0] + "_" + str(job) + "cutflow.coffea"),
-                "n_minus1": self.local_target(cat + "_" + dat.split("/")[0] + "_" + str(job) + "n_minus1.coffea"),
+                "cutflow": self.local_target(cat + "_" + dat + "_" + str(job) + "cutflow.coffea"),
+                "n_minus1": self.local_target(cat + "_" + dat + "_" + str(job) + "n_minus1.coffea"),
             }
             for cat in self.config_inst.categories.names()
-            for job, dat in job_number_dict.items()
+            # for job, dat in job_number_dict.items() dat.split("/")[0]
+            for job, dat in process_dict.items()
             # for i in range(job_number)  + "_" + str(job_number)
         }
         return out
@@ -145,13 +155,15 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
         if self.processor == "Histogramer":
             processor_inst = Histogramer(self)
         # building together the respective strings to use for the coffea call
-        files, job_number, job_number_dict = self.load_job_dict()
+        files, job_number, job_number_dict, process_dict = self.load_job_dict()
         treename = self.lepton_selection
         # key_name = self.datasets_to_process[self.branch] # list(data_dict.keys())[0]
         subset = job_number_dict[self.branch]
-        dataset = subset.split("/")[0]  # split("_")[0]
+        # dataset = subset.split("/")[0]  # split("_")[0]
+        dataset = process_dict[self.branch]
         if dataset == "merged":
             dataset = data_path.split("/")[-2]
+        proc = self.config_inst.get_process(dataset)
 
         # check for empty dataset
         empty = False
@@ -161,16 +173,28 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
             primaryDataset = file["MetaData"]["primaryDataset"].array()[0]
             isData = file["MetaData"]["IsData"].array()[0]
             isFastSim = file["MetaData"]["IsFastSim"].array()[0]
+            if proc.is_leaf_process:
+                # check parent
+                isSignal = proc.parent_processes.get_first().get_aux("isSignal")
+            else:
+                isSignal = proc.get_aux("isSignal")
             if not isData:
                 # assert all events with the same Xsec in scope with float precision
                 # assert abs(np.mean(file["MetaData"]["xSection"].array()) - file["MetaData"]["xSection"].array()[0]) < file["MetaData"]["xSection"].array()[0] * 1e-5
                 # FIXME xSec = file["MetaData"]["xSection"].array()[0]
-                xSec = self.config_inst.get_process(dataset).xsecs[13].nominal
+                xSec = proc.xsecs[13].nominal
                 lumi = file["MetaData"]["Luminosity"].array()[0]
                 # if empty skip and construct placeholder output
                 if len(file[treename]["Event"].array()) == 0:
                     empty = True
-                    out = {"cutflow": hist.Hist("Counts", hist.Bin("cutflow", "Cut", 20, 0, 20)), "n_minus1": hist.Hist("Counts", hist.Bin("Nminus1", "Cut", 20, 0, 20)), "arrays": {"N0b_" + dataset: {"hl": ArrayAccumulator(np.reshape(np.array([], dtype=np.float64), (0, 24))), "weights": ArrayAccumulator(np.array([], dtype=np.float64))}, "N1ib_" + dataset: {"hl": ArrayAccumulator(np.reshape(np.array([], dtype=np.float64), (0, 24))), "weights": ArrayAccumulator(np.array([], dtype=np.float64))}}}
+                    out = {
+                        "cutflow": hist.Hist("Counts", hist.Bin("cutflow", "Cut", 20, 0, 20)),
+                        "n_minus1": hist.Hist("Counts", hist.Bin("Nminus1", "Cut", 20, 0, 20)),
+                        "arrays": {
+                            "N0b_" + dataset: {"hl": ArrayAccumulator(np.reshape(np.array([], dtype=np.float64), (0, 24))), "weights": ArrayAccumulator(np.array([], dtype=np.float64)), "DNNId": ArrayAccumulator(np.array([], dtype=np.float64))},
+                            # "N1ib_" + dataset: {"hl": ArrayAccumulator(np.reshape(np.array([], dtype=np.float64), (0, 24))), "weights": ArrayAccumulator(np.array([], dtype=np.float64)), "DNNId":ArrayAccumulator(np.array([], dtype=np.float64))}
+                        },
+                    }
                 # sum_gen_weight = np.sum(file["MetaData"]["SumGenWeight"].array())
             else:
                 # filler values so they are defined
@@ -179,7 +203,7 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
         fileset = {
             dataset: {
                 "files": [data_path + "/" + subset],  # file for file in
-                "metadata": {"PD": primaryDataset, "isData": isData, "isFastSim": isFastSim, "xSec": xSec, "Luminosity": lumi, "sumGenWeight": sum_gen_weights_dict[dataset]},
+                "metadata": {"PD": primaryDataset, "isData": isData, "isFastSim": isFastSim, "isSignal": isSignal, "xSec": xSec, "Luminosity": lumi, "sumGenWeight": sum_gen_weights_dict[dataset]},
             }
         }
         if not empty:
@@ -211,6 +235,7 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
             self.output().popitem()[1]["array"].parent.touch()
             for cat in out["arrays"]:
                 self.output()[cat + "_" + str(self.branch)]["weights"].dump(out["arrays"][cat]["weights"].value)
+                self.output()[cat + "_" + str(self.branch)]["DNNId"].dump(out["arrays"][cat]["DNNId"].value)
                 self.output()[cat + "_" + str(self.branch)]["array"].dump(out["arrays"][cat]["hl"].value)
                 self.output()[cat + "_" + str(self.branch)]["cutflow"].dump(out["cutflow"])
                 self.output()[cat + "_" + str(self.branch)]["n_minus1"].dump(out["n_minus1"])

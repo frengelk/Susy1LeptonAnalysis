@@ -36,11 +36,18 @@ for year, cfg in ("2016", config_2016), ("2017", config_2017):
     setup_variables(cfg)
     setup_categories(cfg)
     cfg.set_aux(
+        "signal_masspoints",
+        [(2200, 100), (1500, 1000)],
+    )
+    cfg.set_aux(
         "signal_process",
-        "T5qqqqWW",
+        "T5qqqqVV",  # found like this in sample names
     )
 
     cfg.set_aux("job_dict", os.path.expandvars("$ANALYSIS_BASE/config/datasets_2017.json"))
+    cfg.set_aux("DNN_model", os.path.expandvars("$ANALYSIS_BASE/config/DNN_model.pt"))
+
+    cfg.set_aux("data", ["MET", "SingleMuon", "SingleElectron"])
 
     cfg.set_aux(
         "DNN_process_template",
@@ -51,10 +58,14 @@ for year, cfg in ("2016", config_2016), ("2017", config_2017):
                 "W+jets": ["WJets", "DY", "rare"],
             },
             "N0b": {
+                # "tt+jets": ["TTbar"],
+                # "SingleTop": ["SingleTop"],
+                # "W+jets": ["WJets", "Rare"],
+                # "DY": ["DY"],
+                # "T5qqqqWW": ["T5qqqqWW_2200_100", "T5qqqqWW_1500_1000"],
                 "tt+jets": ["SingleTop", "TTbar"],
                 "W+jets": ["WJets", "Rare", "DY"],
-                "T5qqqqWW": ["T5qqqqVV"],
-                # data ["MET", "SingleMuon", "SingleElectron", "QCD"]'
+                "T5qqqqWW": ["T5qqqqWW_2200_100"],
             },
         },
     )

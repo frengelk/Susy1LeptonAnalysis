@@ -20,8 +20,8 @@ from functools import total_ordering
 from tasks.coffea import CoffeaProcessor, CoffeaTask
 from tasks.makefiles import CollectInputData
 from tasks.grouping import GroupCoffea, MergeArrays  # , SumGenWeights
-from tasks.arraypreparation import ArrayNormalisation
-from tasks.multiclass import PytorchMulticlass
+from tasks.arraypreparation import ArrayNormalisation, CrossValidationPrep
+from tasks.multiclass import PytorchMulticlass, PredictDNNScores, PytorchCrossVal
 from tasks.base import HTCondorWorkflow, DNNTask
 
 import utils.pytorch_base as util
@@ -145,11 +145,12 @@ class ArrayPlotting(CoffeaTask):  # , HTCondorWorkflow, law.LocalWorkflow):
                     hep.cms.lumitext(text=str(np.round(self.config_inst.get_aux("lumi") / 1000, 2)) + r"$fb^{-1}$", ax=ax)
                     # save histograms for ratio computing
                     hist_counts = {}
+                    signal_hists = {}
                     if self.unblinded:
                         # filling all data in one boost_hist
                         data_boost_hist = bh.Histogram(self.construct_axis(var.binning, not var.x_discrete))
-                    if self.signal:
-                        signal_boost_hist = bh.Histogram(self.construct_axis(var.binning, not var.x_discrete))
+                    # if self.signal:
+                    #    signal_boost_hist = bh.Histogram(self.construct_axis(var.binning, not var.x_discrete))
                     for dat in self.datasets_to_process:
                         proc = self.config_inst.get_process(dat)
                         if not proc.aux["isData"]:
@@ -161,11 +162,29 @@ class ArrayPlotting(CoffeaTask):  # , HTCondorWorkflow, law.LocalWorkflow):
                         if key in np_dict.keys():
                             if proc.aux["isData"] and self.unblinded:
                                 data_boost_hist.fill(np_dict[key]["array"].load()[:, ind])
+                                if var.x_discrete:
+                                    data_boost_hist = data_boost_hist / np.prod(data_boost_hist.axes.widths, axis=0)
                                 # np.load(value["array"].path)  # , weight=np.load(value["weights"].path))
                             elif proc.aux["isSignal"] and self.signal:
-                                signal_boost_hist.fill(np_dict[key]["array"].load()[:, ind])
+                                signal_boost_hist = bh.Histogram(self.construct_axis(var.binning, not var.x_discrete))
+                                signal_boost_hist.fill(np_dict[key]["array"].load()[:, ind], weight=np_dict[key]["weights"].load())
+                                if var.x_discrete:
+                                    signal_boost_hist = signal_boost_hist / np.prod(signal_boost_hist.axes.widths, axis=0)
+                                signal_hists.update(
+                                    {
+                                        dat: {
+                                            "hist": signal_boost_hist,
+                                            "label": "{}".format(proc.label),
+                                            "color": proc.color,
+                                        }
+                                    }
+                                )
+
                             elif not proc.aux["isData"] and not proc.aux["isSignal"]:
                                 boost_hist.fill(np_dict[key]["array"].load()[:, ind], weight=np_dict[key]["weights"].load())
+                                if var.x_discrete:
+                                    boost_hist = boost_hist / np.prod(boost_hist.axes.widths, axis=0)
+
                         if not self.merged:
                             for pro in self.get_proc_list([dat]):
                                 boost_hist = bh.Histogram(self.construct_axis(var.binning, not var.x_discrete))
@@ -176,8 +195,7 @@ class ArrayPlotting(CoffeaTask):  # , HTCondorWorkflow, law.LocalWorkflow):
                                 hep.histplot(boost_hist, label=k, histtype="step", ax=ax)  # flow="sum",
 
                         if self.divide_by_binwidth:
-                            # FIXME hist not defined?
-                            boost_hist = boost_hist / np.prod(hist.axes.widths, axis=0)
+                            boost_hist = boost_hist / np.prod(boost_hist.axes.widths, axis=0)
                         if self.density:
                             boost_hist = self.get_density(boost_hist)
                         # don't stack data and signal, defined in config/processes
@@ -189,10 +207,7 @@ class ArrayPlotting(CoffeaTask):  # , HTCondorWorkflow, law.LocalWorkflow):
                             {
                                 dat: {
                                     "hist": boost_hist,
-                                    "label": "{} {}".format(
-                                        proc.label,
-                                        lep,
-                                    ),
+                                    "label": "{} {}".format(proc.label, lep),
                                     "color": proc.color,
                                 }
                             }
@@ -220,10 +235,12 @@ class ArrayPlotting(CoffeaTask):  # , HTCondorWorkflow, law.LocalWorkflow):
                         hist_counts.update({"data": {"hist": data_boost_hist}})
                     # plot signal last
                     if self.signal:
-                        prc = {"0b": self.config_inst.get_process("SMS-T5qqqqVV_TuneCP2_13TeV-madgraphMLM-pythia8"), "mb": self.config_inst.get_process("T1tttt")}[self.analysis_choice]
-                        hep.histplot(signal_boost_hist, label="{} {}".format(prc.label, lep), color=prc.color, histtype=prc.aux["histtype"], ax=ax)  # ,flow="sum"
-                        sumOfHists.append(signal_boost_hist.sum())
-                        hist_counts.update({prc.name: {"hist": signal_boost_hist}})
+                        # prc = {"0b": self.config_inst.get_process("SMS-T5qqqqVV_TuneCP2_13TeV-madgraphMLM-pythia8"), "mb": self.config_inst.get_process("T1tttt")}[self.analysis_choice]
+                        for key, val in signal_hists.items():
+                            prc = self.config_inst.get_process(key)
+                            hep.histplot(val["hist"], label="{}".format(val["label"]), color=val["color"], histtype=prc.aux["histtype"], linewidth=3, ax=ax)  # ,flow="sum"
+                            sumOfHists.append(val["hist"].sum())
+                            hist_counts.update({prc.name: {"hist": val["hist"]}})
                     # missing boost hist divide and density
                     handles, labels = ax.get_legend_handles_labels()
                     if self.merged:
@@ -239,9 +256,9 @@ class ArrayPlotting(CoffeaTask):  # , HTCondorWorkflow, law.LocalWorkflow):
                         loc="upper right",
                         bbox_to_anchor=(1, 1),
                         borderaxespad=0,
-                        prop={"size": 14},
+                        prop={"size": 18},
                     )
-                    ax.set_ylabel(var.get_full_y_title(), fontsize=18)
+                    ax.set_ylabel(var.y_title, fontsize=24)  # var.get_full_y_title()
                     ax.tick_params(axis="both", which="major", labelsize=18)
                     if var.x_discrete:
                         ax.set_xlim(var.binning[0], var.binning[-1])
@@ -267,11 +284,11 @@ class ArrayPlotting(CoffeaTask):  # , HTCondorWorkflow, law.LocalWorkflow):
                             rax.set_xlim(var.binning[0], var.binning[-1])
                         if not var.x_discrete:
                             rax.set_xlim(var.binning[1], var.binning[2])
-                        rax.set_ylabel("Ratio Data/MC", fontsize=18)
+                        rax.set_ylabel("Data/MC", fontsize=24)
                         rax.set_ylim(0.5, 1.5)
                         rax.tick_params(axis="both", which="major", labelsize=18)
                     else:
-                        ax.set_xlabel(var.get_full_x_title(), fontsize=18)
+                        ax.set_xlabel(var.get_full_x_title(), fontsize=24)
 
                     for ending in self.formats:
                         outputKey = var.name + cat + lep + ending
@@ -285,7 +302,7 @@ class ArrayPlotting(CoffeaTask):  # , HTCondorWorkflow, law.LocalWorkflow):
                         plt.savefig(self.output()[outputKey]["nominal"].path, bbox_inches="tight")
 
                         ax.set_yscale("log")
-                        ax.set_ylim(5e-2, 2e6)
+                        ax.set_ylim(2e-2, 2e6)
                         # ax.set_yticks(np.arange(10))
                         ax.set_yticks([10 ** (i - 1) for i in range(8)])
                         # ax.get_yaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
@@ -674,7 +691,6 @@ class DNNEvaluationPlotting(DNNTask):
         )
 
     @law.decorator.timeit(publish_message=True)
-    @law.decorator.notify
     @law.decorator.safe_output
     def run(self):
         # from IPython import embed;embed()
@@ -711,7 +727,7 @@ class DNNEvaluationPlotting(DNNTask):
             test_predictions = np.argmax(y_predictions, axis=1)
 
             # "signal"...
-            predict_signal = np.array(y_predictions)[:, 1]
+            predict_signal = np.array(y_predictions)[:, -1]
 
         self.output()["confusion_matrix_png"].parent.touch()
 
@@ -774,3 +790,292 @@ class DNNEvaluationPlotting(DNNTask):
         plt.savefig(self.output()["confusion_matrix_png"].path, bbox_inches="tight")
         plt.savefig(self.output()["confusion_matrix_pdf"].path)  # , bbox_inches="tight")
         plt.gcf().clear()
+
+
+class DNNEvaluationCrossValPlotting(DNNTask):
+    normalize = luigi.Parameter(default="true", description="if confusion matrix gets normalized")
+    kfold = luigi.IntParameter(default=2)
+
+    def requires(self):
+        return {
+            "data": CrossValidationPrep.req(self, kfold=self.kfold),
+            "model": PytorchCrossVal.req(
+                self,
+                n_layers=self.n_layers,
+                n_nodes=self.n_nodes,
+                dropout=self.dropout,
+                kfold=self.kfold,
+                debug=False,
+            ),
+        }
+        # return DNNTrainer.req(
+        #    self, n_layers=self.n_layers, n_nodes=self.n_nodes, dropout=self.dropout
+        # )
+
+    def output(self):
+        return {
+            "fold_{}".format(i): {
+                "ROC_png": self.local_target("fold_{}_pytorch_ROC.png".format(i)),
+                "confusion_matrix_png": self.local_target("fold_{}_pytorch_confusion_matrix.png".format(i)),
+                "ROC_pdf": self.local_target("fold_{}_pytorch_ROC.pdf".format(i)),
+                "confusion_matrix_pdf": self.local_target("fold_{}_pytorch_confusion_matrix.pdf".format(i)),
+                "loss_png": self.local_target("fold_{}_pytorch_loss.png".format(i)),
+                "accuracy_png": self.local_target("fold_{}_pytorch_accuracy.png".format(i)),
+                "loss_pdf": self.local_target("fold_{}_pytorch_loss.pdf".format(i)),
+                "accuracy_pdf": self.local_target("fold_{}_pytorch_accuracy.pdf".format(i)),
+            }
+            for i in range(self.kfold)
+        }
+
+    def store_parts(self):
+        # make plots for each use case
+        return (
+            super(DNNEvaluationCrossValPlotting, self).store_parts()
+            # + (self.channel,)
+            # + (self.n_layers,)
+            + (self.n_nodes,)
+            + (self.dropout,)
+            + (self.batch_size,)
+            + (self.learning_rate,)
+        )
+
+    @law.decorator.timeit(publish_message=True)
+    @law.decorator.safe_output
+    def run(self):
+        # from IPython import embed;embed()
+
+        n_variables = len(self.config_inst.variables)
+        n_processes = len(self.config_inst.get_aux("DNN_process_template")["N" + self.channel].keys())
+        all_processes = list(self.config_inst.get_aux("DNN_process_template")["N" + self.channel].keys())
+
+        # from IPython import embed; embed()
+        for i in range(self.kfold):
+            print("fold", i)
+            # switch around in 2 point k fold
+            j = abs(i - 1)
+            path = self.input()["model"]["collection"].targets[0]["fold_" + str(i)]["model"].path
+
+            # load complete model
+            reconstructed_model = torch.load(path)
+
+            # load all the prepared data thingies
+            inp_data = self.input()["data"]["cross_val_" + str(j)]
+            X_test = np.concatenate([inp_data["cross_val_X_train_" + str(j)].load(), inp_data["cross_val_X_val_" + str(j)].load()])
+            y_test = np.concatenate([inp_data["cross_val_y_train_" + str(j)].load(), inp_data["cross_val_y_val_" + str(j)].load()])
+            test_dataset = util.ClassifierDataset(torch.from_numpy(X_test).float(), torch.from_numpy(y_test).float())
+            test_loader = torch.utils.data.DataLoader(dataset=test_dataset, batch_size=len(y_test))
+
+            # val_loss, val_acc = reconstructed_model.evaluate(X_test, y_test)
+            # print("Test accuracy:", val_acc)
+
+            y_predictions = []
+            with torch.no_grad():
+                reconstructed_model.eval()
+                for X_test_batch, y_test_batch in test_loader:
+                    y_test_pred = reconstructed_model(X_test_batch)
+
+                    y_predictions.append(y_test_pred.numpy())
+
+                # test_predict = reconstructed_model.predict(X_test)
+                y_predictions = np.array(y_predictions[0])
+                test_predictions = np.argmax(y_predictions, axis=1)
+
+                # "signal"...
+                predict_signal = np.array(y_predictions)[:, -1]
+
+            self.output()["fold_" + str(i)]["confusion_matrix_png"].parent.touch()
+
+            # Roc curve, compare labels and predicted labels
+            fpr, tpr, tresholds = sk.metrics.roc_curve(y_test[:, -1], predict_signal)
+
+            plt.plot(
+                fpr,
+                tpr,
+                label="AUC: {0}".format(np.around(sk.metrics.auc(fpr, tpr), decimals=3)),
+            )
+            plt.plot([0, 1], [0, 1], ls="--")
+            plt.xlabel(" fpr ", fontsize=16)
+            plt.ylabel("tpr", fontsize=16)
+            # plt.title("ROC", fontsize=16)
+            plt.legend(title="ROC")
+            hep.cms.text("Private work (CMS simulation)", loc=0, fontsize=10)
+            plt.savefig(self.output()["fold_" + str(i)]["ROC_png"].path, bbox_inches="tight")
+            plt.savefig(self.output()["fold_" + str(i)]["ROC_pdf"].path, bbox_inches="tight")
+            plt.gcf().clear()
+
+            # from IPython import embed;embed()
+            # Correlation Matrix Plot
+            # plot correlation matrix
+            pred_matrix = sk.metrics.confusion_matrix(
+                np.argmax(y_test, axis=-1),
+                test_predictions,  # np.concatenate(test_predictions),
+                normalize=self.normalize,
+            )
+
+            print(pred_matrix)
+            # TODO
+            fig = plt.figure()  # figsize=(12, 9)
+            ax = fig.add_subplot(111)
+            # cax = ax.matshow(pred_matrix, vmin=-1, vmax=1)
+            cax = ax.imshow(pred_matrix, vmin=0, vmax=1, cmap="plasma")
+            fig.colorbar(cax)
+            for ii in range(n_processes):
+                for jj in range(n_processes):
+                    text = ax.text(
+                        jj,
+                        ii,
+                        np.round(pred_matrix[ii, jj], 3),
+                        ha="center",
+                        va="center",
+                        color="white",
+                        fontsize=16,
+                    )
+            ticks = np.arange(0, n_processes, 1)
+            # Let the horizontal axes labeling appear on bottom
+            ax.tick_params(top=False, bottom=True, labeltop=False, labelbottom=True)
+            ax.set_xticks(ticks)
+            ax.set_yticks(ticks)
+            ax.set_xticklabels(all_processes, fontsize=14)
+            ax.set_yticklabels(all_processes, fontsize=14)
+            ax.set_xlabel("Predicted Processes", fontsize=16)
+            ax.set_ylabel("Real Processes", fontsize=16)
+            hep.cms.text("Private work (CMS simulation)", loc=0, fontsize=14, ax=ax)
+            # ax.grid(linestyle="--", alpha=0.5)
+            plt.savefig(self.output()["fold_" + str(i)]["confusion_matrix_png"].path, bbox_inches="tight")
+            plt.savefig(self.output()["fold_" + str(i)]["confusion_matrix_pdf"].path)  # , bbox_inches="tight")
+            plt.gcf().clear()
+
+            # retrieve history callback for trainings and do history plotting
+            performance = self.input()["model"]["collection"].targets[0]["fold_" + str(i)]["performance"].load()
+            accuracy_stats = performance["accuracy_stats"]
+            loss_stats = performance["loss_stats"]
+            # read in values, skip first for val since Trainer does a validation step beforehand
+            train_loss = loss_stats["train"]
+            val_loss = loss_stats["val"]
+
+            train_acc = accuracy_stats["train"]
+            val_acc = accuracy_stats["val"]
+
+            plt.plot(
+                np.arange(0, len(val_loss), 1),
+                val_loss,
+                label="loss on valid data",
+                color="orange",
+            )
+            plt.plot(
+                np.arange(1, len(train_loss) + 1, 1),
+                train_loss,
+                label="loss on train data",
+                color="green",
+            )
+            plt.legend()
+            plt.xlabel("Epochs", fontsize=16)
+            plt.ylabel("Loss", fontsize=16)
+            hep.cms.text("Private work (CMS simulation)", loc=0, fontsize=16)
+            plt.savefig(self.output()["fold_" + str(i)]["loss_png"].path)
+            plt.savefig(self.output()["fold_" + str(i)]["loss_pdf"].path)
+            plt.gcf().clear()
+
+            plt.plot(
+                np.arange(0, len(val_acc), 1),
+                val_acc,
+                label="acc on vali data",
+                color="orange",
+            )
+            plt.plot(
+                np.arange(1, len(train_acc) + 1, 1),
+                train_acc,
+                label="acc on train data",
+                color="green",
+            )
+            plt.legend()
+            plt.xlabel("Epochs", fontsize=16)
+            plt.ylabel("Accuracy", fontsize=16)
+            hep.cms.text("Private work (CMS simulation)", loc=0, fontsize=16)
+            plt.savefig(self.output()["fold_" + str(i)]["accuracy_png"].path)
+            plt.savefig(self.output()["fold_" + str(i)]["accuracy_pdf"].path)
+            plt.gcf().clear()
+
+
+class DNNScorePlotting(DNNTask):
+    category = luigi.Parameter(default="N0b", description="set it for now, can be dynamical later")
+    unblinded = luigi.BoolParameter(default=False)
+    density = luigi.BoolParameter(default=False)
+
+    def requires(self):
+        return PredictDNNScores.req(self)
+
+    def output(self):
+        # from IPython import embed; embed()
+        return {p + "_" + end: self.local_target(p + "." + end) for p in self.config_inst.get_aux("DNN_process_template")[self.category].keys() for end in ["png", "pdf"]}
+
+    def store_parts(self):
+        # make plots for each use case
+        parts = tuple()
+        if self.unblinded:
+            parts += ("unblinded",)
+        if self.density:
+            parts += ("density",)
+        return super(DNNScorePlotting, self).store_parts() + parts + (self.n_nodes,) + (self.dropout,) + (self.batch_size,) + (self.learning_rate,)
+
+    def construct_axis(self, binning, isRegular=True):
+        if isRegular:
+            return bh.axis.Regular(binning[0], binning[1], binning[2])
+        else:
+            return bh.axis.Variable(binning)
+
+    @law.decorator.timeit(publish_message=True)
+    @law.decorator.safe_output
+    def run(self):
+        MC_scores = self.input()["scores"].load()
+        MC_labels = self.input()["labels"].load()
+        weights = self.input()["weights"].load()
+        data_scores = self.input()["data"].load()
+        # collecting scores for respective process
+        scores_dict = {}
+        for i, key in enumerate(self.config_inst.get_aux("DNN_process_template")[self.category].keys()):
+            scores_dict[key] = MC_scores[MC_labels[:, i] == 1]
+            scores_dict[key + "_weight"] = weights[MC_labels[:, i] == 1]
+        scores_dict.update({"data": data_scores})
+
+        # one plot per per output note
+        for i, key in enumerate(self.config_inst.get_aux("DNN_process_template")[self.category].keys()):
+            fig = plt.figure(figsize=(12, 9))
+            hep.style.use("CMS")
+            hep.cms.text("Private work (CMS simulation)", loc=0)
+            hep.cms.lumitext(text=str(np.round(self.config_inst.get_aux("lumi") / 1000, 2)) + r"$fb^{-1}$")
+            MC_hists = {}
+            for proc in scores_dict.keys():
+                if "weight" in proc:
+                    continue
+                # without mask, we would be printing complete distribution of DNN scores per node
+                mask = np.argmax(scores_dict[proc], axis=1) == i
+
+                if proc != "data":
+                    # constructing hist and filling it with scores
+                    boost_hist = bh.Histogram(self.construct_axis((20, 0, 1)))
+                    boost_hist.fill(scores_dict[proc][mask][:, i], weight=scores_dict[proc + "_weight"][mask])
+                    MC_hists[proc] = boost_hist
+
+                elif proc == "data" and self.unblinded:
+                    # doing data seperate to print on top
+                    data_boost_hist = bh.Histogram(self.construct_axis((20, 0, 1)))
+                    data_boost_hist.fill(scores_dict[proc][mask][:, i])
+            hep.histplot(list(MC_hists.values()), histtype="fill", stack=True, label=list(MC_hists.keys()), color=["red", "blue", "orange"], flow="none", density=self.density)
+            if self.unblinded:
+                hep.histplot(data_boost_hist, histtype="errorbar", label="Data", color="black", flow="none", density=self.density)
+
+            plt.xlabel("DNN Scores in node " + key, fontsize=24)
+            plt.ylabel("Counts", fontsize=24)
+            plt.xlim = (0, 1)
+            plt.xlim
+            plt.yscale("log")
+            plt.legend(ncol=1, loc="upper right", bbox_to_anchor=(1, 1), borderaxespad=0, prop={"size": 18})
+
+            if self.density:
+                plt.ylim(5e-2, 2e1)
+
+            self.output()[key + "_png"].parent.touch()
+            plt.savefig(self.output()[key + "_png"].path, bbox_inches="tight")
+            plt.savefig(self.output()[key + "_pdf"].path, bbox_inches="tight")
+            plt.gcf().clear()

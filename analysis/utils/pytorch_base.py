@@ -1,15 +1,12 @@
-# torch imports
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.utils.data as data
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import Callback
-from torchmetrics import Accuracy
 from torchmetrics.classification import MulticlassAccuracy
 import numpy as np
 from time import time
-import ipdb
 
 """
 # help class for torch data loading
@@ -48,16 +45,30 @@ class ClassifierDataset(data.Dataset):
         return len(self.X_data)
 
 
+class ClassifierDatasetWeight(data.Dataset):
+    def __init__(self, X_data, y_data, weight_data):  #
+        self.X_data = X_data
+        self.y_data = y_data
+        self.weight_data = weight_data
+
+    def __getitem__(self, index):
+        return self.X_data[index], self.y_data[index], self.weight_data[index]
+
+    def __len__(self):
+        return len(self.X_data)
+
+
 # Custom dataset collecting all numpy arrays and bundles them for training
 # class DataModuleClass(pl.LightningModule):
 class DataModuleClass(pl.LightningDataModule):
-    def __init__(self, X_train, y_train, X_val, y_val, batch_size, n_processes, steps_per_epoch):
+    def __init__(self, X_train, y_train, weight_train, X_val, y_val, batch_size, n_processes, steps_per_epoch):
         super().__init__()
         # define data
         self.X_train = X_train
         self.y_train = y_train
         self.X_val = X_val
         self.y_val = y_val
+        self.weight_train = weight_train
         # self.X_test=X_test , X_test, y_test
         # self.y_test=y_test
         # define parameters
@@ -74,9 +85,10 @@ class DataModuleClass(pl.LightningDataModule):
         # Define steps that should be done on
         # every GPU, like splitting data, applying
         # transform etc.
-        self.train_dataset = ClassifierDataset(
+        self.train_dataset = ClassifierDatasetWeight(
             torch.from_numpy(self.X_train).float(),
             torch.from_numpy(self.y_train).float(),
+            torch.from_numpy(self.weight_train).float(),
         )
         self.val_dataset = ClassifierDataset(torch.from_numpy(self.X_val).float(), torch.from_numpy(self.y_val).float())
         # do this somewhere else
@@ -85,7 +97,6 @@ class DataModuleClass(pl.LightningDataModule):
         # )
 
     def train_dataloader(self):
-        # from IPython import embed;embed()
         return data.DataLoader(
             dataset=self.train_dataset,
             batch_size=self.batch_size,
@@ -96,14 +107,14 @@ class DataModuleClass(pl.LightningDataModule):
             #    self.n_processes,
             #    self.steps_per_epoch,
             # ),
-            num_workers=0,  # 8,
+            num_workers=8,  # 8,
         )
 
     def val_dataloader(self):
         return data.DataLoader(
             dataset=self.val_dataset,
             batch_size=10 * self.batch_size,  # , shuffle=True  # len(val_dataset
-            num_workers=0,  # 8,
+            num_workers=8,  # 8,
         )
 
     # def test_dataloader(self):
@@ -131,6 +142,7 @@ class MulticlassClassification(pl.LightningModule):  # nn.Module core.lightning.
 
         self.layer_out = nn.Linear(n_nodes, num_class)
         self.softmax = nn.Softmax(dim=1)  # log_
+        self.class_weights = class_weights
         self.loss = nn.CrossEntropyLoss(weight=class_weights, reduction="mean")
 
         self.relu = nn.ReLU()
@@ -194,8 +206,12 @@ class MulticlassClassification(pl.LightningModule):  # nn.Module core.lightning.
         # Here we just reuse the validation_step for testing
         return self.validation_step(batch, batch_idx)
 
+    def weighted_loss(self, y, y_hat, w):
+        loss_fn = nn.CrossEntropyLoss(weight=self.class_weights, reduction="none")
+        return (loss_fn(y, y_hat) * w).mean()
+
     def training_step(self, batch, batch_idx):
-        x, y = batch[0].squeeze(0), batch[1].squeeze(0)
+        x, y, weight = batch[0].squeeze(0), batch[1].squeeze(0), batch[2].squeeze(0)
         logits = self(x)
         # loss = nn.functional.nll_loss()
         # loss = nn.CrossEntropyLoss()
@@ -203,8 +219,8 @@ class MulticlassClassification(pl.LightningModule):  # nn.Module core.lightning.
         acc_step = self.accuracy(preds, y.argmax(dim=1))
         # maybe we do this and a softmax layer at the end
         # loss = F.nll_loss(logits, y)
-        loss_step = self.loss(logits, y)
-        # from IPython import embed;embed()
+        # loss_step = self.loss(logits, y)
+        loss_step = self.weighted_loss(logits, y, weight)
         # not necessary here, done during ? optimizer I guess
         # loss_step.backward(retain_graph=True)
         self.log(
@@ -225,6 +241,7 @@ class MulticlassClassification(pl.LightningModule):  # nn.Module core.lightning.
         )
 
         """
+        weight included but negative weights...
         sample weights?
         size=len(preds)
         sample_weight = torch.empty(size).uniform_(0, 1)
