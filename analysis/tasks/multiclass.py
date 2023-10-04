@@ -1,23 +1,21 @@
+# coding: utf-8
+
 import law
 import numpy as np
-import pickle
-from luigi import BoolParameter, IntParameter, FloatParameter, ChoiceParameter
-import sklearn as sk
-import sklearn.model_selection as skm
+from luigi import IntParameter
 from rich.console import Console
-from tqdm.auto import tqdm
 from time import time
-import ipdb
 
 # torch imports
 import torch
 import torch.nn as nn
-import torch.optim as optim
 import torch.utils.data as data  # import Dataset, DataLoader, WeightedRandomSampler
 import pytorch_lightning as pl
 
-from tasks.base import DNNTask, HTCondorWorkflow
+from tasks.base import DNNTask, HTCondorWorkflow, AnalysisTask
+from tasks.grouping import MergeArrays
 from tasks.arraypreparation import ArrayNormalisation, CrossValidationPrep
+from tasks.coffea import CoffeaTask
 
 import utils.pytorch_base as util
 
@@ -62,7 +60,7 @@ class PytorchMulticlass(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
             + (debug_str,)
         )
 
-    def calc_class_weights(self, y_train, norm=1, sqrt=False):
+    def calc_class_weights(self, y_train, norm=1, sqrt=False):  # , weight_train
         # calc class weights to battle imbalance
         # norm to tune down huge factors, sqrt to smooth the distribution
         from sklearn.utils import class_weight
@@ -109,6 +107,8 @@ class PytorchMulticlass(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
         y_val = self.input()["y_val"].load()
         X_test = self.input()["X_test"].load()
         y_test = self.input()["y_test"].load()
+
+        weight_train = self.input()["weight_train"].load()
 
         # definition for the normalization layer
         means, stds = (
@@ -162,7 +162,7 @@ class PytorchMulticlass(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
         early_stop_callback = pl.callbacks.early_stopping.EarlyStopping(
             monitor="val_acc",
             min_delta=0.00,
-            patience=10,
+            patience=3,
             verbose=False,
             mode="max",
             strict=False,
@@ -190,6 +190,7 @@ class PytorchMulticlass(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
         data_collection = util.DataModuleClass(
             X_train,
             y_train,
+            weight_train,
             X_val,
             y_val,
             # X_test,
@@ -263,16 +264,13 @@ class PytorchMulticlass(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
         self.output()["accuracy_stats"].dump(model.accuracy_stats)
 
 
-class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
+class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):  # , CoffeaTask
     # define it here again so training can be started from here
-    kfold = IntParameter(default=5)
+    kfold = IntParameter(default=2)
 
     def create_branch_map(self):
         # overwrite branch map
-        n = 1
-        return list(range(n))
-
-        # return {i: i for i in range(n)}
+        return list(range(self.kfold))
 
     def requires(self):
         # return PrepareDNN.req(self)
@@ -282,7 +280,10 @@ class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
         }
 
     def output(self):
-        return self.local_target("performance.json")
+        out = {"fold_{}".format(i): {"model": self.local_target("model_{}.pt".format(i)), "performance": self.local_target("performance_{}.json".format(i))} for i in range(self.kfold)}
+
+        #        out.update({"performance": self.local_target("performance.json")})
+        return out
 
     def store_parts(self):
         # debug_str = ''
@@ -303,9 +304,10 @@ class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
             + (debug_str,)
         )
 
-    def calc_class_weights(self, y_train, norm=1, sqrt=False):
+    def calc_class_weights(self, y_train, y_weight, norm=1, sqrt=False):
         # calc class weights to battle imbalance
         # norm to tune down huge factors, sqrt to smooth the distribution
+        """
         from sklearn.utils import class_weight
 
         weight_array = norm * class_weight.compute_class_weight(
@@ -313,7 +315,6 @@ class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
             classes=np.unique(np.argmax(y_train, axis=-1)),
             y=np.argmax(y_train, axis=-1),
         )
-
         if sqrt:
             # smooth by exponential function
             # return dict(enumerate(np.sqrt(weight_array)))
@@ -322,6 +323,14 @@ class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
             # set at minimum to 1.0
             # return dict(enumerate([a if a>1.0 else 1.0 for a in weight_array]))
             return dict(enumerate(weight_array))
+        """
+        n_processes = len(self.config_inst.get_aux("DNN_process_template")["N" + self.channel].keys())
+        total_weight = np.sum(y_weight)
+        class_weights = {}
+        for i in range(n_processes):
+            mask = np.argmax(y_train, axis=-1) == i
+            class_weights[i] = total_weight / np.sum(y_weight[mask])
+        return class_weights
 
     def reset_weights(self, m):
         """
@@ -336,7 +345,7 @@ class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
     def run(self):
         # define dimensions, working with aux template for processes
         n_variables = len(self.config_inst.variables)
-        n_processes = len(self.config_inst.get_aux("DNN_process_template").keys())
+        n_processes = len(self.config_inst.get_aux("DNN_process_template")["N" + self.channel].keys())
 
         # definition for the normalization layer
         means, stds = (
@@ -346,75 +355,157 @@ class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
 
         performance = {}
 
+        i = self.branch
+        # only load needed data set config in each step
+        X_train = self.input()["data"]["cross_val_{}".format(i)]["cross_val_X_train_{}".format(i)].load()
+        y_train = self.input()["data"]["cross_val_{}".format(i)]["cross_val_y_train_{}".format(i)].load()
+        weight_train = self.input()["data"]["cross_val_{}".format(i)]["cross_val_weight_train_{}".format(i)].load()
+        X_val = self.input()["data"]["cross_val_{}".format(i)]["cross_val_X_val_{}".format(i)].load()
+        y_val = self.input()["data"]["cross_val_{}".format(i)]["cross_val_y_val_{}".format(i)].load()
+
+        class_weights = self.calc_class_weights(y_train, weight_train)
+        # declare model
+        model = util.MulticlassClassification(
+            num_feature=n_variables,
+            num_class=n_processes,
+            means=means,
+            stds=stds,
+            dropout=self.dropout,
+            class_weights=torch.tensor(list(class_weights.values())),
+            n_nodes=self.n_nodes,
+        )
+
+        # weight resetting
+        model.apply(self.reset_weights)
+
+        # datasets are loaded
+        train_dataset = util.ClassifierDatasetWeight(torch.from_numpy(X_train).float(), torch.from_numpy(y_train).float(), torch.from_numpy(weight_train).float())
+        val_dataset = util.ClassifierDataset(torch.from_numpy(X_val).float(), torch.from_numpy(y_val).float())
+
+        # define data
+        data_collection = util.DataModuleClass(
+            X_train,
+            y_train,
+            weight_train,
+            X_val,
+            y_val,
+            # X_test,
+            # y_test,
+            self.batch_size,
+            n_processes,
+            self.steps_per_epoch,
+        )
+
+        # Trainer, for gpu gpus=1
+        trainer = pl.Trainer(
+            max_epochs=self.epochs,
+            # num_nodes=1,
+            enable_progress_bar=False,
+            check_val_every_n_epoch=1,
+        )
+
+        data_collection.setup("train")
+        trainer.fit(model, data_collection)
+
+        # Print fold results
+        print("K-FOLD CROSS VALIDATION RESULTS FOR {} FOLDS".format(i))
+        print("--------------------------------")
+
+        # for key, value in results.items():
+        print("Latest accuracy train: {} val: {}".format(model.accuracy_stats["train"][-1], model.accuracy_stats["val"][-1]))
+        print("Latest loss train: {} val: {} \n".format(model.loss_stats["train"][-1], model.loss_stats["val"][-1]))
+        # sum += value
+        # print(f'Average: {sum/len(results.items())} %')
+
+        performance.update(
+            {
+                "accuracy_stats": model.accuracy_stats,
+                "loss_stats": model.loss_stats,
+            }
+        )
+
+        torch.save(model, self.output()["fold_" + str(i)]["model"].path)
+        self.output()["fold_" + str(i)]["performance"].dump(performance)
+
+
+class PredictDNNScores(DNNTask):  # Requiring MergeArrays from a DNNTask leads to JSON errors
+    # should be
+    kfold = IntParameter(default=2)
+
+    def requires(self):
+        out = {
+            "samples": CrossValidationPrep.req(self, kfold=self.kfold),
+            "models": PytorchCrossVal.req(self, kfold=self.kfold, workflow="local"),
+            # "data": ArrayNormalisation.req(self),
+        }
+
+        return out
+
+    def output(self):
+        return {"scores": self.local_target("scores.npy"), "labels": self.local_target("labels.npy"), "data": self.local_target("data_scores.npy"), "weights": self.local_target("weights.npy")}
+
+    def run(self):
+        models = self.input()["models"]["collection"].targets[0]
+        samples = self.input()["samples"]
+        scores, labels, weights = [], [], []
+        data_scores = {}
+        data = self.input()["samples"]["data"].load()
         for i in range(self.kfold):
-            # only load needed data set config in each step
-            X_train = self.input()["data"]["cross_val_{}".format(i)]["cross_val_X_train_{}".format(i)].load()
-            y_train = self.input()["data"]["cross_val_{}".format(i)]["cross_val_y_train_{}".format(i)].load()
-            X_val = self.input()["data"]["cross_val_{}".format(i)]["cross_val_X_val_{}".format(i)].load()
-            y_val = self.input()["data"]["cross_val_{}".format(i)]["cross_val_y_val_{}".format(i)].load()
+            # to switch training/validation
+            j = abs(i - 1)
+            # each model should now predict labels for the validation data
+            model = torch.load(models["fold_" + str(i)]["model"].path)
+            inp_data = self.input()["samples"]["cross_val_" + str(j)]
+            X_test = np.concatenate([inp_data["cross_val_X_train_" + str(j)].load(), inp_data["cross_val_X_val_" + str(j)].load()])
+            y_test = np.concatenate([inp_data["cross_val_y_train_" + str(j)].load(), inp_data["cross_val_y_val_" + str(j)].load()])
+            weight_test = np.concatenate([inp_data["cross_val_weight_train_" + str(j)].load(), inp_data["cross_val_weight_val_" + str(j)].load()])
 
-            class_weights = self.calc_class_weights(y_train)
+            pred_dataset = util.ClassifierDatasetWeight(torch.from_numpy(X_test).float(), torch.from_numpy(y_test).float(), torch.from_numpy(weight_test).float())
+            pred_loader = torch.utils.data.DataLoader(dataset=pred_dataset, batch_size=len(X_test))
 
-            # declare model
-            model = util.MulticlassClassification(
-                num_feature=n_variables,
-                num_class=n_processes,
-                means=means,
-                stds=stds,
-                dropout=self.dropout,
-                class_weights=torch.tensor(list(class_weights.values())),
-                n_nodes=self.n_nodes,
-            )
+            with torch.no_grad():
+                model.eval()
+                for X_pred_batch, y_pred_batch, weight_pred_batch in pred_loader:
+                    X_scores = model(X_pred_batch)
 
-            # weight resetting
-            model.apply(self.reset_weights)
+                    scores.append(X_scores.numpy())
+                    labels.append(y_pred_batch)
+                    weights.append(weight_pred_batch)
 
-            # datasets are loaded
-            train_dataset = util.ClassifierDataset(torch.from_numpy(X_train).float(), torch.from_numpy(y_train).float())
-            val_dataset = util.ClassifierDataset(torch.from_numpy(X_val).float(), torch.from_numpy(y_val).float())
+                    # test_predict = reconstructed_model.predict(X_test)
+                    # y_predictions_0 = np.array(y_predictions[0])
 
-            # define data
-            data_collection = util.DataModuleClass(
-                X_train,
-                y_train,
-                X_val,
-                y_val,
-                # X_test,
-                # y_test,
-                self.batch_size,
-                n_processes,
-                self.steps_per_epoch,
-            )
+            data_pred_list = []
+            data_loader = torch.utils.data.DataLoader(dataset=data, batch_size=1000)
+            with torch.no_grad():
+                model.eval()
+                for X_data in data_loader:
+                    data_pred = model(X_data)
+                    data_pred_list.append(data_pred.numpy())
 
-            # Trainer, for gpu gpus=1
-            trainer = pl.Trainer(
-                max_epochs=self.epochs,
-                num_nodes=1,
-                enable_progress_bar=False,
-                check_val_every_n_epoch=1,
-            )
+            data_scores.update({i: np.concatenate(data_pred_list)})
 
-            trainer.fit(model, data_collection)
+        averaged_data_scores = sum(list(data_scores.values())) / len(data_scores.values())
+        self.output()["scores"].dump(np.concatenate(scores))
+        self.output()["labels"].dump(np.concatenate(labels))
+        self.output()["weights"].dump(np.concatenate(weights))
+        self.output()["data"].dump(averaged_data_scores)
 
-            # Print fold results
-            print("K-FOLD CROSS VALIDATION RESULTS FOR {} FOLDS".format(i))
-            print("--------------------------------")
 
-            # for key, value in results.items():
-            print("Latest accuracy train: {} val: {}".format(model.accuracy_stats["train"][-1], model.accuracy_stats["val"][-1]))
-            print("Latest loss train: {} val: {} \n".format(model.loss_stats["train"][-1], model.loss_stats["val"][-1]))
-            # sum += value
-            # print(f'Average: {sum/len(results.items())} %')
+"""
+class SavingDNNModel(CoffeaTask):
 
-            performance.update(
-                {
-                    i: [
-                        model.accuracy_stats["train"][-1],
-                        model.accuracy_stats["val"][-1],
-                        model.loss_stats["train"][-1],
-                        model.loss_stats["val"][-1],
-                    ]
-                }
-            )
+    def requires(self):
+        return ArrayNormalisation.req(self, data=True)
 
-        self.output().dump(performance)
+    def output(self):
+        return self.local_target("test.txt")
+
+    def run(self):
+        from IPython import embed; embed()
+        print("Saving model from {} to {}".format(self.input()["collection"].targets[0]["model"].path, self.config_inst.get_aux("DNN_model")))
+        os.system("cp {} {}".format(self.input()["collection"].targets[0]["model"].path, self.config_inst.get_aux("DNN_model")))
+
+        #placeholder so task is complete
+        self.output().touch()
+"""

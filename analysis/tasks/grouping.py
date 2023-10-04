@@ -64,20 +64,26 @@ class MergeArrays(CoffeaTask):  # , law.LocalWorkflow, HTCondorWorkflow):
         return inp
 
     def output(self):
-        out = {cat + "_" + dat: {"array": self.local_target("merged_{}_{}.npy".format(cat, dat)), "weights": self.local_target("weights_{}_{}.npy".format(cat, dat))} for cat in self.config_inst.categories.names() for dat in self.datasets_to_process}
+        out = {cat + "_" + dat: {"array": self.local_target("merged_{}_{}.npy".format(cat, dat)), "weights": self.local_target("weights_{}_{}.npy".format(cat, dat)), "DNNId": self.local_target("DNNId_{}_{}.npy".format(cat, dat))} for cat in self.config_inst.categories.names() for dat in self.datasets_to_process}
         # out.update({"sum_gen_weights": self.local_target("sum_gen_weights.json")})
         return out
+
+    def store_parts(self):
+        return super(MergeArrays, self).store_parts() + ("_".join(self.channel),)
 
     @law.decorator.timeit(publish_message=True)
     @law.decorator.safe_output
     def run(self):
+        # debugging stuff
+        var = self.config_inst.get_variable("HT")
+
         # construct an inverse map to corrently assign coffea outputs to respective datasets
         procs = self.get_proc_list(self.datasets_to_process)
-        _, _, job_number_dict = self.load_job_dict()
+        _, _, job_number_dict, proc_dict = self.load_job_dict()
         inverse_np_dict = {}
         for p in procs:
-            for ind, file in job_number_dict.items():
-                if p == file.split("/")[0]:
+            for ind, file in proc_dict.items():
+                if p == file:  # .split("/")[0]:
                     if p not in inverse_np_dict.keys():
                         inverse_np_dict[p] = [ind]
                     else:
@@ -91,6 +97,7 @@ class MergeArrays(CoffeaTask):  # , law.LocalWorkflow, HTCondorWorkflow):
             for cat in self.config_inst.categories.names():
                 cat_list = []
                 weights_list = []
+                DNNId_list = []
                 # merging different lepton channels together according to self.channel
                 for lep in self.channel:
                     np_dict = self.input()[lep]["collection"].targets[0]
@@ -103,14 +110,23 @@ class MergeArrays(CoffeaTask):  # , law.LocalWorkflow, HTCondorWorkflow):
                             cat_list.append(np_dict[key]["array"].load())
                             # get weights as well for each process
                             weights_list.append(np_dict[key]["weights"].load())
+                            DNNId_list.append(np_dict[key]["DNNId"].load())
+
+                            # import boost_histogram as bh
+                            # boost_hist =  bh.Histogram(bh.axis.Regular(var.binning[0], var.binning[1], var.binning[2]))
+                            # boost_hist.fill(np_dict[key]["array"].load()[:,3])
+                            # print(key, boost_hist.values())
 
                 # float 16 so arrays can be saved easily
                 full_arr = np.concatenate(cat_list)  # , dtype=np.float16
                 weights_arr = np.concatenate(weights_list)  # , dtype=np.float16) -> leads to inf
+                # print(cat, dat, np.sum(weights_arr), np.mean(weights_arr))
+                DNNId_arr = np.concatenate(DNNId_list)
                 # print(dat, cat, full_arr, weights_arr)
                 self.output()[cat + "_" + dat]["array"].parent.touch()
                 self.output()[cat + "_" + dat]["array"].dump(full_arr)
                 self.output()[cat + "_" + dat]["weights"].dump(weights_arr)
+                self.output()[cat + "_" + dat]["DNNId"].dump(DNNId_arr)
 
 
 class ComputeEfficiencies(CoffeaTask):

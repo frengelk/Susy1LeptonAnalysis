@@ -1,6 +1,7 @@
 import os
 import law
 import uproot as up
+import ROOT
 import numpy as np
 from luigi import Parameter, BoolParameter
 from tasks.base import *
@@ -33,6 +34,15 @@ class WriteDatasets(BaseMakeFilesTask):
                     for file in f:
                         file_list.append(directory + "/" + file)
                 file_dict.update({directory: file_list})  # self.directory_path + "/" +
+
+        # replacing signal mass points
+        for dat in list(file_dict.keys()):
+            if self.config_inst.get_aux("signal_process") in dat:
+                for masspoint in self.config_inst.get_aux("signal_masspoints"):
+                    new_dat = dat + "_{}_{}".format(masspoint[0], masspoint[1])
+                    file_dict[new_dat] = file_dict[dat]
+                # remove general signal
+                file_dict.pop(dat)
 
         file_dict.update({"directory_path": self.directory_path})  # self.directory_path + "/" +
         with open(self.output().path, "w") as out:
@@ -75,6 +85,18 @@ class WriteDatasetPathDict(BaseMakeFilesTask):
         for k in sorted(file_dict.keys()):
             print(k, len(file_dict[k]))
             job_number_dict.update({k: len(file_dict[k])})
+        """
+        # replacing signal mass points
+        for dat in list(file_dict.keys()):
+            if self.config_inst.get_aux("signal_process") in dat:
+                for masspoint in self.config_inst.get_aux("signal_masspoints"):
+                    new_dat = dat + "_{}_{}".format(masspoint[0], masspoint[1])
+                    file_dict[new_dat] = file_dict[dat]
+                    job_number_dict[new_dat] = job_number_dict[dat]
+                # remove general masspoint
+                job_number_dict.pop(dat)
+                file_dict.pop(dat)
+        """
         self.output()["dataset_dict"].dump(file_dict)
         self.output()["dataset_path"].dump(self.directory_path)
         self.output()["job_number_dict"].dump(job_number_dict)
@@ -177,6 +199,7 @@ class CollectInputData(BaseMakeFilesTask):
             "Muon": {},
             "Electron": {},
         }
+        masspoint_dict = {"_".join([str(masspoint[0]), str(masspoint[1])]): 0 for masspoint in self.config_inst.get_aux("signal_masspoints")}
         # sum weights same for both trees, do it once
         inp = self.input()  # [self.channel[0]].collection.targets[0]
         data_path = inp["dataset_path"].load()
@@ -185,17 +208,42 @@ class CollectInputData(BaseMakeFilesTask):
             for path in dataset_dict[key]:
                 with up.open(data_path + "/" + path) as file:
                     sum_gen_weight = float(np.sum(file["MetaData;1"]["SumGenWeight"].array()))
-                    # keys should do the same for both dicts
-                    if key not in sum_gen_weights_dict.keys():
-                        # cutflow_dict["Muon"][key] = file['cutflow_Muon;1'].values()
-                        # cutflow_dict["Electron"][key] = file['cutflow_Electron;1'].values()
-                        muon_arr = file["cutflow_Muon;1"].values()
-                        electron_arr = file["cutflow_Electron;1"].values()
-                        sum_gen_weights_dict[key] = sum_gen_weight
-                    elif key in sum_gen_weights_dict.keys():
-                        sum_gen_weights_dict[key] += sum_gen_weight
-                        muon_arr += file["cutflow_Muon;1"].values()
-                        electron_arr += file["cutflow_Electron;1"].values()
+                    if self.config_inst.get_aux("signal_process") in path:
+                        for masspoint in self.config_inst.get_aux("signal_masspoints"):
+                            mGlu, mLSP = masspoint[0], masspoint[1]
+                            f_path = data_path + "/" + path
+                            inFile = ROOT.TFile.Open(f_path, " READ ")
+                            hist_2D = inFile.Get("numberOfGenEvents")
+                            count = hist_2D.GetBinContent(int(hist_2D.GetXaxis().FindBin(mGlu)), int(hist_2D.GetYaxis().FindBin(mLSP)), 0)
+                            # print(path, count)
+                            # sum_nGen += count
+                            masspoint_dict["_".join([str(masspoint[0]), str(masspoint[1])])] += count
+                            # this is operating per file...
+                            # sum_gen_weight /= count
+
+                            new_key = key + "_{}_{}".format(mGlu, mLSP)
+                            if new_key not in sum_gen_weights_dict.keys():
+                                # cutflow_dict["Muon"][key] = file['cutflow_Muon;1'].values()
+                                # cutflow_dict["Electron"][key] = file['cutflow_Electron;1'].values()
+                                muon_arr = file["cutflow_Muon;1"].values()
+                                electron_arr = file["cutflow_Electron;1"].values()
+                                sum_gen_weights_dict[new_key] = sum_gen_weight
+                            elif new_key in sum_gen_weights_dict.keys():
+                                sum_gen_weights_dict[new_key] += sum_gen_weight
+                                muon_arr += file["cutflow_Muon;1"].values()
+
+                    else:
+                        # keys should do the same for both dicts
+                        if key not in sum_gen_weights_dict.keys():
+                            # cutflow_dict["Muon"][key] = file['cutflow_Muon;1'].values()
+                            # cutflow_dict["Electron"][key] = file['cutflow_Electron;1'].values()
+                            muon_arr = file["cutflow_Muon;1"].values()
+                            electron_arr = file["cutflow_Electron;1"].values()
+                            sum_gen_weights_dict[key] = sum_gen_weight
+                        elif key in sum_gen_weights_dict.keys():
+                            sum_gen_weights_dict[key] += sum_gen_weight
+                            muon_arr += file["cutflow_Muon;1"].values()
+                            electron_arr += file["cutflow_Electron;1"].values()
 
             cutflow_dict["Muon"][key] = muon_arr[muon_arr > 0].tolist()
             cutflow_dict["Electron"][key] = electron_arr[electron_arr > 0].tolist()
@@ -203,5 +251,14 @@ class CollectInputData(BaseMakeFilesTask):
             # that is our data
             if key in ["MET", "SingleMuon", "SingleElectron"]:
                 sum_gen_weights_dict[key] = 1
+
+            # apply /nGen to respective signal masspoint genWeight
+            # sumgenWeight getting computed like normal, and then we need to normalize with nGen as well
+            # for each signal masspoint, two fractions -> therefore two separate sums
+            if self.config_inst.get_aux("signal_process") in key:
+                for masspoint in self.config_inst.get_aux("signal_masspoints"):
+                    new_key = key + "_{}_{}".format(masspoint[0], masspoint[1])
+                    sum_gen_weights_dict[new_key] /= masspoint_dict["_".join([str(masspoint[0]), str(masspoint[1])])]
+
         self.output()["sum_gen_weights"].dump(sum_gen_weights_dict)
         self.output()["cutflow"].dump(cutflow_dict)
