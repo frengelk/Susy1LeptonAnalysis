@@ -207,7 +207,7 @@ class ArrayPlotting(CoffeaTask):  # , HTCondorWorkflow, law.LocalWorkflow):
                             {
                                 dat: {
                                     "hist": boost_hist,
-                                    "label": "{} {}".format(proc.label, lep),
+                                    "label": proc.label,
                                     "color": proc.color,
                                 }
                             }
@@ -251,12 +251,12 @@ class ArrayPlotting(CoffeaTask):  # , HTCondorWorkflow, law.LocalWorkflow):
                     ax.legend(
                         handles,
                         labels,
-                        ncol=2,
+                        ncol=3,
                         # title=cat,
                         loc="upper right",
                         bbox_to_anchor=(1, 1),
                         borderaxespad=0,
-                        prop={"size": 18},
+                        prop={"size": 16},
                     )
                     ax.set_ylabel(var.y_title, fontsize=24)  # var.get_full_y_title()
                     ax.tick_params(axis="both", which="major", labelsize=18)
@@ -302,9 +302,9 @@ class ArrayPlotting(CoffeaTask):  # , HTCondorWorkflow, law.LocalWorkflow):
                         plt.savefig(self.output()[outputKey]["nominal"].path, bbox_inches="tight")
 
                         ax.set_yscale("log")
-                        ax.set_ylim(2e-2, 2e6)
+                        ax.set_ylim(2e-5, 2e9)  # FIXME
                         # ax.set_yticks(np.arange(10))
-                        ax.set_yticks([10 ** (i - 1) for i in range(8)])
+                        ax.set_yticks([10 ** (i - 4) for i in range(14)])
                         # ax.get_yaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
                         plt.savefig(self.output()[outputKey]["log"].path, bbox_inches="tight")
                     plt.gcf().clear()
@@ -1006,7 +1006,6 @@ class DNNScorePlotting(DNNTask):
         return PredictDNNScores.req(self)
 
     def output(self):
-        # from IPython import embed; embed()
         return {p + "_" + end: self.local_target(p + "." + end) for p in self.config_inst.get_aux("DNN_process_template")[self.category].keys() for end in ["png", "pdf"]}
 
     def store_parts(self):

@@ -18,7 +18,7 @@ from rich.console import Console
 from tasks.base import DatasetTask, HTCondorWorkflow
 from utils.coffea_base import ArrayExporter, ArrayAccumulator
 from utils.signal_regions import signal_regions_0b
-from tasks.makefiles import WriteDatasetPathDict, WriteDatasets, CollectInputData
+from tasks.makefiles import WriteDatasetPathDict, WriteDatasets, CollectInputData, CalcBTagSF
 from tqdm import tqdm
 from utils.coffea_base import ArrayExporter
 
@@ -108,7 +108,7 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
         super(CoffeaProcessor, self).__init__(*args, **kwargs)
 
     def requires(self):
-        return {"files": WriteDatasetPathDict.req(self), "weights": CollectInputData.req(self)}
+        return {"files": WriteDatasetPathDict.req(self), "weights": CollectInputData.req(self), "btagSF": CalcBTagSF.req(self)}
         # return WriteDatasets.req(self)
 
     def create_branch_map(self):
@@ -158,6 +158,7 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
         files, job_number, job_number_dict, process_dict = self.load_job_dict()
         treename = self.lepton_selection
         # key_name = self.datasets_to_process[self.branch] # list(data_dict.keys())[0]
+        # self.branch=145
         subset = job_number_dict[self.branch]
         # dataset = subset.split("/")[0]  # split("_")[0]
         dataset = process_dict[self.branch]
@@ -184,6 +185,10 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
                 # FIXME xSec = file["MetaData"]["xSection"].array()[0]
                 xSec = proc.xsecs[13].nominal
                 lumi = file["MetaData"]["Luminosity"].array()[0]
+                # find the calculated btag SFs per file and save path
+                subsub = subset.split("/")[1]
+                btagSF = self.input()["btagSF"][treename + "_" + subsub].path
+
                 # if empty skip and construct placeholder output
                 if len(file[treename]["Event"].array()) == 0:
                     empty = True
@@ -191,7 +196,7 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
                         "cutflow": hist.Hist("Counts", hist.Bin("cutflow", "Cut", 20, 0, 20)),
                         "n_minus1": hist.Hist("Counts", hist.Bin("Nminus1", "Cut", 20, 0, 20)),
                         "arrays": {
-                            "N0b_" + dataset: {"hl": ArrayAccumulator(np.reshape(np.array([], dtype=np.float64), (0, 24))), "weights": ArrayAccumulator(np.array([], dtype=np.float64)), "DNNId": ArrayAccumulator(np.array([], dtype=np.float64))},
+                            "N0b_" + dataset: {"hl": ArrayAccumulator(np.reshape(np.array([], dtype=np.float64), (0, len(self.config_inst.variables)))), "weights": ArrayAccumulator(np.array([], dtype=np.float64)), "DNNId": ArrayAccumulator(np.array([], dtype=np.float64))},
                             # "N1ib_" + dataset: {"hl": ArrayAccumulator(np.reshape(np.array([], dtype=np.float64), (0, 24))), "weights": ArrayAccumulator(np.array([], dtype=np.float64)), "DNNId":ArrayAccumulator(np.array([], dtype=np.float64))}
                         },
                     }
@@ -200,10 +205,11 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
                 # filler values so they are defined
                 xSec = 1
                 lumi = 1
+                btagSF = 1  # shouldn't be accessed during processing, would fail since this isn't a path
         fileset = {
             dataset: {
                 "files": [data_path + "/" + subset],  # file for file in
-                "metadata": {"PD": primaryDataset, "isData": isData, "isFastSim": isFastSim, "isSignal": isSignal, "xSec": xSec, "Luminosity": lumi, "sumGenWeight": sum_gen_weights_dict[dataset]},
+                "metadata": {"PD": primaryDataset, "isData": isData, "isFastSim": isFastSim, "isSignal": isSignal, "xSec": xSec, "Luminosity": lumi, "sumGenWeight": sum_gen_weights_dict[dataset], "btagSF": btagSF},
             }
         }
         if not empty:
@@ -231,7 +237,6 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
             console.print(f"* Events / s: {all_events/total_time:.0f}")
         # save outputs, seperated for processor, both need different touch calls
         if self.processor == "ArrayExporter":
-            print("saving", subset)
             self.output().popitem()[1]["array"].parent.touch()
             for cat in out["arrays"]:
                 self.output()[cat + "_" + str(self.branch)]["weights"].dump(out["arrays"][cat]["weights"].value)
