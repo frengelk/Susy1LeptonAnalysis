@@ -108,6 +108,7 @@ class BaseSelection:
         LT = events.LT
         HT = events.HT
         metPt = events.MetPt
+        metPhi = events.MetPhi
         WBosonMt = events.WBosonMt
         # doing abs to stay in sync with old plots
         dPhi = abs(events.DeltaPhi)
@@ -206,16 +207,22 @@ class BaseSelection:
         subleading_jet = ak.fill_none(ak.firsts(events.JetPt[:, 1:2] > 80), False)
 
         # doing lep selection
-        mu_pt = ak.fill_none(ak.firsts(events.MuonPt[:, 0:1]), -999)
-        e_pt = ak.fill_none(ak.firsts(events.ElectronPt[:, 0:1]), -999)
-        mu_eta = ak.fill_none(ak.firsts(events.MuonEta[:, 0:1]), -999)
-        e_eta = ak.fill_none(ak.firsts(events.ElectronEta[:, 0:1]), -999)
-        mu_id = ak.fill_none(ak.firsts(events.MuonMediumId[:, 0:1]), False)
-        e_id = ak.fill_none(ak.firsts(events.ElectronTightId[:, 0:1]), False)
+        # mu_pt = ak.fill_none(ak.firsts(events.MuonPt[:, 0:1]), -999)
+        # e_pt = ak.fill_none(ak.firsts(events.ElectronPt[:, 0:1]), -999)
+        # mu_eta = ak.fill_none(ak.firsts(events.MuonEta[:, 0:1]), -999)
+        # e_eta = ak.fill_none(ak.firsts(events.ElectronEta[:, 0:1]), -999)
+        # mu_id = ak.fill_none(ak.firsts(events.MuonMediumId[:, 0:1]), False)
+        # e_id = ak.fill_none(ak.firsts(events.ElectronTightId[:, 0:1]), False)
 
-        hard_lep = ((mu_pt > 25) | (e_pt > 25)) & ((abs(mu_eta) < 2.4) | (abs(e_eta) < 2.4))
-        selected = (mu_id | e_id) & ((events.nGoodMuon == 1) | (events.nGoodElectron == 1))
-        no_veto_lepton = (events.nVetoMuon - events.nGoodMuon == 0) & (events.nVetoElectron - events.nGoodElectron == 0)
+        leptonEta = events.LeptonEta_1
+        leptonMass = events.LeptonMass_1
+        leptonPhi = events.LeptonPhi_1
+        leptonPt = events.LeptonPt_1
+        leptonIso = ak.fill_none(ak.firsts(events.MuonMiniIso), 0) + ak.fill_none(ak.firsts(events.ElectronMiniIso), 0)
+
+        # hard_lep = ((mu_pt > 25) | (e_pt > 25)) & ((abs(mu_eta) < 2.4) | (abs(e_eta) < 2.4))
+        # selected = (mu_id | e_id) & ((events.nGoodMuon == 1) | (events.nGoodElectron == 1))
+        # no_veto_lepton = (events.nVetoMuon - events.nGoodMuon == 0) & (events.nVetoElectron - events.nGoodElectron == 0)
 
         # njet_cut = ak.num(goodJets) >= 3
         njet_cut = ak.sum(events.JetIsClean, axis=1) >= 3
@@ -327,10 +334,13 @@ class BaseSelection:
                 weightUp=events.PileUpWeightUp,
             )
 
-            # weights.add(
-            # 'JetDeepJetMediumSf',
-            # events.JetDeepJetMediumSf[:,0],
-            # )
+            # loading and applying calculated btag SF
+            # by design, order should be the same for events, so we load only part of the batch
+            btagSF = np.load(events.metadata["btagSF"])[events.metadata["entrystart"] : events.metadata["entrystop"]]
+            weights.add(
+                "JetDeepJetMediumSf",
+                btagSF,
+            )
 
             # weights.add("JetMediumCSVBTagSF", events.JetMediumCSVBTagSF,
             # weightUp = events.JetMediumCSVBTagSFUp,
@@ -508,7 +518,7 @@ class Histogramer(BaseProcessor, BaseSelection):
                 # generate blank mask for variable values
                 mask = np.ones(len(selected_output[var_name]), dtype=bool)
                 # combine cuts together: problem, some have None values
-                for cut in selected_output["categories"][cat][:1]:  # FIXME
+                for cut in selected_output["categories"][cat]:  # FIXME
                     cut_mask = ak.to_numpy(selected_output[cut])
                     if type(cut_mask) is np.ma.core.MaskedArray:
                         cut_mask = cut_mask.mask

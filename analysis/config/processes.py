@@ -45,7 +45,7 @@ def setup_processes(cfg):
         15001000,
         label=r"T5qqqqWW (1500, 1000)",
         label_short="T5",
-        color="#000080",  # Navy
+        color=(0, 0, 100),  # Navy
         aux={"isData": False, "histtype": "step", "isSignal": True},
         processes=[
             od.Process(
@@ -62,13 +62,56 @@ def setup_processes(cfg):
         ],
     )
 
-    """
     cfg.add_process(
-        "T5qqqqVV",
-        1,
-        label=r"T5qqqqVV",
+        "T5qqqqWW_1800_1300",
+        18001300,
+        label=r"T5qqqqWW (1800, 1300)",
         label_short="T5",
-        color="#000080",  # Navy
+        color=(0, 100, 0),  # Deep Pink
+        aux={"isData": False, "histtype": "step", "isSignal": True},
+        processes=[
+            od.Process(
+                "SMS-T5qqqqVV_TuneCP2_13TeV-madgraphMLM-pythia8_1800_1300",
+                221,
+                label=r"T5qqqqWW (1800, 1300)",
+                xsecs={
+                    13: sn.Number(1.0),  # placeholder
+                },
+                label_short="T5",
+                color="#FF1493",  # Deep Pink
+                aux={"isData": False, "isSignal": True, "masspoint": (1800, 1300), "histtype": "step", "isSignal": True},
+            )
+        ],
+    )
+
+    cfg.add_process(
+        "T5qqqqWW_2200_800",
+        2200800,
+        label=r"T5qqqqWW (2200, 800)",
+        label_short="T5",
+        color=(100, 0, 0),  # Deep Pink
+        aux={"isData": False, "histtype": "step", "isSignal": True},
+        processes=[
+            od.Process(
+                "SMS-T5qqqqVV_TuneCP2_13TeV-madgraphMLM-pythia8_2200_800",
+                221,
+                label=r"T5qqqqWW (2200, 800)",
+                xsecs={
+                    13: sn.Number(1.0),  # placeholder
+                },
+                label_short="T5",
+                color="#FF1493",  # Deep Pink
+                aux={"isData": False, "isSignal": True, "masspoint": (2200, 800), "histtype": "step", "isSignal": True},
+            )
+        ],
+    )
+
+    cfg.add_process(
+        "T5qqqqWW",
+        1,
+        label=r"T5qqqqWW",
+        label_short="T5",
+        color=(0, 0, 0),
         aux={"isData": False, "histtype": "step", "isSignal": True},
         processes=[
             od.Process(
@@ -79,12 +122,11 @@ def setup_processes(cfg):
                     13: sn.Number(1.0),  # placeholder
                 },
                 label_short="T5",
-                color="#000080",  # Navy
-                aux={"isData": False, "isSignal": True, "masspoint": (1800, 1300), "histtype": "step", "isSignal": True},
+                color=(0, 0, 0),
+                aux={"isData": False, "isSignal": True, "histtype": "fill"},
             )
         ],
     )
-    """
 
     cfg.add_process("T1tttt", 2, label=r"T1tttt", label_short="T1", color=(150, 150, 150), xsecs={13: sn.Number(0.1)})  # FIXME,
 
