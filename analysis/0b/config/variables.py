@@ -41,14 +41,17 @@ def setup_variables(cfg):
     minBool = 0
     maxBool = 1
     cfg.add_variable(name="metPt", expression="metPt", binning=(nBinsPt, minPt, maxPt), unit="GeV", x_title=r"$p_{T}^{miss}$", x_discrete=False)
+    cfg.add_variable(name="metPhi", expression="metPhi", binning=(nBinsPhi, minPhi, maxPhi), x_title=r"$\Phi^{MET}$", x_discrete=False)
     cfg.add_variable(name="WBosonMt", expression="WBosonMt", binning=(nBinsMass, minMass, maxMass), unit="GeV", x_title=r"$m_{t}^{W}$", x_discrete=False)
     cfg.add_variable(name="LT", expression="LT", binning=(nBinsHt, minLt, maxLt), unit="GeV", x_title="LT", x_discrete=False)
     cfg.add_variable(name="HT", expression="HT", binning=(nBinsLt, minHt, maxHt), unit="GeV", x_title="HT", x_discrete=False)
     cfg.add_variable(name="nJets", expression="nJets", binning=(nJets, minNJets, maxNJets), x_discrete=False)
     # cfg.add_variable(name="nbJets", expression="nbJets", binning=(nJets, minNJets, maxNJets), x_discrete=False)
-    cfg.add_variable(name="nWFatJets", expression="nWFatJets", binning=(nJets, minNJets, maxNJets), x_discrete=False)
-    cfg.add_variable(name="ntFatJets", expression="ntFatJets", binning=(nJets, minNJets, maxNJets), x_discrete=False)
+    # FIXME, wrong filling, not amount, but real deepAK8 scores getting filled
+    # cfg.add_variable(name="nWFatJets", expression="nWFatJets", binning=(nJets, minNJets, maxNJets), x_discrete=False)
+    # cfg.add_variable(name="ntFatJets", expression="ntFatJets", binning=(nJets, minNJets, maxNJets), x_discrete=False)
     # lepton stuff ###############
+    """
     cfg.add_variable(name="nMuon", expression="nMuon", binning=(nLep, minLep, maxLep), x_discrete=False)
     cfg.add_variable(name="nElectron", expression="nElectron", binning=(nLep, minLep, maxLep), x_discrete=False)
     cfg.add_variable(name="leadMuonPt", expression="leadMuonPt", binning=(nBinsPt, minPt, maxPt), unit="GeV", x_title=r"$p_{T}^{\mu 1}$", x_discrete=False)
@@ -57,6 +60,12 @@ def setup_variables(cfg):
     cfg.add_variable(name="leadElectronPt", expression="leadElectronPt", binning=(nBinsPt, minPt, maxPt), x_title=r"$p_{T}^{e 1}$", x_discrete=False)
     cfg.add_variable(name="leadElectronEta", expression="leadElectronEta", binning=(nBinsEta, minEta, maxEta), x_title=r"$\eta^{e 1}$", x_discrete=False)
     cfg.add_variable(name="leadElectronPhi", expression="leadElectronPhi", binning=(nBinsPhi, minPhi, maxPhi), x_title=r"$\Phi^{e 1}$", x_discrete=False)
+    """
+    cfg.add_variable(name="leptonEta", expression="leptonEta", binning=(nBinsEta, minEta, maxEta), x_title=r"$\eta^{lep}$", x_discrete=False)
+    cfg.add_variable(name="leptonMass", expression="leptonMass", binning=(nBinsMass, minMass, maxMass), x_discrete=False)
+    cfg.add_variable(name="leptonPhi", expression="leptonPhi", binning=(nBinsPhi, minPhi, maxPhi), x_title=r"$\Phi^{lep}$", x_discrete=False)
+    cfg.add_variable(name="leptonPt", expression="leptonPt", binning=(nBinsPt, minPt, maxPt), unit="GeV", x_title=r"$p_{T}^{lep}$", x_discrete=False)
+    cfg.add_variable(name="leptonIso", expression="leptonIso", binning=(nBinsEta, minEta, maxEta), x_title="MiniIso Lepton", x_discrete=False)
     # jet stuff ##################
     cfg.add_variable(name="jetMass_1", expression="jetMass_1", binning=(nBinsMass, minMass, maxMass), unit="GeV", x_title=r"$m_{Jet}^{1}$", x_discrete=False)
     cfg.add_variable(name="jetPt_1", expression="jetPt_1", binning=(nBinsPt, minPt, maxPt), unit="GeV", x_title=r"$p_{T}^{Jet1}$", x_discrete=False)
@@ -71,8 +80,8 @@ def setup_variables(cfg):
 
     # variables to check cuts
     # cfg.add_variable(name="correctedMetPt", expression="correctedMetPt", binning=(nBinsPt, minPt, maxPt), unit="GeV", x_title=r"Corrected $p_{T}^{miss}$", x_discrete=False)
-    # cfg.add_variable(name="isoTrackPt", expression="isoTrackPt", binning=(nBinsPt, minPt, maxPt), unit="GeV", x_title=r"Iso track $p_{T}$", x_discrete=False)
-    # cfg.add_variable(name="isoTrackMt2", expression="isoTrackMt2", binning=(nBinsPt, minPt, maxPt), unit="GeV", x_title=r"Iso Track $M_{T2}$", x_discrete=False)
+    cfg.add_variable(name="isoTrackPt", expression="isoTrackPt", binning=(nBinsPt, minPt, maxPt), unit="GeV", x_title=r"Iso track $p_{T}$", x_discrete=False)
+    cfg.add_variable(name="isoTrackMt2", expression="isoTrackMt2", binning=(nBinsPt, minPt, maxPt), unit="GeV", x_title=r"Iso Track $M_{T2}$", x_discrete=False)
     # cfg.add_variable(name="iso_cut", expression="iso_cut", binning=(nBool, minBool, maxBool), x_discrete=False)
     # cfg.add_variable(name="ghost_muon_filter", expression="ghost_muon_filter", binning=(nBool, minBool, maxBool), x_discrete=False)
     # cfg.add_variable(name="doubleCounting_XOR", expression="doubleCounting_XOR", binning=(nBool, minBool, maxBool), x_discrete=False)
