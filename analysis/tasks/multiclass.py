@@ -267,6 +267,8 @@ class PytorchMulticlass(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
 class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):  # , CoffeaTask
     # define it here again so training can be started from here
     kfold = IntParameter(default=2)
+    # setting needed RAM high
+    RAM = 40000
 
     def create_branch_map(self):
         # overwrite branch map
@@ -276,7 +278,7 @@ class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):  # , Coffea
         # return PrepareDNN.req(self)
         return {
             "data": CrossValidationPrep.req(self, kfold=self.kfold),
-            "mean_std": ArrayNormalisation.req(self),
+            "mean_std": ArrayNormalisation.req(self, datasets_to_process=["WJets", "SingleTop", "TTbar", "Rare", "DY", "T5qqqqVV", "MET", "SingleMuon", "SingleElectron"], channel=["Muon", "Electron"]),
         }
 
     def output(self):
@@ -396,10 +398,22 @@ class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):  # , Coffea
             self.steps_per_epoch,
         )
 
+        early_stop_callback = pl.callbacks.early_stopping.EarlyStopping(
+            monitor="val_acc",
+            min_delta=0.00,
+            patience=5,
+            verbose=False,
+            mode="max",
+            strict=False,
+        )
+        # collect callbacks
+        callbacks = [early_stop_callback]  # , swa_callback
+
         # Trainer, for gpu gpus=1
         trainer = pl.Trainer(
             max_epochs=self.epochs,
             # num_nodes=1,
+            callbacks=callbacks,
             enable_progress_bar=False,
             check_val_every_n_epoch=1,
         )
@@ -424,6 +438,7 @@ class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):  # , Coffea
             }
         )
 
+        self.output()["fold_" + str(i)]["model"].parent.touch()
         torch.save(model, self.output()["fold_" + str(i)]["model"].path)
         self.output()["fold_" + str(i)]["performance"].dump(performance)
 
@@ -443,6 +458,18 @@ class PredictDNNScores(DNNTask):  # Requiring MergeArrays from a DNNTask leads t
 
     def output(self):
         return {"scores": self.local_target("scores.npy"), "labels": self.local_target("labels.npy"), "data": self.local_target("data_scores.npy"), "weights": self.local_target("weights.npy")}
+
+    def store_parts(self):
+        # put hyperparameters in path to make an easy optimization search
+        return (
+            super(PredictDNNScores, self).store_parts()
+            + (self.channel,)
+            # + (self.n_layers,)
+            + (self.n_nodes,)
+            + (self.dropout,)
+            + (self.batch_size,)
+            + (self.learning_rate,)
+        )
 
     def run(self):
         models = self.input()["models"]["collection"].targets[0]

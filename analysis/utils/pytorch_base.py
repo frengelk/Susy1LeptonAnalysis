@@ -136,9 +136,10 @@ class MulticlassClassification(pl.LightningModule):  # nn.Module core.lightning.
         # custom normalisation layer
         self.norm = NormalizeInputs(means, stds)
 
-        self.layer_1 = nn.Linear(num_feature, n_nodes // 2)
-        self.layer_2 = nn.Linear(n_nodes // 2, n_nodes)
+        self.layer_1 = nn.Linear(num_feature, n_nodes)  # // 2
+        self.layer_2 = nn.Linear(n_nodes, n_nodes)  # // 2
         self.layer_3 = nn.Linear(n_nodes, n_nodes)
+        self.layer_4 = nn.Linear(n_nodes, n_nodes)
 
         self.layer_out = nn.Linear(n_nodes, num_class)
         self.softmax = nn.Softmax(dim=1)  # log_
@@ -147,9 +148,10 @@ class MulticlassClassification(pl.LightningModule):  # nn.Module core.lightning.
 
         self.relu = nn.ReLU()
         self.dropout = nn.Dropout(p=dropout)
-        self.batchnorm1 = nn.BatchNorm1d(n_nodes // 2)
+        self.batchnorm1 = nn.BatchNorm1d(n_nodes)  # // 2
         self.batchnorm2 = nn.BatchNorm1d(n_nodes)
         self.batchnorm3 = nn.BatchNorm1d(n_nodes)
+        self.batchnorm4 = nn.BatchNorm1d(n_nodes)
         self.accuracy = MulticlassAccuracy(num_classes=num_class)
 
         # define global curves
@@ -180,6 +182,11 @@ class MulticlassClassification(pl.LightningModule):  # nn.Module core.lightning.
         x = self.relu(x)
         x = self.dropout(x)
 
+        x = self.layer_4(x)
+        x = self.batchnorm4(x)
+        x = self.relu(x)
+        x = self.dropout(x)
+
         x = self.layer_out(x)
         x = self.softmax(x)
 
@@ -206,9 +213,9 @@ class MulticlassClassification(pl.LightningModule):  # nn.Module core.lightning.
         # Here we just reuse the validation_step for testing
         return self.validation_step(batch, batch_idx)
 
-    def weighted_loss(self, y, y_hat, w):
+    def weighted_loss(self, y, y_hat, weight):
         loss_fn = nn.CrossEntropyLoss(weight=self.class_weights, reduction="none")
-        return (loss_fn(y, y_hat) * w).mean()
+        return (loss_fn(y, y_hat) * weight).mean()
 
     def training_step(self, batch, batch_idx):
         x, y, weight = batch[0].squeeze(0), batch[1].squeeze(0), batch[2].squeeze(0)
