@@ -35,13 +35,19 @@ for year, cfg in ("2016", config_2016), ("2017", config_2017):
     #    dat.add_process(cfg.get_process(dat.name))
     setup_variables(cfg)
     setup_categories(cfg)
+    #  mge [TeV] 1.5 1.5 1.6 1.7 1.8 1.9 1.9 1.9 2.2 2.2
+    # mχe0 [TeV] 1.0 1.2 1.1 1.2 1.3 0.1 0.8 1.0 0.1 0.8
     cfg.set_aux(
         "signal_masspoints",
-        [(2200, 800), (2200, 100), (1500, 1000), (1800, 1300)],
+        [(1500, 1000), (1500, 1200), (1600, 1100), (1700, 1200), (1800, 1300), (1900, 100), (1900, 800), (1900, 1000), (2200, 100), (2200, 800)],
     )
     cfg.set_aux(
         "signal_process",
         "T5qqqqVV",  # found like this in sample names
+    )
+    cfg.set_aux(
+        "signal_binning",
+        [0, 0.5, 0.9, 1],  # how to bin signal region DNN output
     )
 
     cfg.set_aux("job_dict", os.path.expandvars("$ANALYSIS_BASE/config/datasets_2017.json"))
@@ -66,7 +72,8 @@ for year, cfg in ("2016", config_2016), ("2017", config_2017):
                 # "T5qqqqWW": ["T5qqqqWW_2200_100", "T5qqqqWW_1500_1000"],
                 "tt+jets": ["SingleTop", "TTbar"],
                 "W+jets": ["WJets", "Rare", "DY"],
-                "T5qqqqWW": ["T5qqqqWW"],
+                # "T5qqqqWW": ["T5qqqqWW"],
+                "T5qqqqWW": ["T5qqqqWW_1500_1000", "T5qqqqWW_1500_1200", "T5qqqqWW_1600_1100", "T5qqqqWW_1700_1200", "T5qqqqWW_1800_1300", "T5qqqqWW_1900_100", "T5qqqqWW_1900_800", "T5qqqqWW_1900_1000", "T5qqqqWW_2200_100", "T5qqqqWW_2200_800"],
             },
         },
     )
