@@ -61,7 +61,7 @@ class ClassifierDatasetWeight(data.Dataset):
 # Custom dataset collecting all numpy arrays and bundles them for training
 # class DataModuleClass(pl.LightningModule):
 class DataModuleClass(pl.LightningDataModule):
-    def __init__(self, X_train, y_train, weight_train, X_val, y_val, batch_size, n_processes, steps_per_epoch):
+    def __init__(self, X_train, y_train, weight_train, X_val, y_val, weight_val, batch_size, n_processes, steps_per_epoch):
         super().__init__()
         # define data
         self.X_train = X_train
@@ -69,6 +69,7 @@ class DataModuleClass(pl.LightningDataModule):
         self.X_val = X_val
         self.y_val = y_val
         self.weight_train = weight_train
+        self.weight_val = weight_val
         # self.X_test=X_test , X_test, y_test
         # self.y_test=y_test
         # define parameters
@@ -90,7 +91,7 @@ class DataModuleClass(pl.LightningDataModule):
             torch.from_numpy(self.y_train).float(),
             torch.from_numpy(self.weight_train).float(),
         )
-        self.val_dataset = ClassifierDataset(torch.from_numpy(self.X_val).float(), torch.from_numpy(self.y_val).float())
+        self.val_dataset = ClassifierDatasetWeight(torch.from_numpy(self.X_val).float(), torch.from_numpy(self.y_val).float(), torch.from_numpy(self.weight_val).float())
         # do this somewhere else
         # self.test_dataset = ClassifierDataset(
         #    torch.from_numpy(self.X_test).float(), torch.from_numpy(self.y_test).float()
@@ -193,14 +194,14 @@ class MulticlassClassification(pl.LightningModule):  # nn.Module core.lightning.
         return x
 
     def validation_step(self, batch, batch_idx):
-        x, y = batch
+        x, y, weight = batch[0].squeeze(0), batch[1].squeeze(0), batch[2].squeeze(0)
         logits = self(x)
         # loss = nn.functional.nll_loss()
         # loss = nn.CrossEntropyLoss()
-        loss_step = self.loss(logits, y)
+        loss_step = self.weighted_loss(logits, y, weight)
         preds = torch.argmax(logits, dim=1)
-
         acc_step = self.accuracy(preds, y.argmax(dim=1))
+
         self.validation_step_outputs.append({"val_loss": loss_step, "val_acc": acc_step})
         # Calling self.log will surface up scalars for you in TensorBoard
         self.log("val_loss", loss_step, prog_bar=True)
@@ -214,8 +215,10 @@ class MulticlassClassification(pl.LightningModule):  # nn.Module core.lightning.
         return self.validation_step(batch, batch_idx)
 
     def weighted_loss(self, y, y_hat, weight):
-        loss_fn = nn.CrossEntropyLoss(weight=self.class_weights, reduction="none")
-        return (loss_fn(y, y_hat) * weight).mean()
+        # loss should be equally important to all classes.
+        loss_fn = nn.CrossEntropyLoss(reduction="none")  # weight=self.class_weights,
+        resp_class_weights = torch.matmul(y_hat.float(), self.class_weights.float())
+        return (loss_fn(y, y_hat) * weight * resp_class_weights).mean()
 
     def training_step(self, batch, batch_idx):
         x, y, weight = batch[0].squeeze(0), batch[1].squeeze(0), batch[2].squeeze(0)
