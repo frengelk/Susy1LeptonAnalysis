@@ -267,8 +267,9 @@ class PytorchMulticlass(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
 class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):  # , CoffeaTask
     # define it here again so training can be started from here
     kfold = IntParameter(default=2)
-    # setting needed RAM high
+    # setting needed RAM high and time long
     RAM = 40000
+    hours = 10
 
     def create_branch_map(self):
         # overwrite branch map
@@ -364,6 +365,7 @@ class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):  # , Coffea
         weight_train = self.input()["data"]["cross_val_{}".format(i)]["cross_val_weight_train_{}".format(i)].load()
         X_val = self.input()["data"]["cross_val_{}".format(i)]["cross_val_X_val_{}".format(i)].load()
         y_val = self.input()["data"]["cross_val_{}".format(i)]["cross_val_y_val_{}".format(i)].load()
+        weight_val = self.input()["data"]["cross_val_{}".format(i)]["cross_val_weight_val_{}".format(i)].load()
 
         class_weights = self.calc_class_weights(y_train, weight_train)
         # declare model
@@ -382,7 +384,8 @@ class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):  # , Coffea
 
         # datasets are loaded
         train_dataset = util.ClassifierDatasetWeight(torch.from_numpy(X_train).float(), torch.from_numpy(y_train).float(), torch.from_numpy(weight_train).float())
-        val_dataset = util.ClassifierDataset(torch.from_numpy(X_val).float(), torch.from_numpy(y_val).float())
+        # val_dataset = util.ClassifierDataset(torch.from_numpy(X_val).float(), torch.from_numpy(y_val).float())
+        val_dataset = util.ClassifierDatasetWeight(torch.from_numpy(X_val).float(), torch.from_numpy(y_val).float(), torch.from_numpy(weight_val).float())
 
         # define data
         data_collection = util.DataModuleClass(
@@ -391,6 +394,7 @@ class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):  # , Coffea
             weight_train,
             X_val,
             y_val,
+            weight_val,
             # X_test,
             # y_test,
             self.batch_size,
@@ -517,6 +521,67 @@ class PredictDNNScores(DNNTask):  # Requiring MergeArrays from a DNNTask leads t
         self.output()["labels"].dump(np.concatenate(labels))
         self.output()["weights"].dump(np.concatenate(weights))
         self.output()["data"].dump(averaged_data_scores)
+
+
+class CalcNormFactors(DNNTask):  # Requiring MergeArrays from a DNNTask leads to JSON errors
+    # should be
+    kfold = IntParameter(default=2)
+
+    def requires(self):
+        out = {
+            "samples": CrossValidationPrep.req(self, kfold=self.kfold),
+            "models": PytorchCrossVal.req(self, kfold=self.kfold, workflow="local"),
+            "scores": PredictDNNScores.req(self),
+        }
+
+        return out
+
+    def output(self):
+        return self.local_target("Normalisation_factors.json")
+
+    def store_parts(self):
+        return (
+            super(CalcNormFactors, self).store_parts()
+            + (self.channel,)
+            # + (self.n_layers,)
+            + (self.n_nodes,)
+            + (self.dropout,)
+            + (self.batch_size,)
+            + (self.learning_rate,)
+        )
+
+    def run(self):
+        models = self.input()["models"]["collection"].targets[0]
+        samples = self.input()["samples"]
+        scores, labels, weights = [], [], []
+        data_scores = {}
+        data = self.input()["samples"]["data"].load()
+        MC_scores = self.input()["scores"]["scores"].load()
+
+        data_scores = self.input()["scores"]["data"].load()
+
+        MC_labels = self.input()["scores"]["labels"].load()
+        MC_labels = np.argmax(MC_labels, axis=-1)
+        MC_pred = np.argmax(MC_scores, axis=-1)
+
+        weights = self.input()["scores"]["weights"].load()
+
+        # assigning notes
+        tt_node_0 = weights[(MC_labels == 0) & (MC_pred == 0)]
+        WJets_node_0 = weights[(MC_labels == 1) & (MC_pred == 0)]
+        data_node_0 = np.argmax(data_scores, axis=-1) == 0
+
+        tt_node_1 = weights[(MC_labels == 0) & (MC_pred == 1)]
+        WJets_node_1 = weights[(MC_labels == 1) & (MC_pred == 1)]
+        data_node_1 = np.argmax(data_scores, axis=-1) == 1
+
+        # constructing and solving linear equation system
+        left_side = np.array([[np.sum(tt_node_0), np.sum(WJets_node_0)], [np.sum(tt_node_1), np.sum(WJets_node_1)]])
+        right_side = np.array([np.sum(data_node_0), np.sum(data_node_1)])
+        factors = np.linalg.solve(left_side, right_side)
+
+        factor_dict = {"alpha": factors[0], "beta": factors[1]}
+        self.output().dump(factor_dict)
 
 
 """
