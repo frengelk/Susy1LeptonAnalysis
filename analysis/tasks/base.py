@@ -144,7 +144,9 @@ class DatasetTask(ConfigTask):  # ShiftTask
 
 class HTCondorWorkflow(law.htcondor.HTCondorWorkflow):
     debug = luigi.BoolParameter()
+    # configurable in task Parameters
     RAM = luigi.IntParameter(default=750)
+    hours = luigi.IntParameter(default=1)
 
     """
     Batch systems are typically very heterogeneous by design, and so is HTCondor. Law does not aim
@@ -184,7 +186,7 @@ class HTCondorWorkflow(law.htcondor.HTCondorWorkflow):
         # config.custom_content.append(("request_cpus", "1"))
         config.custom_content.append(("request_memory", str(self.RAM)))  # 20000
         # config.custom_content.append(("+RequestRuntime = 86400"))
-        config.custom_content.append(("+RequestRuntime = 1*60*60"))  # 10
+        config.custom_content.append(("+RequestRuntime = {}*60*60".format(self.hours)))
         # config.custom_content.append(("Request_GPUs", "0"))
         # config.custom_content.append(("Request_GpuMemory", "0"))
 

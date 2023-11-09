@@ -94,6 +94,7 @@ def setup_variables(cfg):
     # cfg.add_variable(name="DNNId", expression="DNNId", binning=(nBool, -1, 1), x_discrete=False)
 
     # other binning, important to put them last
+    # only uncomment when running plotting!
     # cfg.add_variable(name="HT_binned", expression="HT", binning=[500,750,1000,1250,2500], unit="GeV", x_title="HT rebinned", x_discrete=True)
-    # cfg.add_variable(name="LT_binned", expression="LT", binning=[250,350,450,600,1000], unit="GeV", x_title="LT rebinne", x_discrete=True)
+    # cfg.add_variable(name="LT_binned", expression="LT", binning=[250,350,450,600,1000], unit="GeV", x_title="LT rebinned", x_discrete=True)
     # cfg.add_variable(name="dPhi_binned", expression="dPhi", binning=[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.7, 1, 1.5, 2, maxPhi], x_title=r"$ \Delta \Phi $", x_discrete=True)
