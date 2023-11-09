@@ -91,8 +91,8 @@ class ArrayNormalisation(CoffeaTask):
                 for subproc in self.config_inst.get_aux("DNN_process_template")[cat][key]:
                     proc_list.append(self.input()[cat + "_" + subproc]["array"].load())
                     weight_list.append(self.input()[cat + "_" + subproc]["weights"].load())
-
-                # print(proc_list)
+                for p in proc_list:
+                    print(key, np.min(p[:, 11]))
                 proc_dict.update({key: np.concatenate(proc_list)})
                 weight_dict.update({key + "_weights": np.concatenate(weight_list)})
 
@@ -183,14 +183,17 @@ class CrossValidationPrep(CoffeaTask):
         # for now only 1st category
 
         for cat in self.config_inst.categories.names()[:1]:
-            proc_list = []
-            weight_list = []
-            DNNId_list = []
             for i, key in enumerate(self.config_inst.get_aux("DNN_process_template")[cat].keys()):
+                proc_list = []
+                weight_list = []
+                DNNId_list = []
+                print("node", key)
                 for subproc in self.config_inst.get_aux("DNN_process_template")[cat][key]:
+                    print("filling", subproc, self.input()[cat + "_" + subproc]["array"])
                     proc_list.append(self.input()[cat + "_" + subproc]["array"].load())
                     weight_list.append(self.input()[cat + "_" + subproc]["weights"].load())
                     DNNId_list.append(self.input()[cat + "_" + subproc]["DNNId"].load())
+                    print("len, weightsum", len(self.input()[cat + "_" + subproc]["array"].load()), np.sum(self.input()[cat + "_" + subproc]["weights"].load()))
 
                 # print(proc_list)
                 proc_dict.update({key: np.concatenate(proc_list)})
@@ -205,7 +208,7 @@ class CrossValidationPrep(CoffeaTask):
                 data_list.append(self.input()[cat + "_" + dat]["array"].load())
 
         # merge all processes
-        data_compl = np.concatenate(list(proc_dict.values()))
+        MC_compl = np.concatenate(list(proc_dict.values()))
         weight_compl = np.concatenate(list(weight_dict.values()))
         DNNId_compl = np.concatenate(list(DNNId_dict.values()))
         one_hot_labels = np.concatenate(one_hot_labels)
@@ -217,8 +220,9 @@ class CrossValidationPrep(CoffeaTask):
         # for each kfold, dump the respective data and labels
         # for i, idx in enumerate(kfold.split(data_compl)):
         for i, idx in enumerate([-1, 1]):  # iterating over previous ids from coffea
+            print("fold", i)
             # spltting everything in half, using remainding 90% for training, and 10% vor validation
-            X_train, X_val, y_train, y_val, weight_train, weight_val = skm.train_test_split(data_compl[DNNId_compl == idx], one_hot_labels[DNNId_compl == idx], weight_compl[DNNId_compl == idx], test_size=0.1, random_state=42)
+            X_train, X_val, y_train, y_val, weight_train, weight_val = skm.train_test_split(MC_compl[DNNId_compl == idx], one_hot_labels[DNNId_compl == idx], weight_compl[DNNId_compl == idx], test_size=0.1, random_state=42)
 
             self.output()["cross_val_{}".format(i)]["cross_val_X_train_{}".format(i)].dump(X_train)
             self.output()["cross_val_{}".format(i)]["cross_val_y_train_{}".format(i)].dump(y_train)
@@ -226,3 +230,5 @@ class CrossValidationPrep(CoffeaTask):
             self.output()["cross_val_{}".format(i)]["cross_val_X_val_{}".format(i)].dump(X_val)
             self.output()["cross_val_{}".format(i)]["cross_val_y_val_{}".format(i)].dump(y_val)
             self.output()["cross_val_{}".format(i)]["cross_val_weight_val_{}".format(i)].dump(weight_val)
+            for j in range(len(y_train[0])):
+                print("len weight for node:", j, np.sum(np.argmax(y_train, axis=-1) == j), np.sum(weight_train[np.argmax(y_train, axis=-1) == j]))

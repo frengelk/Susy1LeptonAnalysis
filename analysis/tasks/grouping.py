@@ -109,9 +109,12 @@ class MergeArrays(CoffeaTask):  # , law.LocalWorkflow, HTCondorWorkflow):
                             key = cat + "_" + p + "_" + str(ind)
                             cat_list.append(np_dict[key]["array"].load())
                             # get weights as well for each process
-                            weights_list.append(np_dict[key]["weights"].load())
+                            if p == "QCD_HT300to500_TuneCP5_13TeV-madgraphMLM-pythia8" and lep == "Electron":
+                                # something wrong with weights in this sample
+                                weights_list.append(np.ones(len(np_dict[key]["weights"].load())))
+                            else:
+                                weights_list.append(np_dict[key]["weights"].load())
                             DNNId_list.append(np_dict[key]["DNNId"].load())
-
                             # import boost_histogram as bh
                             # boost_hist =  bh.Histogram(bh.axis.Regular(var.binning[0], var.binning[1], var.binning[2]))
                             # boost_hist.fill(np_dict[key]["array"].load()[:,3])
