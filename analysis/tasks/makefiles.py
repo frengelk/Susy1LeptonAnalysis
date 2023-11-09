@@ -281,15 +281,17 @@ class CollectInputData(BaseMakeFilesTask):
                     ISR = masspoint_dict["_".join(["ISR", str(masspoint[0]), str(masspoint[1])])]
                     sumGenWeights = sum_gen_weights_dict[new_key]
                     # we do it inverse, since it will be in the denominator later
-                    weighting = sumGenWeights / nGen * ISR / nGen * nGen
+                    weighting = ISR / nGen * nGen  # FIXME  sumGenWeights / nGen *
                     sum_gen_weights_dict[new_key] = weighting
 
         self.output()["sum_gen_weights"].dump(sum_gen_weights_dict)
         self.output()["cutflow"].dump(cutflow_dict)
 
 
-class CalcBTagSF(BaseMakeFilesTask):  # , HTCondorWorkflow, law.LocalWorkflow
-    RAM = 1000
+class CalcBTagSF(BaseMakeFilesTask, HTCondorWorkflow, law.LocalWorkflow):
+    # require more ressources
+    RAM = 2000
+    hours = 3
 
     def requires(self):
         return WriteDatasets.req(self)
@@ -413,7 +415,6 @@ class CalcBTagSF(BaseMakeFilesTask):  # , HTCondorWorkflow, law.LocalWorkflow
                     # sum_gen_weights_dict[path.split("/")[1]] = np.array(weights)
                     self.output()[lep + "_" + path.split("/")[1]].parent.touch()
                     self.output()[lep + "_" + path.split("/")[1]].dump(np.array(weights))
-        # from IPython import embed; embed()
         # TODO
         # sum efficiencies per process (global) (true and nBTag)
         # calculate global efficiency

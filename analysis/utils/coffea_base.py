@@ -20,7 +20,7 @@ from coffea.processor.accumulator import (
 
 
 class BaseProcessor(processor.ProcessorABC):
-    individal_weights = False
+    individal_weights = True
 
     # jes_shifts = False
     # dataset_shifts = False
@@ -415,12 +415,24 @@ class ArrayExporter(BaseProcessor, BaseSelection):
         # Applies indivudal selection per category and then combines them
         selected_output = self.select(events)
         categories = self.categories(selected_output)
-        weights = selected_output["weights"].weight()
         output = selected_output["summary"]
         arrays = self.get_selection_as_np(selected_output)
         # setting weights as extra axis in arrays
         # arrays.setdefault("weights", np.stack([np.full_like(weights, 1), weights], axis=-1))
-        arrays.setdefault("weights", weights)
+        weights = selected_output["weights"]
+        # if we selected a shift beforehand, we don't set nominal weight but instead shift one weight accordingly
+        if selected_output["events"].metadata["shift"] == "nominal":  # which is the default value
+            arrays.setdefault("weights", weights.weight())
+        else:
+            included_weights = []
+            for wei in weights._weightStats.keys():
+                if wei not in selected_output["events"].metadata["shift"]:
+                    included_weights.append(wei)
+                else:
+                    included_weights.append(selected_output["events"].metadata["shift"])
+            shift_weight = weights.partial_weight(include=included_weights)
+            arrays.setdefault("weights", shift_weight)
+
         if self.dtype:
             arrays = {key: array.astype(self.dtype) for key, array in arrays.items()}
         output["arrays"] = dict_accumulator({category + "_" + selected_output["dataset"]: dict_accumulator({key: ArrayAccumulator(array[cut, ...]) for key, array in arrays.items()}) for category, cut in categories.items()})

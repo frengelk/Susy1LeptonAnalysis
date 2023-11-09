@@ -40,6 +40,7 @@ class CoffeaTask(DatasetTask):
     # parameter with selection we use coffea
     lepton_selection = Parameter(default="Muon")
     datasets_to_process = ListParameter(default=["WJets"])
+    shift = Parameter(default="nominal")
 
     def get_proc_list(self, datasets):
         # task to return subprocesses for list of datasets
@@ -142,6 +143,8 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
         parts = (self.analysis_choice, self.processor, self.lepton_selection)
         if self.debug:
             parts += ("debug",)
+        if self.shift != "nominal":
+            parts += (self.shift,)
         return super(CoffeaProcessor, self).store_parts() + parts
 
     @law.decorator.timeit(publish_message=True)
@@ -197,7 +200,7 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
                         "n_minus1": hist.Hist("Counts", hist.Bin("Nminus1", "Cut", 20, 0, 20)),
                         "arrays": {
                             "N0b_" + dataset: {"hl": ArrayAccumulator(np.reshape(np.array([], dtype=np.float64), (0, len(self.config_inst.variables)))), "weights": ArrayAccumulator(np.array([], dtype=np.float64)), "DNNId": ArrayAccumulator(np.array([], dtype=np.float64))},
-                            # "N1ib_" + dataset: {"hl": ArrayAccumulator(np.reshape(np.array([], dtype=np.float64), (0, 24))), "weights": ArrayAccumulator(np.array([], dtype=np.float64)), "DNNId":ArrayAccumulator(np.array([], dtype=np.float64))}
+                            # "N1ib_" + dataset: {"hl": ArrayAccumulator(np.reshape(np.array([], dtype=np.float64), (0, len(self.config_inst.variables)))), "weights": ArrayAccumulator(np.array([], dtype=np.float64)), "DNNId": ArrayAccumulator(np.array([], dtype=np.float64))},
                         },
                     }
                 # sum_gen_weight = np.sum(file["MetaData"]["SumGenWeight"].array())
@@ -209,7 +212,7 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
         fileset = {
             dataset: {
                 "files": [data_path + "/" + subset],  # file for file in
-                "metadata": {"PD": primaryDataset, "isData": isData, "isFastSim": isFastSim, "isSignal": isSignal, "xSec": xSec, "Luminosity": lumi, "sumGenWeight": sum_gen_weights_dict[dataset], "btagSF": btagSF},
+                "metadata": {"PD": primaryDataset, "isData": isData, "isFastSim": isFastSim, "isSignal": isSignal, "xSec": xSec, "Luminosity": lumi, "sumGenWeight": sum_gen_weights_dict[dataset], "btagSF": btagSF, "shift": self.shift},
             }
         }
         if not empty:
@@ -244,6 +247,7 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
                 self.output()[cat + "_" + str(self.branch)]["array"].dump(out["arrays"][cat]["hl"].value)
                 self.output()[cat + "_" + str(self.branch)]["cutflow"].dump(out["cutflow"])
                 self.output()[cat + "_" + str(self.branch)]["n_minus1"].dump(out["n_minus1"])
+                print(cat)
 
 
 class CollectCoffeaOutput(CoffeaTask):
