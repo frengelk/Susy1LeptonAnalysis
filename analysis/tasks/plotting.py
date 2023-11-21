@@ -872,8 +872,8 @@ class DNNEvaluationCrossValPlotting(DNNTask):
         # from IPython import embed;embed()
 
         n_variables = len(self.config_inst.variables)
-        n_processes = len(self.config_inst.get_aux("DNN_process_template")["N" + self.channel].keys())
-        all_processes = list(self.config_inst.get_aux("DNN_process_template")["N" + self.channel].keys())
+        n_processes = len(self.config_inst.get_aux("DNN_process_template")[self.category].keys())
+        all_processes = list(self.config_inst.get_aux("DNN_process_template")[self.category].keys())
 
         # from IPython import embed; embed()
         for i in range(self.kfold):
@@ -1068,12 +1068,13 @@ class DNNScorePlotting(DNNTask):
         #     for j, proc in enumerate(inp['process_names']):
         #         data_count =
 
-        MC_scores = self.input()["scores"].load()
-        MC_labels = self.input()["labels"].load()
-        weights = self.input()["weights"].load()
+        inp = self.input()["collection"].targets[0]
+        MC_scores = inp["scores"].load()
+        MC_labels = inp["labels"].load()
+        weights = inp["weights"].load()
         if self.unweighted:
             weights = np.ones_like(weights)
-        data_scores = self.input()["data"].load()
+        data_scores = inp["data"].load()
         # collecting scores for respective process
         scores_dict = {}
         for i, key in enumerate(self.config_inst.get_aux("DNN_process_template")[self.category].keys()):
@@ -1086,7 +1087,7 @@ class DNNScorePlotting(DNNTask):
         # one plot per per output note
         for i, key in enumerate(self.config_inst.get_aux("DNN_process_template")[self.category].keys()):
             if key == self.config_inst.get_aux("signal_process").replace("V", "W"):
-                signal_node = True
+                signal_node = False  # FIXME True
             else:
                 signal_node = False
             fig = plt.figure(figsize=(12, 9))
@@ -1104,8 +1105,9 @@ class DNNScorePlotting(DNNTask):
                 if proc != "data" and not self.config_inst.get_aux("signal_process").replace("V", "W") in proc:
                     # constructing hist and filling it with scores
                     if not signal_node:
-                        boost_hist = bh.Histogram(self.construct_axis((1, 0, 1)))
+                        boost_hist = bh.Histogram(self.construct_axis((100, 0, 1)))
                     if signal_node:
+                        print("hu?")
                         boost_hist = bh.Histogram(self.construct_axis(self.config_inst.get_aux("signal_binning"), isRegular=False))
                     boost_hist.fill(scores_dict[proc][mask][:, i], weight=scores_dict[proc + "_weight"][mask])
                     MC_hists[proc] = boost_hist
@@ -1113,14 +1115,14 @@ class DNNScorePlotting(DNNTask):
                 elif proc == "data" and self.unblinded:
                     # doing data seperate to print on top
                     if not signal_node:
-                        data_boost_hist = bh.Histogram(self.construct_axis((1, 0, 1)))
+                        data_boost_hist = bh.Histogram(self.construct_axis((100, 0, 1)))
                     if signal_node:
                         data_boost_hist = bh.Histogram(self.construct_axis(self.config_inst.get_aux("signal_binning"), isRegular=False))
                     data_boost_hist.fill(scores_dict[proc][mask][:, i])
                 elif self.config_inst.get_aux("signal_process").replace("V", "W") in proc:
                     #  signal as line
                     if not signal_node:
-                        signal_hist = bh.Histogram(self.construct_axis((1, 0, 1)))
+                        signal_hist = bh.Histogram(self.construct_axis((100, 0, 1)))
                     if signal_node:
                         signal_hist = bh.Histogram(self.construct_axis(self.config_inst.get_aux("signal_binning"), isRegular=False))
                     signal_hist.fill(scores_dict[proc][mask][:, i], weight=scores_dict[proc + "_weight"][mask])
@@ -1134,7 +1136,6 @@ class DNNScorePlotting(DNNTask):
             plt.xlabel("DNN Scores in node " + key, fontsize=24)
             plt.ylabel("Counts", fontsize=24)
             plt.xlim = (0, 1)
-            plt.xlim
             plt.yscale("log")
             plt.legend(ncol=1, loc="upper left", bbox_to_anchor=(0, 1), borderaxespad=0, prop={"size": 18})
 
@@ -1144,4 +1145,19 @@ class DNNScorePlotting(DNNTask):
             self.output()[key + "_png"].parent.touch()
             plt.savefig(self.output()[key + "_png"].path, bbox_inches="tight")
             plt.savefig(self.output()[key + "_pdf"].path, bbox_inches="tight")
+            plt.gcf().clear()
+
+            # hist all scores in column
+            scores_i = MC_scores[:, i]
+            fig = plt.figure(figsize=(12, 9))
+            hep.style.use("CMS")
+            hep.cms.text("Private work (CMS simulation)", loc=0)
+            hep.cms.lumitext(text=str(np.round(self.config_inst.get_aux("lumi") / 1000, 2)) + r"$fb^{-1}$")
+            plt.hist(scores_i, bins=np.arange(0, 1, 0.01))
+            plt.xlabel("All DNN Scores in node " + key, fontsize=24)
+            plt.ylabel("Counts", fontsize=24)
+            plt.xlim = (0, 1)
+            plt.yscale("log")
+            plt.legend(ncol=1, loc="upper left", bbox_to_anchor=(0, 1), borderaxespad=0, prop={"size": 18})
+            plt.savefig(self.output()[key + "_png"].path.replace(".png", "all_scores.png"), bbox_inches="tight")
             plt.gcf().clear()
