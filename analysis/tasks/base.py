@@ -81,7 +81,7 @@ class DNNTask(ConfigTask):
     define parameters here for all relevant tasks
     """
 
-    channel = luigi.Parameter(default="0b", description="channel to train on")
+    category = luigi.Parameter(default="N0b", description="channel to train on")
     epochs = luigi.IntParameter(default=100)
     batch_size = luigi.IntParameter(default=10000)
     learning_rate = luigi.FloatParameter(default=0.01)
@@ -90,6 +90,9 @@ class DNNTask(ConfigTask):
     n_nodes = luigi.IntParameter(default=256)
     steps_per_epoch = luigi.IntParameter(default=100)
     dropout = luigi.FloatParameter(default=0.2)
+
+    # should be 2 for now, maybe larger later
+    kfold = luigi.IntParameter(default=2)
 
     def __init__(self, *args, **kwargs):
         super(DNNTask, self).__init__(*args, **kwargs)
