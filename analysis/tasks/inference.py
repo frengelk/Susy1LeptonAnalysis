@@ -19,7 +19,7 @@ from functools import total_ordering
 # other modules
 from tasks.coffea import CoffeaProcessor, CoffeaTask
 from tasks.makefiles import CollectInputData
-from tasks.grouping import GroupCoffea, MergeArrays  # , SumGenWeights
+from tasks.grouping import GroupCoffea, MergeArrays, MergeShiftArrays
 from tasks.arraypreparation import ArrayNormalisation, CrossValidationPrep
 from tasks.multiclass import PytorchMulticlass, PredictDNNScores, PytorchCrossVal
 from tasks.base import HTCondorWorkflow, DNNTask
@@ -28,7 +28,7 @@ import utils.pytorch_base as util
 
 
 class ConstructInferenceBins(DNNTask):
-    category = luigi.Parameter(default="N0b", description="set it for now, can be dynamical later")
+    # category = luigi.Parameter(default="N0b", description="set it for now, can be dynamical later")
     kfold = luigi.IntParameter(default=2)
 
     def requires(self):
@@ -48,7 +48,7 @@ class ConstructInferenceBins(DNNTask):
     @law.decorator.safe_output
     def run(self):
         print("if problem persists, replace + by _")
-        all_processes = list(self.config_inst.get_aux("DNN_process_template")["N" + self.channel].keys())  # ["data"] +
+        all_processes = list(self.config_inst.get_aux("DNN_process_template")[self.category].keys())  # ["data"] +
         n_processes = len(all_processes)
 
         self.output().parent.touch()
@@ -110,8 +110,100 @@ class ConstructInferenceBins(DNNTask):
                     # catDict = {"SR_MB" : "S", "CR_MB" : "C", "SR_SB" : "S2", "CR_SB" : "C2", "SR_SB_NB1i" : "S3", "CR_SB_NB1i" : "C3"}
                     # np.random.seed(42)
         print(bin_names, process_names, process_numbers, rates)
-        inference_bins = {"data_bins": data_bins, "data_obs": data_obs, "bin_names": bin_names, "process_names": process_names, "process_numbers": process_numbers, "rates": rates}
+
+        nominal_dict = {}
+        for i, rate in enumerate(rates):
+            nominal_dict["{}_{}".format(bin_names[i], process_names[i])] = rate
+
+        inference_bins = {"data_bins": data_bins, "data_obs": data_obs, "bin_names": bin_names, "process_names": process_names, "process_numbers": process_numbers, "rates": rates, "nominal_dict": nominal_dict}
         self.output().dump(inference_bins)
+
+
+class GetShiftedYields(CoffeaTask, DNNTask):
+    shifts = luigi.ListParameter(default=["PreFireWeightUp"])
+    channel = luigi.ListParameter(default=["Muon", "Electron"])
+
+    def requires(self):
+        # everything requires von self, specify by arguments
+        return {
+            "nominal_bins": ConstructInferenceBins.req(self),
+            "shifted_arrays": MergeShiftArrays.req(self),
+            "samples": CrossValidationPrep.req(self),
+            "predictions": PredictDNNScores.req(self),
+            "model": PytorchCrossVal.req(self, n_layers=self.n_layers, n_nodes=self.n_nodes, dropout=self.dropout),
+        }
+
+    def output(self):
+        return self.local_target("shift_unc.json")
+
+    # def store_parts(self):
+    #     return super(GetShiftedYields, self).store_parts() + (self.n_nodes,) + (self.dropout,) + (self.batch_size,) + (self.learning_rate,)
+
+    @law.decorator.timeit(publish_message=True)
+    @law.decorator.safe_output
+    def run(self):
+        inp = self.input()
+        models = inp["model"]["collection"].targets[0]
+
+        nominal = inp["nominal_bins"].load()
+        nominal_dict = nominal["nominal_dict"]
+
+        nodes = list(self.config_inst.get_aux("DNN_process_template")[self.category].keys())[:-1]
+
+        # evaluating weighted sum of events sorted into respective node by DNN
+        for shift in self.shifts:
+            print(shift)
+            shifted_yields = {}
+            for _, key in enumerate(nodes):
+                scores, labels, weights = [], [], []
+                real_procs = self.config_inst.get_aux("DNN_process_template")[self.category][key]
+                for pr in real_procs:
+                    if pr not in self.datasets_to_process:
+                        continue
+                    shift_dict = inp["shifted_arrays"]["{}_{}_{}".format(self.category, pr, shift)]
+                    shift_ids = shift_dict["DNNId"].load()
+                    shift_arr = shift_dict["array"].load()
+                    shift_weight = shift_dict["weights"].load()
+
+                    for i in range(self.kfold):
+                        # to get respective switched id per fold
+                        j = 1 - 2 * i
+                        # each model should now predict labels for the validation data
+                        model = torch.load(models["fold_" + str(i)]["model"].path)
+                        X_test = shift_arr[shift_ids == j]
+                        # we know the process
+                        y_test = np.array([[1, 0, 0]] * len(X_test))
+                        weight_test = shift_weight[shift_ids == j]
+
+                        pred_dataset = util.ClassifierDatasetWeight(torch.from_numpy(X_test).float(), torch.from_numpy(y_test).float(), torch.from_numpy(weight_test).float())
+                        pred_loader = torch.utils.data.DataLoader(dataset=pred_dataset, batch_size=len(X_test))
+
+                        with torch.no_grad():
+                            model.eval()
+                            for X_pred_batch, y_pred_batch, weight_pred_batch in pred_loader:
+                                X_scores = model(X_pred_batch)
+
+                                scores.append(X_scores.numpy())
+                                labels.append(y_pred_batch)
+                                weights.append(weight_pred_batch)
+
+                # merge predictions
+                scores, labels, weights = np.concatenate(scores), np.concatenate(labels), np.concatenate(weights)
+
+                # in_node process shift yield
+                for ii, node in enumerate(nodes):
+                    weight_sum = np.sum(weights[np.argmax(scores, axis=-1) == ii])
+                    shifted_yields["Node{}_{}_{}".format(key, shift, node)] = weight_sum
+
+            # comparing to nominal
+            for key, rate in shifted_yields.items():
+                nominal_key = key.replace("Node", "DNN_Score_Node_").replace(shift + "_", "")
+                nominal_rate = float(nominal_dict[nominal_key])
+                print(key, nominal_key)
+                print(rate / nominal_rate)
+        from IPython import embed
+
+        embed()
 
 
 class DatacardWriting(DNNTask):
