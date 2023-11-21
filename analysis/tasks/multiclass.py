@@ -16,6 +16,7 @@ from tasks.base import DNNTask, HTCondorWorkflow, AnalysisTask
 from tasks.grouping import MergeArrays
 from tasks.arraypreparation import ArrayNormalisation, CrossValidationPrep
 from tasks.coffea import CoffeaTask
+import matplotlib.pyplot as plt
 
 import utils.pytorch_base as util
 
@@ -51,7 +52,7 @@ class PytorchMulticlass(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
         # put hyperparameters in path to make an easy optimization search
         return (
             super(PytorchMulticlass, self).store_parts()
-            + (self.channel,)
+            + (self.category,)
             # + (self.n_layers,)
             + (self.n_nodes,)
             + (self.dropout,)
@@ -98,7 +99,7 @@ class PytorchMulticlass(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
 
         # define dimensions, working with aux template for processes
         n_variables = len(self.config_inst.variables)
-        n_processes = len(self.config_inst.get_aux("DNN_process_template")["N" + self.channel].keys())
+        n_processes = len(self.config_inst.get_aux("DNN_process_template")[self.category].keys())
 
         # load the prepared data and labels
         X_train = self.input()["X_train"].load()
@@ -251,7 +252,7 @@ class PytorchMulticlass(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
 
         # print result
         console = Console()
-        console.print("\n[u][bold magenta]Test accuracy on channel {}:[/bold magenta][/u]".format(self.channel))
+        console.print("\n[u][bold magenta]Test accuracy on channel {}:[/bold magenta][/u]".format(self.category))
         console.print(test_acc.item(), "\n")
         if self.debug:
             from IPython import embed
@@ -298,7 +299,7 @@ class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):  # , Coffea
         # put hyperparameters in path to make an easy optimization search
         return (
             super(PytorchCrossVal, self).store_parts()
-            + (self.channel,)
+            + (self.category,)
             # + (self.n_layers,)
             + (self.n_nodes,)
             + (self.dropout,)
@@ -327,7 +328,7 @@ class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):  # , Coffea
             # return dict(enumerate([a if a>1.0 else 1.0 for a in weight_array]))
             return dict(enumerate(weight_array))
         """
-        n_processes = len(self.config_inst.get_aux("DNN_process_template")["N" + self.channel].keys())
+        n_processes = len(self.config_inst.get_aux("DNN_process_template")[self.category].keys())
         total_weight = np.sum(y_weight)
         class_weights = {}
         for i in range(n_processes):
@@ -348,7 +349,7 @@ class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):  # , Coffea
     def run(self):
         # define dimensions, working with aux template for processes
         n_variables = len(self.config_inst.variables)
-        n_processes = len(self.config_inst.get_aux("DNN_process_template")["N" + self.channel].keys())
+        n_processes = len(self.config_inst.get_aux("DNN_process_template")[self.category].keys())
 
         # definition for the normalization layer
         means, stds = (
@@ -403,9 +404,9 @@ class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):  # , Coffea
         )
 
         early_stop_callback = pl.callbacks.early_stopping.EarlyStopping(
-            monitor="val_acc",
+            monitor="val_loss",
             min_delta=0.00,
-            patience=5,
+            patience=10,
             verbose=False,
             mode="max",
             strict=False,
@@ -446,15 +447,42 @@ class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):  # , Coffea
         torch.save(model, self.output()["fold_" + str(i)]["model"].path)
         self.output()["fold_" + str(i)]["performance"].dump(performance)
 
+        # plot loss comp
+        fig = plt.figure()
+        plt.plot(np.arange(0, len(model.loss_per_node["MC"]), 1), torch.tensor(model.loss_per_node["MC"]).numpy(), label="bkg")
+        plt.plot(np.arange(0, len(model.loss_per_node["T5"]), 1), torch.tensor(model.loss_per_node["T5"]).numpy(), label="T5")
+        plt.xlabel("epochs")
+        plt.ylabel("loss")
+        plt.legend()
+        plt.savefig(self.output()["fold_" + str(i)]["model"].parent.path + "/losses_fold{}.png".format(str(i)))
 
-class PredictDNNScores(DNNTask):  # Requiring MergeArrays from a DNNTask leads to JSON errors
-    # should be
-    kfold = IntParameter(default=2)
+        # plot loss comp
+        fig = plt.figure()
+        plt.plot(np.arange(0, len(model.loss_per_node["MC_weight"]), 1), torch.tensor(model.loss_per_node["MC_weight"]).numpy(), label="bkg")
+        plt.plot(np.arange(0, len(model.loss_per_node["T5_weight"]), 1), torch.tensor(model.loss_per_node["T5_weight"]).numpy(), label="T5")
+        plt.xlabel("epochs")
+        plt.ylabel("loss_weight")
+        plt.legend()
+        plt.savefig(self.output()["fold_" + str(i)]["model"].parent.path + "/losses_fold{}_weight.png".format(str(i)))
+
+        # signal_batch_fraction
+        fig = plt.figure()
+        plt.hist(torch.tensor(model.signal_batch_fraction).numpy(), label="Signal per batch", bins=np.arange(0.25, 0.75, 0.01))
+        plt.xlabel("Fraction")
+        plt.ylabel("a.u.")
+        plt.legend()
+        plt.savefig(self.output()["fold_" + str(i)]["model"].parent.path + "/signal_fraction{}.png".format(str(i)))
+
+
+class PredictDNNScores(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
+    # needs RAM or it fails
+    RAM = 5000
+    hours = 1
 
     def requires(self):
         out = {
             "samples": CrossValidationPrep.req(self, kfold=self.kfold),
-            "models": PytorchCrossVal.req(self, kfold=self.kfold, workflow="local"),
+            "models": PytorchCrossVal.req(self, kfold=self.kfold),
             # "data": ArrayNormalisation.req(self),
         }
 
@@ -467,7 +495,7 @@ class PredictDNNScores(DNNTask):  # Requiring MergeArrays from a DNNTask leads t
         # put hyperparameters in path to make an easy optimization search
         return (
             super(PredictDNNScores, self).store_parts()
-            + (self.channel,)
+            + (self.category,)
             # + (self.n_layers,)
             + (self.n_nodes,)
             + (self.dropout,)
@@ -476,7 +504,7 @@ class PredictDNNScores(DNNTask):  # Requiring MergeArrays from a DNNTask leads t
         )
 
     def run(self):
-        models = self.input()["models"]["collection"].targets[0]
+        models = self.input()["models"]  # ["collection"].targets[0]
         samples = self.input()["samples"]
         scores, labels, weights = [], [], []
         data_scores = {}
@@ -542,7 +570,7 @@ class CalcNormFactors(DNNTask):  # Requiring MergeArrays from a DNNTask leads to
     def store_parts(self):
         return (
             super(CalcNormFactors, self).store_parts()
-            + (self.channel,)
+            + (self.category,)
             # + (self.n_layers,)
             + (self.n_nodes,)
             + (self.dropout,)
