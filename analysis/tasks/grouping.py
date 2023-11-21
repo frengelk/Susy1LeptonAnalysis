@@ -246,3 +246,77 @@ class YieldsFromArrays(CoffeaTask):
 
         print("Remaining events:", np.sum(mask), "\n")
         self.output().dump(yields)
+
+
+class MergeShiftArrays(CoffeaTask):
+    channel = luigi.ListParameter(default=["Muon", "Electron"])
+    shifts = luigi.ListParameter(default=["PreFireWeightUp"])
+
+    def requires(self):
+        inp = {
+            shift
+            + "_"
+            + sel: CoffeaProcessor.req(
+                self,
+                lepton_selection=sel,
+                datasets_to_process=self.datasets_to_process,
+                # workflow="local",
+                shift=shift,
+            )
+            for sel in self.channel
+            for shift in self.shifts  # ("nominal",)+
+        }
+        return inp
+
+    def output(self):
+        out = {cat + "_" + dat + "_" + shift: {"array": self.local_target("merged_{}_{}_{}.npy".format(cat, dat, shift)), "weights": self.local_target("weights_{}_{}_{}.npy".format(cat, dat, shift)), "DNNId": self.local_target("DNNId_{}_{}_{}.npy".format(cat, dat, shift))} for cat in self.config_inst.categories.names() for dat in self.datasets_to_process for shift in self.shifts}
+        return out
+
+    @law.decorator.timeit(publish_message=True)
+    @law.decorator.safe_output
+    def run(self):
+        # np_0b = self.input()["No_cuts"].load()
+        inp = self.input()
+
+        # construct an inverse map to corrently assign coffea outputs to respective datasets
+        procs = self.get_proc_list(self.datasets_to_process)
+        _, _, job_number_dict, proc_dict = self.load_job_dict()
+        inverse_np_dict = {}
+        for p in procs:
+            for ind, file in proc_dict.items():
+                if p == file:  # .split("/")[0]:
+                    if p not in inverse_np_dict.keys():
+                        inverse_np_dict[p] = [ind]
+                    else:
+                        inverse_np_dict[p] += [ind]
+
+        for dat in tqdm(self.datasets_to_process):
+            # check if job either in root process or leafes
+            proc_list = self.get_proc_list([dat])
+            # if dat == "TTbar":
+            # proc_list = [p for p in proc_list if "TTTo" in p]
+            for cat in self.config_inst.categories.names():
+                weights_list = []
+                DNNId_list = []
+                cat_list = []
+                for shift in self.shifts:  # ("nominal",)+
+                    # merging different lepton channels together according to self.channel
+                    for lep in self.channel:
+                        np_dict = self.input()[shift + "_" + lep]["collection"].targets[0]
+                        # looping over all keys each time is rather slow
+                        # but constructing keys yourself is tricky since there can be multiple jobs with different numbers
+                        # so now I loop over possible keys for each dataset and append the correct arrays
+                        for p in proc_list:
+                            for ind in inverse_np_dict[p]:
+                                key = cat + "_" + p + "_" + str(ind)
+                                # get weights as well for each process
+                                weights_list.append(np_dict[key]["weights"].load())
+                                cat_list.append(np_dict[key]["array"].load())
+                                DNNId_list.append(np_dict[key]["DNNId"].load())
+
+                    full_arr = np.concatenate(cat_list)  # , dtype=np.float16
+                    self.output()[cat + "_" + dat + "_" + shift]["array"].dump(full_arr)
+                    weights_arr = np.concatenate(weights_list)
+                    self.output()[cat + "_" + dat + "_" + shift]["weights"].dump(weights_arr)
+                    DNNId_arr = np.concatenate(DNNId_list)
+                    self.output()[cat + "_" + dat + "_" + shift]["DNNId"].dump(DNNId_arr)

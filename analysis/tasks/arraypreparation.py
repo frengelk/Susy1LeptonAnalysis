@@ -189,11 +189,10 @@ class CrossValidationPrep(CoffeaTask):
                 DNNId_list = []
                 print("node", key)
                 for subproc in self.config_inst.get_aux("DNN_process_template")[cat][key]:
-                    print("filling", subproc, self.input()[cat + "_" + subproc]["array"])
                     proc_list.append(self.input()[cat + "_" + subproc]["array"].load())
                     weight_list.append(self.input()[cat + "_" + subproc]["weights"].load())
                     DNNId_list.append(self.input()[cat + "_" + subproc]["DNNId"].load())
-                    print("len, weightsum", len(self.input()[cat + "_" + subproc]["array"].load()), np.sum(self.input()[cat + "_" + subproc]["weights"].load()))
+                    print(subproc, "len, weightsum", len(self.input()[cat + "_" + subproc]["array"].load()), np.sum(self.input()[cat + "_" + subproc]["weights"].load()))
 
                 # print(proc_list)
                 proc_dict.update({key: np.concatenate(proc_list)})
