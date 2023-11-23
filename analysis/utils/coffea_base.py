@@ -239,10 +239,11 @@ class BaseSelection:
                 mGlu_cut = events.mGluino == proc.aux["masspoint"][0]
                 mNeu_cut = events.mNeutralino == proc.aux["masspoint"][1]
             else:
+                # make sure only masses with defined xsec are in sample
                 mGlu_cut = events.mGluino % 5 == 0
                 mNeu_cut = events.mNeutralino % 5 == 0
-            iso_cut = iso_cut & (mGlu_cut) & (mNeu_cut)
-            # from IPython import embed; embed()
+            # apply cut here as well to check for T5
+            iso_cut = iso_cut & (mGlu_cut) & (mNeu_cut) & (events.isT5qqqqWW)
 
         # require correct lepton IDs, applay cut depending on tree name
         # ElectronIdCut = ak.fill_none(ak.firsts(events.ElectronTightId[:, 0:1]), False)
