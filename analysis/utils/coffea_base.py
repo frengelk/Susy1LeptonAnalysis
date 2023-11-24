@@ -106,7 +106,7 @@ class BaseSelection:
         jetPhi_2 = ak.fill_none(ak.firsts(events.JetPhi[:, 1:2]), value=-999)
         nJets = events.nJet
         LT = events.LT
-        HT = events.HT
+        HT = events.HT # FIXME calculate per hand
         metPt = events.MetPt
         metPhi = events.MetPhi
         WBosonMt = events.WBosonMt
@@ -256,7 +256,7 @@ class BaseSelection:
         ghost_muon_filter = events.MetPt / events.CaloMET_pt <= 5
         common = ["baselineSelection", "doubleCounting_XOR", "HLT_Or"]  # , "{}IdCut".format(events.metadata["treename"])]
         # data cut for control plots
-        data_cut = (events.LT > 250) & (events.HT > 500) & (ak.num(goodJets) >= 3)
+        data_cut = (events.LT > 250) & (events.HT > 500) & (ak.sum(goodJets, , axis=-1) >= 3)
         # skim_cut = (events.LT > 150) & (events.HT > 350)
         # triggers = [
         # "HLT_Ele115_CaloIdVT_GsfTrkIdT",
