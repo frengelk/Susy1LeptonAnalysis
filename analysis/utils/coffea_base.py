@@ -256,7 +256,7 @@ class BaseSelection:
         ghost_muon_filter = events.MetPt / events.CaloMET_pt <= 5
         common = ["baselineSelection", "doubleCounting_XOR", "HLT_Or"]  # , "{}IdCut".format(events.metadata["treename"])]
         # data cut for control plots
-        data_cut = (events.LT > 250) & (events.HT > 500) & (ak.sum(goodJets, , axis=-1) >= 3)
+        data_cut = (events.LT > 250) & (events.HT > 500) & (ak.sum(goodJets, axis=-1) >= 3)
         # skim_cut = (events.LT > 150) & (events.HT > 350)
         # triggers = [
         # "HLT_Ele115_CaloIdVT_GsfTrkIdT",
