@@ -106,7 +106,8 @@ class BaseSelection:
         jetPhi_2 = ak.fill_none(ak.firsts(events.JetPhi[:, 1:2]), value=-999)
         nJets = events.nJet
         LT = events.LT
-        HT = events.HT # FIXME calculate per hand
+        # calculate per hand since we saw precision errors in C++ skimming
+        # HT_old = events.HT 
         metPt = events.MetPt
         metPhi = events.MetPhi
         WBosonMt = events.WBosonMt
@@ -195,6 +196,8 @@ class BaseSelection:
         locals().update(self.get_muon_variables(events))
         sortedJets = ak.mask(events.JetPt, (events.nJet >= 3))
         goodJets = (events.JetPt > 30) & (abs(events.JetEta) < 2.4)
+        HT = ak.sum(events.JetPt[goodJets], axis=-1)
+
         # iso_track = ((events.IsoTrackPt > 10) & (((events.IsoTrackMt2 < 60) & events.IsoTrackIsHadronicDecay) | ((events.IsoTrackMt2 < 80) & ~(events.IsoTrackIsHadronicDecay))))
         # iso_track_cut = ak.sum(iso_track, axis=-1) == 0
 
