@@ -82,17 +82,21 @@ class ArrayNormalisation(CoffeaTask):
         weight_dict = {}
 
         # loop through datasets and sort according to aux template
-
+        # only N0b for now
         for cat in self.config_inst.categories.names()[:1]:
-            # fill MC classes
-            proc_list = []
-            weight_list = []
             for i, key in enumerate(self.config_inst.get_aux("DNN_process_template")[cat].keys()):
+                # fill MC classes
+                proc_list = []
+                weight_list = []
                 for subproc in self.config_inst.get_aux("DNN_process_template")[cat][key]:
                     proc_list.append(self.input()[cat + "_" + subproc]["array"].load())
                     weight_list.append(self.input()[cat + "_" + subproc]["weights"].load())
-                for p in proc_list:
-                    print(key, np.min(p[:, 11]))
+                    print("\n", subproc, np.max(self.input()[cat + "_" + subproc]["array"].load()))
+                    argmax = np.argmax(self.input()[cat + "_" + subproc]["array"].load(), axis=0)
+                    arr = self.input()[cat + "_" + subproc]["array"].load()
+                    var_names = self.config_inst.variables.names()
+                    # for j in range(len(argmax)):
+                    #     print(var_names[j] , arr[argmax[j]][j])#, arr[argmax[i]])
                 proc_dict.update({key: np.concatenate(proc_list)})
                 weight_dict.update({key + "_weights": np.concatenate(weight_list)})
 
@@ -100,6 +104,7 @@ class ArrayNormalisation(CoffeaTask):
                 output_nodes = len(self.config_inst.get_aux("DNN_process_template")[cat].keys())
                 labels = np.zeros((len(np.concatenate(proc_list)), output_nodes))
                 labels[:, i] = 1
+                print(i, key)
                 one_hot_labels.append(labels)
             # fill data
             for dat in self.datasets_to_process:
@@ -124,6 +129,8 @@ class ArrayNormalisation(CoffeaTask):
         means_stds = np.vstack((means, stds))
         # save all arrays away, using the fact that keys have the variable name
         # Not the best way to do it, but very short
+        print("\nmeans", means)
+        print("\nstds", stds)
         for key in self.output().keys():
             self.output()[key].dump(eval(key))
 
@@ -202,6 +209,7 @@ class CrossValidationPrep(CoffeaTask):
                 output_nodes = len(self.config_inst.get_aux("DNN_process_template")[cat].keys())
                 labels = np.zeros((len(np.concatenate(proc_list)), output_nodes))
                 labels[:, i] = 1
+                print(key, i)
                 one_hot_labels.append(labels)
             for dat in self.config_inst.aux["data"]:
                 data_list.append(self.input()[cat + "_" + dat]["array"].load())
