@@ -21,7 +21,7 @@ from tasks.coffea import CoffeaProcessor, CoffeaTask
 from tasks.makefiles import CollectInputData, CalcBTagSF
 from tasks.grouping import GroupCoffea, MergeArrays  # , SumGenWeights
 from tasks.arraypreparation import ArrayNormalisation, CrossValidationPrep
-from tasks.multiclass import PytorchMulticlass, PredictDNNScores, PytorchCrossVal
+from tasks.multiclass import PytorchMulticlass, PredictDNNScores, PytorchCrossVal, CalcNormFactors
 from tasks.base import HTCondorWorkflow, DNNTask
 from tasks.inference import ConstructInferenceBins
 
@@ -303,9 +303,9 @@ class ArrayPlotting(CoffeaTask):  # , HTCondorWorkflow, law.LocalWorkflow):
                         plt.savefig(self.output()[outputKey]["nominal"].path, bbox_inches="tight")
 
                         ax.set_yscale("log")
-                        ax.set_ylim(2e-5, 2e9)  # FIXME
+                        ax.set_ylim(2e-2, 2e11)  # FIXME
                         # ax.set_yticks(np.arange(10))
-                        ax.set_yticks([10 ** (i - 4) for i in range(14)])
+                        ax.set_yticks([10 ** (i - 1) for i in range(12)])
                         # ax.get_yaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
                         plt.savefig(self.output()[outputKey]["log"].path, bbox_inches="tight")
                     plt.gcf().clear()
@@ -723,8 +723,8 @@ class DNNEvaluationPlotting(DNNTask):
         # from IPython import embed;embed()
 
         n_variables = len(self.config_inst.variables)
-        n_processes = len(self.config_inst.get_aux("DNN_process_template")["N" + self.channel].keys())
-        all_processes = list(self.config_inst.get_aux("DNN_process_template")["N" + self.channel].keys())
+        n_processes = len(self.config_inst.get_aux("DNN_process_template")[self.category].keys())
+        all_processes = list(self.config_inst.get_aux("DNN_process_template")[self.category].keys())
 
         path = self.input()["model"]["collection"].targets[0]["model"].path
 
@@ -1031,11 +1031,13 @@ class DNNScorePlotting(DNNTask):
     unweighted = luigi.BoolParameter(default=False)
 
     def requires(self):
-        return PredictDNNScores.req(self)
+        return {"scores": PredictDNNScores.req(self), "norm": CalcNormFactors.req(self)}
         # return ConstructInferenceBins.req(self)
 
     def output(self):
         out = {p + "_" + end: self.local_target(p + "." + end) for p in self.config_inst.get_aux("DNN_process_template")[self.category].keys() for end in ["png", "pdf"]}
+        new_out = {p + "_argmax_" + end: self.local_target(p + "argmax." + end) for p in self.config_inst.get_aux("DNN_process_template")[self.category].keys() for end in ["png", "pdf"]}
+        out.update(new_out)
         return out
 
     def store_parts(self):
@@ -1058,20 +1060,12 @@ class DNNScorePlotting(DNNTask):
     @law.decorator.timeit(publish_message=True)
     @law.decorator.safe_output
     def run(self):
-        # inp = self.input().load()
-        # for i, bin_name in enumerate(np.unique(inp['process_names'])):
-        #     fig = plt.figure(figsize=(12, 9))
-        #     hep.style.use("CMS")
-        #     hep.cms.text("Private work (CMS simulation)", loc=0)
-        #     hep.cms.lumitext(text=str(np.round(self.config_inst.get_aux("lumi") / 1000, 2)) + r"$fb^{-1}$")
-        #     from IPython import embed; embed()
-        #     for j, proc in enumerate(inp['process_names']):
-        #         data_count =
-
-        inp = self.input()["collection"].targets[0]
+        inp = self.input()["scores"]["collection"].targets[0]
         MC_scores = inp["scores"].load()
         MC_labels = inp["labels"].load()
         weights = inp["weights"].load()
+        # alpha * tt + beta * Wjets
+        norm = self.input()["norm"].load()
         if self.unweighted:
             weights = np.ones_like(weights)
         data_scores = inp["data"].load()
@@ -1143,8 +1137,8 @@ class DNNScorePlotting(DNNTask):
                 plt.ylim(5e-2, 2e1)
 
             self.output()[key + "_png"].parent.touch()
-            plt.savefig(self.output()[key + "_png"].path, bbox_inches="tight")
-            plt.savefig(self.output()[key + "_pdf"].path, bbox_inches="tight")
+            plt.savefig(self.output()[key + "_argmax_png"].path, bbox_inches="tight")
+            plt.savefig(self.output()[key + "_argmax_pdf"].path, bbox_inches="tight")
             plt.gcf().clear()
 
             # hist all scores in column
@@ -1158,6 +1152,94 @@ class DNNScorePlotting(DNNTask):
             plt.ylabel("Counts", fontsize=24)
             plt.xlim = (0, 1)
             plt.yscale("log")
-            plt.legend(ncol=1, loc="upper left", bbox_to_anchor=(0, 1), borderaxespad=0, prop={"size": 18})
             plt.savefig(self.output()[key + "_png"].path.replace(".png", "all_scores.png"), bbox_inches="tight")
+            plt.gcf().clear()
+
+        ################# plots without argmax ###############
+        for i, key in enumerate(self.config_inst.get_aux("DNN_process_template")[self.category].keys()):
+            if key == self.config_inst.get_aux("signal_process").replace("V", "W"):
+                signal_node = False  # FIXME True
+            else:
+                signal_node = False
+            if self.unblinded:
+                fig, (ax, rax) = plt.subplots(2, 1, figsize=(12, 10), sharex=True, gridspec_kw={"height_ratios": [3, 1], "hspace": 0})
+            else:
+                fig, ax = plt.subplots(figsize=(12, 10))
+            hep.style.use("CMS")
+            hep.cms.text("Private work (CMS simulation)", loc=0, ax=ax)
+            hep.cms.lumitext(text=str(np.round(self.config_inst.get_aux("lumi") / 1000, 2)) + r"$fb^{-1}$", ax=ax)
+            MC_hists = {}
+            signal_dict = {}
+            for proc in scores_dict.keys():
+                if "weight" in proc:
+                    continue
+
+                if proc != "data" and not self.config_inst.get_aux("signal_process").replace("V", "W") in proc:
+                    # constructing hist and filling it with scores
+                    if not signal_node:
+                        boost_hist = bh.Histogram(self.construct_axis((100, 0, 1)))
+                    if signal_node:
+                        print("hu?")
+                        boost_hist = bh.Histogram(self.construct_axis(self.config_inst.get_aux("signal_binning"), isRegular=False))
+                    # assign norm factors
+                    factor = 1
+                    if proc == "tt+jets":
+                        factor = norm["alpha"]
+                    if proc == "W+jets":
+                        factor = norm["beta"]
+                    boost_hist.fill(scores_dict[proc][:, i], weight=factor * scores_dict[proc + "_weight"])
+                    # assign legend labels and hists at same time using dict
+                    MC_hists[proc + " *{}".format(np.round(factor, 3))] = boost_hist
+
+                elif proc == "data" and self.unblinded:
+                    # doing data seperate to print on top
+                    if not signal_node:
+                        data_boost_hist = bh.Histogram(self.construct_axis((100, 0, 1)))
+                    if signal_node:
+                        data_boost_hist = bh.Histogram(self.construct_axis(self.config_inst.get_aux("signal_binning"), isRegular=False))
+                    data_boost_hist.fill(scores_dict[proc][:, i])
+                elif self.config_inst.get_aux("signal_process").replace("V", "W") in proc:
+                    #  signal as line
+                    if not signal_node:
+                        signal_hist = bh.Histogram(self.construct_axis((100, 0, 1)))
+                    if signal_node:
+                        signal_hist = bh.Histogram(self.construct_axis(self.config_inst.get_aux("signal_binning"), isRegular=False))
+                    signal_hist.fill(scores_dict[proc][:, i], weight=scores_dict[proc + "_weight"])
+
+            hep.histplot(list(MC_hists.values()), histtype="fill", stack=True, label=list(MC_hists.keys()), color=["blue", "orange"], flow="none", density=self.density, ax=ax)
+            if self.unblinded:
+                hep.histplot(data_boost_hist, histtype="errorbar", label="Data", color="black", flow="none", density=self.density, ax=ax)
+            hep.histplot(signal_hist, histtype="step", label=self.config_inst.get_aux("signal_process").replace("V", "W"), color="red", flow="none", density=self.density, ax=ax)
+
+            ax.set_ylabel("Counts", fontsize=24)
+            ax.set_xlim = (0, 1)
+            ax.legend(ncol=1, loc="upper left", bbox_to_anchor=(0, 1), borderaxespad=0, prop={"size": 18})
+
+            if self.unblinded:
+                MC = sum(list(MC_hists.values()))
+                data = data_boost_hist
+                ratio = data / MC
+                stat_unc = np.sqrt(ratio * (ratio / MC + ratio / data))
+                rax.axhline(1.0, color="black", linestyle="--")
+                hep.histplot(ratio, color="black", histtype="errorbar", stack=False, yerr=stat_unc, ax=rax)
+                rax.set_xlabel("DNN Scores in node " + key, fontsize=24)
+                rax.set_xlim(0, 1)
+                rax.set_ylabel("Data/MC", fontsize=24)
+                rax.set_ylim(0.5, 1.5)
+                rax.tick_params(axis="both", which="major", labelsize=18)
+            else:
+                ax.set_xlabel("DNN Scores in node " + key, fontsize=24)
+
+            self.output()[key + "_png"].parent.touch()
+            plt.savefig(self.output()[key + "_png"].path, bbox_inches="tight")
+            plt.savefig(self.output()[key + "_pdf"].path, bbox_inches="tight")
+
+            ax.set_yscale("log")
+            if self.density:
+                ax.set_ylim(5e-2, 2e1)
+            else:
+                ax.set_ylim(5e-2, 2e6)
+            plt.savefig(self.output()[key + "_png"].path.replace(".png", "_log.png"), bbox_inches="tight")
+            plt.savefig(self.output()[key + "_pdf"].path.replace(".pdf", "_log.pdf"), bbox_inches="tight")
+
             plt.gcf().clear()

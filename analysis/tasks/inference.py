@@ -53,20 +53,19 @@ class ConstructInferenceBins(DNNTask):
 
         self.output().parent.touch()
 
-        # producing rates for node 0:
+        # opening all needed inputs
         proc_dict = {}
-        node = 0
-        data_scores = self.input()["data_predicted"]["data"].load()
-        data_scores = self.input()["data_predicted"]["data"].load()
-        MC_scores = self.input()["data_predicted"]["scores"].load()
-        labels = self.input()["data_predicted"]["labels"].load()
-        weights = self.input()["data_predicted"]["weights"].load()
+        data_scores = self.input()["data_predicted"]["collection"].targets[0]["data"].load()
+        MC_scores = self.input()["data_predicted"]["collection"].targets[0]["scores"].load()
+        labels = self.input()["data_predicted"]["collection"].targets[0]["labels"].load()
+        weights = self.input()["data_predicted"]["collection"].targets[0]["weights"].load()
 
         binning = self.config_inst.get_aux("signal_binning")
         # writing data separatly
         data_bins, data_obs = [], []
         for j, bin in enumerate(self.config_inst.get_aux("DNN_process_template")[self.category].keys()):
             if bin == self.config_inst.get_aux("signal_process").replace("V", "W"):
+                data_mask = np.argmax(data_scores, axis=1) == j
                 data_in_node = data_scores[data_mask][:, j]
                 hist = np.histogram(data_in_node, bins=binning)
                 for k, edge in enumerate(binning[:-1]):
@@ -77,7 +76,7 @@ class ConstructInferenceBins(DNNTask):
                 data_bins.append("DNN_Score_Node_" + bin)
                 data_mask = np.argmax(data_scores, axis=1) == j
                 data_obs.append(str(np.sum(data_mask)))
-
+        print("observed data", data_obs)
         # writing MC for every bin
         # double loop over node names since we have the labels and the predicted region
         bin_names, process_names, process_numbers, rates = [], [], [], []
@@ -88,12 +87,15 @@ class ConstructInferenceBins(DNNTask):
                     find_proc = labels[:, i] == 1
                     MC_mask = np.argmax(MC_scores[find_proc], axis=1) == node
                     scores_in_node = MC_scores[find_proc][MC_mask][:, node]
-                    hist = np.histogram(scores_in_node, bins=binning)
                     for j, edge in enumerate(binning[:-1]):
+                        # we need to find weights in each bin
+                        events_in_bin = (scores_in_node > binning[j]) & (scores_in_node < binning[j + 1])
+                        weights_in_bin = weights[find_proc][MC_mask][events_in_bin]
                         bin_names.append("DNN_Score_Node_" + key + "_" + str(edge))
                         process_names.append(proc)
                         process_numbers.append(str(len(self.config_inst.get_aux("DNN_process_template")[self.category].keys()) - (i + 1)))
-                        rates.append(str(hist[0][j]))
+                        rates.append(str(np.sum(weights_in_bin)))
+
             else:
                 for i, proc in enumerate(self.config_inst.get_aux("DNN_process_template")[self.category].keys()):
                     find_proc = labels[:, i] == 1
@@ -154,7 +156,7 @@ class GetShiftedYields(CoffeaTask, DNNTask):
         for shift in self.shifts:
             print(shift)
             shifted_yields = {}
-            for _, key in enumerate(nodes):
+            for node, key in enumerate(nodes):
                 scores, labels, weights = [], [], []
                 real_procs = self.config_inst.get_aux("DNN_process_template")[self.category][key]
                 for pr in real_procs:
@@ -165,14 +167,15 @@ class GetShiftedYields(CoffeaTask, DNNTask):
                     shift_arr = shift_dict["array"].load()
                     shift_weight = shift_dict["weights"].load()
 
-                    for i in range(self.kfold):
+                    for fold, DNNId in enumerate(self.config_inst.get_aux("DNNId")):
                         # to get respective switched id per fold
-                        j = 1 - 2 * i
+                        j = -1 * DNNId
                         # each model should now predict labels for the validation data
-                        model = torch.load(models["fold_" + str(i)]["model"].path)
+                        model = torch.load(models["fold_" + str(fold)]["model"].path)
                         X_test = shift_arr[shift_ids == j]
                         # we know the process
-                        y_test = np.array([[1, 0, 0]] * len(X_test))
+                        y_test = np.array([[0, 0, 0]] * len(X_test))
+                        y_test[:, node] = 1
                         weight_test = shift_weight[shift_ids == j]
 
                         pred_dataset = util.ClassifierDatasetWeight(torch.from_numpy(X_test).float(), torch.from_numpy(y_test).float(), torch.from_numpy(weight_test).float())
@@ -188,6 +191,7 @@ class GetShiftedYields(CoffeaTask, DNNTask):
                                 weights.append(weight_pred_batch)
 
                 # merge predictions
+
                 scores, labels, weights = np.concatenate(scores), np.concatenate(labels), np.concatenate(weights)
 
                 # in_node process shift yield
@@ -232,7 +236,7 @@ class DatacardWriting(DNNTask):
     @law.decorator.safe_output
     def run(self):
         print("if problem persists, replace + by _")
-        proc_dict = self.config_inst.get_aux("DNN_process_template")["N" + self.channel]
+        proc_dict = self.config_inst.get_aux("DNN_process_template")[self.category]
         all_processes = list(proc_dict.keys())
         n_processes = len(all_processes)
         inp = self.input().load()
@@ -299,3 +303,6 @@ class DatacardWriting(DNNTask):
             # format name rateParam channel process initial value
             datacard.write("alpha rateParam * {} 1 \n".format(all_processes[0]))
             datacard.write("beta rateParam * {} 1 \n".format(all_processes[1]))
+
+
+# maybe Calcnorm as initial values
