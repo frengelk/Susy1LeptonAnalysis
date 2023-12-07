@@ -45,11 +45,18 @@ def setup_variables(cfg):
     cfg.add_variable(name="WBosonMt", expression="WBosonMt", binning=(nBinsMass, minMass, maxMass), unit="GeV", x_title=r"$m_{t}^{W}$", x_discrete=False)
     cfg.add_variable(name="LT", expression="LT", binning=(nBinsHt, minLt, maxLt), unit="GeV", x_title="LT", x_discrete=False)
     cfg.add_variable(name="HT", expression="HT", binning=(nBinsLt, minHt, maxHt), unit="GeV", x_title="HT", x_discrete=False)
-    cfg.add_variable(name="nJets", expression="nJets", binning=(nJets, minNJets, maxNJets), x_discrete=False)
+    cfg.add_variable(name="nJets", expression="nJets", binning=(nJets, minNJets, maxNJets), x_title="nJets", x_discrete=False)
     # cfg.add_variable(name="nbJets", expression="nbJets", binning=(nJets, minNJets, maxNJets), x_discrete=False)
+    # cfg.add_variable(name="ntFatJets", expression="ntFatJets", binning=(nJets, minNJets, maxLep), x_discrete=False)
+    # deepAK8 tags
     # FIXME, wrong filling, not amount, but real deepAK8 scores getting filled
-    # cfg.add_variable(name="nWFatJets", expression="nWFatJets", binning=(nJets, minNJets, maxNJets), x_discrete=False)
-    # cfg.add_variable(name="ntFatJets", expression="ntFatJets", binning=(nJets, minNJets, maxNJets), x_discrete=False)
+    # cfg.add_variable(name="nDeepAk8TopMediumId", expression="nDeepAk8TopMediumId", binning=(nLep, minLep, maxLep), x_title="nDeepAk8TopMediumId", x_discrete=False)
+    cfg.add_variable(name="nDeepAk8TopLooseId", expression="nDeepAk8TopMediumId", binning=(nLep, minLep, maxLep), x_title="nDeepAk8TopLooseId", x_discrete=False)
+    # cfg.add_variable(name="nDeepAk8TopTightId", expression="nDeepAk8TopMediumId", binning=(nLep, minLep, maxLep), x_title="nDeepAk8TopTightId", x_discrete=False)
+    # cfg.add_variable(name="nDeepAk8WMediumId", expression="nDeepAk8WMediumId", binning=(nLep, minLep, maxLep), x_title="nDeepAk8WMediumId", x_discrete=False)
+    cfg.add_variable(name="nDeepAk8WLooseId", expression="nDeepAk8WMediumId", binning=(nLep, minLep, maxLep), x_title="nDeepAk8WLooseId", x_discrete=False)
+    # cfg.add_variable(name="nDeepAk8WTightId", expression="nDeepAk8WMediumId", binning=(nLep, minLep, maxLep), x_title="nDeepAk8WTightId", x_discrete=False)
+
     # lepton stuff ###############
     """
     cfg.add_variable(name="nMuon", expression="nMuon", binning=(nLep, minLep, maxLep), x_discrete=False)

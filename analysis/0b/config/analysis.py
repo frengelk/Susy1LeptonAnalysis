@@ -51,10 +51,12 @@ for year, cfg in ("2016", config_2016), ("2017", config_2017):
     )
 
     cfg.set_aux("job_dict", os.path.expandvars("$ANALYSIS_BASE/config/datasets_2017.json"))
+    cfg.set_aux("masspoints", os.path.expandvars("$ANALYSIS_BASE/config/masspoints_2017.json"))
     cfg.set_aux("DNN_model", os.path.expandvars("$ANALYSIS_BASE/config/DNN_model.pt"))
 
     cfg.set_aux("data", ["MET", "SingleMuon", "SingleElectron"])
     cfg.set_aux("channels", ["Muon", "Electron"])
+    cfg.set_aux("DNNId", [-1, 1])
 
     cfg.set_aux(
         "DNN_process_template",
@@ -65,11 +67,12 @@ for year, cfg in ("2016", config_2016), ("2017", config_2017):
                 "W+jets": ["WJets", "DY", "rare"],
             },
             "N0b": {
-                "tt+jets": ["SingleTop", "TTbar"],
-                "W+jets": ["WJets", "Rare", "DY"],
-                # "MC" : ["SingleTop", "TTbar", "WJets", "Rare", "DY"],
-                # "T5qqqqWW": ["T5qqqqWW"],
-                "T5qqqqWW": ["T5qqqqWW_1500_1000", "T5qqqqWW_1500_1200", "T5qqqqWW_1600_1100", "T5qqqqWW_1700_1200", "T5qqqqWW_1800_1300", "T5qqqqWW_1900_100", "T5qqqqWW_1900_800", "T5qqqqWW_1900_1000", "T5qqqqWW_2200_100", "T5qqqqWW_2200_800"],
+                "ttjets": ["SingleTop", "TTbar"],
+                # "ttbar": ["TTbar"],
+                "Wjets": ["WJets", "Rare", "DY"],
+                # "BG": ["SingleTop", "TTbar", "WJets", "Rare", "DY"],
+                "T5qqqqWW": ["T5qqqqWW"],
+                # "T5qqqqWW": ["T5qqqqWW_1500_1000", "T5qqqqWW_1500_1200", "T5qqqqWW_1600_1100", "T5qqqqWW_1700_1200", "T5qqqqWW_1800_1300", "T5qqqqWW_1900_100", "T5qqqqWW_1900_800", "T5qqqqWW_1900_1000", "T5qqqqWW_2200_100", "T5qqqqWW_2200_800"],
             },
         },
     )
