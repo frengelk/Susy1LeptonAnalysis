@@ -97,17 +97,15 @@ class BaseSelection:
         ntFatJets = ak.fill_none(ak.firsts(events.FatJetDeepTagTvsQCD), value=-999)
         nWFatJets = ak.fill_none(ak.firsts(events.FatJetDeepTagWvsQCD), value=-999)
         jetMass_1 = ak.fill_none(ak.firsts(events.JetMass[:, 0:1]), value=-999)
-        jetPt_1 = ak.fill_none(ak.firsts(events.JetPt[:, 0:1]), value=-999)
         jetEta_1 = ak.fill_none(ak.firsts(events.JetEta[:, 0:1]), value=-999)
         jetPhi_1 = ak.fill_none(ak.firsts(events.JetPhi[:, 0:1]), value=-999)
         jetMass_2 = ak.fill_none(ak.firsts(events.JetMass[:, 1:2]), value=-999)
-        jetPt_2 = ak.fill_none(ak.firsts(events.JetPt[:, 1:2]), value=-999)
         jetEta_2 = ak.fill_none(ak.firsts(events.JetEta[:, 1:2]), value=-999)
         jetPhi_2 = ak.fill_none(ak.firsts(events.JetPhi[:, 1:2]), value=-999)
         nJets = events.nJet
         LT = events.LT
         # calculate per hand since we saw precision errors in C++ skimming
-        # HT_old = events.HT 
+        # HT_old = events.HT
         metPt = events.MetPt
         metPhi = events.MetPhi
         WBosonMt = events.WBosonMt
@@ -172,6 +170,7 @@ class BaseSelection:
         dataset = events.metadata["dataset"]
         # dataset_obj = self.config.get_dataset(dataset)
         proc = self.config.get_process(dataset)
+        shift = events.metadata["shift"]
 
         summary = self.accumulator.identity()
         size = events.metadata["entrystop"] - events.metadata["entrystart"]
@@ -194,9 +193,17 @@ class BaseSelection:
         #    locals().update(self.get_gen_variable(events))
         locals().update(self.get_electron_variables(events))
         locals().update(self.get_muon_variables(events))
-        sortedJets = ak.mask(events.JetPt, (events.nJet >= 3))
-        goodJets = (events.JetPt > 30) & (abs(events.JetEta) < 2.4)
-        HT = ak.sum(events.JetPt[goodJets], axis=-1)
+        # doing all JetPt calculation here since we need to shift JetPt
+        JetPt = events.JetPt
+        if shift == "TotalUp":
+            JetPt = events.JetPt_TotalUp
+        if shift == "TotalDown":
+            JetPt = events.JetPt_TotalDown
+        goodJets = (JetPt > 30) & (abs(events.JetEta) < 2.4)
+        HT = ak.sum(JetPt[goodJets], axis=-1)
+        print(HT)
+        jetPt_1 = ak.fill_none(ak.firsts(JetPt[:, 0:1]), value=-999)
+        jetPt_2 = ak.fill_none(ak.firsts(JetPt[:, 1:2]), value=-999)
 
         # iso_track = ((events.IsoTrackPt > 10) & (((events.IsoTrackMt2 < 60) & events.IsoTrackIsHadronicDecay) | ((events.IsoTrackMt2 < 80) & ~(events.IsoTrackIsHadronicDecay))))
         # iso_track_cut = ak.sum(iso_track, axis=-1) == 0
@@ -207,7 +214,7 @@ class BaseSelection:
         # baselineSelection = (sortedJets[:, 1] > 80) & (events.LT > 250) & (events.HT > 500) & (ak.num(goodJets) >= 3) & (~events.IsoTrackVeto)
         # subleading_jet = sortedJets[:, 1] > 80
         # from IPython import embed; embed()
-        subleading_jet = ak.fill_none(ak.firsts(events.JetPt[:, 1:2] > 80), False)
+        subleading_jet = ak.fill_none(ak.firsts(JetPt[:, 1:2] > 80), False)
 
         # doing lep selection
         # mu_pt = ak.fill_none(ak.firsts(events.MuonPt[:, 0:1]), -999)
@@ -223,6 +230,14 @@ class BaseSelection:
         leptonPt = events.LeptonPt_1
         leptonIso = ak.fill_none(ak.firsts(events.MuonMiniIso), 0) + ak.fill_none(ak.firsts(events.ElectronMiniIso), 0)
 
+        # check which W/top tags we want to use
+        nDeepAk8TopLooseId = events.nDeepAk8TopLooseId
+        nDeepAk8TopMediumId = events.nDeepAk8TopMediumId
+        nDeepAk8TopTightId = events.nDeepAk8TopTightId
+        nDeepAk8WLooseId = events.nDeepAk8WLooseId
+        nDeepAk8WMediumId = events.nDeepAk8WMediumId
+        nDeepAk8WTightId = events.nDeepAk8WTightId
+
         # hard_lep = ((mu_pt > 25) | (e_pt > 25)) & ((abs(mu_eta) < 2.4) | (abs(e_eta) < 2.4))
         # selected = (mu_id | e_id) & ((events.nGoodMuon == 1) | (events.nGoodElectron == 1))
         # no_veto_lepton = (events.nVetoMuon - events.nGoodMuon == 0) & (events.nVetoElectron - events.nGoodElectron == 0)
@@ -237,14 +252,18 @@ class BaseSelection:
             # plug it on onto iso_cut, so cutflow is consistent
             iso_cut = iso_cut & LHE_HT_cut
 
+        # do all signal masspoint stuff here
         if events.metadata["isSignal"]:
             if proc.has_aux("masspoint"):
                 mGlu_cut = events.mGluino == proc.aux["masspoint"][0]
                 mNeu_cut = events.mNeutralino == proc.aux["masspoint"][1]
-            else:
-                # make sure only masses with defined xsec are in sample
-                mGlu_cut = events.mGluino % 5 == 0
-                mNeu_cut = events.mNeutralino % 5 == 0
+            # else:
+            #     # make sure only masses with defined xsec are in sample
+            #     mGlu_cut = events.mGluino % 5 == 0
+            #     mNeu_cut = events.mNeutralino % 5 == 0
+            if "masspoint" in events.metadata:
+                mGlu_cut = events.mGluino == events.metadata["masspoint"][0]
+                mNeu_cut = events.mNeutralino == events.metadata["masspoint"][1]
             # apply cut here as well to check for T5
             iso_cut = iso_cut & (mGlu_cut) & (mNeu_cut) & (events.isT5qqqqWW)
 
@@ -259,7 +278,7 @@ class BaseSelection:
         ghost_muon_filter = events.MetPt / events.CaloMET_pt <= 5
         common = ["baselineSelection", "doubleCounting_XOR", "HLT_Or"]  # , "{}IdCut".format(events.metadata["treename"])]
         # data cut for control plots
-        data_cut = (events.LT > 250) & (events.HT > 500) & (ak.sum(goodJets, axis=-1) >= 3)
+        # data_cut = (events.LT > 250) & (events.HT > 500) & (ak.sum(goodJets, axis=-1) >= 3)
         # skim_cut = (events.LT > 150) & (events.HT > 350)
         # triggers = [
         # "HLT_Ele115_CaloIdVT_GsfTrkIdT",
@@ -439,6 +458,10 @@ class ArrayExporter(BaseProcessor, BaseSelection):
 
         if self.dtype:
             arrays = {key: array.astype(self.dtype) for key, array in arrays.items()}
+        if np.max(arrays["hl"]) > 1e20:
+            from IPython import embed
+
+            embed()
         output["arrays"] = dict_accumulator({category + "_" + selected_output["dataset"]: dict_accumulator({key: ArrayAccumulator(array[cut, ...]) for key, array in arrays.items()}) for category, cut in categories.items()})
 
         # option to do cutflow and N1 plots on the fly

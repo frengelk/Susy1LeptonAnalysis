@@ -1,8 +1,6 @@
 # coding: utf-8
 
 import json
-import logging
-import os
 import time
 
 import law
@@ -10,16 +8,14 @@ import law.contrib.coffea
 import numpy as np
 import uproot as up
 from coffea import processor, hist
-from coffea.nanoevents import BaseSchema, NanoAODSchema, TreeMakerSchema
-from luigi import BoolParameter, IntParameter, ListParameter, Parameter
+from luigi import BoolParameter, ListParameter, Parameter
 from rich.console import Console
 
 # other modules
 from tasks.base import DatasetTask, HTCondorWorkflow
 from utils.coffea_base import ArrayExporter, ArrayAccumulator
 from utils.signal_regions import signal_regions_0b
-from tasks.makefiles import WriteDatasetPathDict, WriteDatasets, CollectInputData, CalcBTagSF
-from tqdm import tqdm
+from tasks.makefiles import WriteDatasetPathDict, CollectInputData, CalcBTagSF, CollectMasspoints
 from utils.coffea_base import ArrayExporter
 
 
@@ -191,7 +187,7 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
                 # find the calculated btag SFs per file and save path
                 subsub = subset.split("/")[1]
                 btagSF = self.input()["btagSF"][treename + "_" + subsub].path
-
+                # print("\n max value", np.max(file["Electron"]["ElectronPt"].array()))
                 # if empty skip and construct placeholder output
                 if len(file[treename]["Event"].array()) == 0:
                     empty = True
@@ -345,3 +341,93 @@ class CollectCoffeaOutput(CoffeaTask):
             vals += signal_bin_counts[key]
 
         print("Sum over signal region:", vals)
+
+
+class CoffeaPerMasspoint(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
+    def requires(self):
+        out = {
+            # sel: CoffeaProcessor.req(
+            #     self,
+            #     lepton_selection=sel,
+            #     # workflow="local",
+            # )
+            # for sel in ["Electron", "Muon"]
+        }
+
+        out.update({"files": WriteDatasetPathDict.req(self), "weights": CollectInputData.req(self), "masspoints": CollectMasspoints.req(self)})  # , "btagSF": CalcBTagSF.req(self)
+        return out
+
+    # def output(self):
+    def output(self):
+        return self.local_target("event_counts.json")
+
+    def create_branch_map(self):
+        # define job number according to number of files of the dataset that you want to process
+        with open(self.config_inst.get_aux("masspoints")) as f:
+            masspoints = json.load(f)
+        job_number = len(masspoints["masspoints"])
+        # if self.debug:
+        job_number = 1
+        return list(range(job_number))
+
+    @law.decorator.timeit(publish_message=True)
+    @law.decorator.safe_output
+    def run(self):
+        masspoints = self.input()["masspoints"].load()["masspoints"]
+        mp = masspoints[self.branch]
+
+        data_dict = self.input()["files"]["dataset_dict"].load()  # ["SingleMuon"]  # {self.dataset: [self.file]}
+        data_path = self.input()["files"]["dataset_path"].load()
+        sum_gen_weights_dict = self.input()["weights"]["sum_gen_weights"].load()
+        # declare processor
+        processor_inst = ArrayExporter(self, Lepton=self.lepton_selection)
+        # building together the respective strings to use for the coffea call
+        files, job_number, job_number_dict, process_dict = self.load_job_dict()
+        treename = self.lepton_selection
+        out_list = []
+        # we are spawning 800 jobs, one per masspoints, so each job will have to process all files
+        # for i, file in range(job_number_dict.values()):
+        # first file should have same contents as every signal file
+        subset = job_number_dict[0]
+        dataset = process_dict[0]
+        proc = self.config_inst.get_process(dataset)
+        with up.open(data_path + "/" + subset) as file:
+            primaryDataset = file["MetaData"]["primaryDataset"].array()[0]
+            isData = file["MetaData"]["IsData"].array()[0]
+            isFastSim = file["MetaData"]["IsFastSim"].array()[0]
+            isSignal = proc.get_aux("isSignal")
+            # assert all events with the same Xsec in scope with float precision
+            xSec = proc.xsecs[13].nominal
+            lumi = file["MetaData"]["Luminosity"].array()[0]
+            # find the calculated btag SFs per file and save path
+            # subsub = subset.split("/")[1]
+            # btagSF = self.input()["btagSF"][treename + "_" + subsub].path
+
+        tot_path = "/nfs/dust/cms/group/susy-desy/Susy1Lepton/0b/Run2_pp_13TeV_2017/CalcBTagSF/new_muon_2017/Electron_SMS-T5qqqqVV_TuneCP2_13TeV-madgraphMLM-pythia8_7_mergedtotal_signal.npy"
+        all_files, all_btagSF = [], []
+        for filename in job_number_dict.values():
+            all_files.append(data_path + "/" + filename)
+            all_btagSF.append(self.input()["btagSF"][treename + "_" + filename.split("/")[1]].load())
+
+        fileset = {
+            dataset: {
+                "files": all_files,  # file for file in
+                "metadata": {"PD": primaryDataset, "isData": isData, "isFastSim": isFastSim, "isSignal": isSignal, "xSec": xSec, "Luminosity": lumi, "sumGenWeight": sum_gen_weights_dict[dataset], "btagSF": tot_path, "shift": self.shift, "masspoint": mp},
+            }
+        }
+        from IPython import embed
+
+        embed()
+        # call imported processor, magic happens here
+        out = processor.run_uproot_job(
+            fileset,
+            treename=treename,
+            processor_instance=processor_inst,
+            # pre_executor=processor.futures_executor,
+            # pre_args=dict(workers=32),
+            executor=processor.iterative_executor,
+            executor_args=dict(status=False),  # desc="", unit="Trolling"), # , desc="Trolling"
+            # metadata_cache = 'MetaData',
+            # schema=BaseSchema,),
+            chunksize=10000,
+        )

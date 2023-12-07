@@ -19,6 +19,33 @@ class BaseMakeFilesTask(AnalysisTask):
     directory_path = Parameter(default="/nfs/dust/cms/user/frengelk/Code/cmssw/CMSSW_12_1_0/Batch/2023_01_18/2017/Data/root")
 
 
+class CheckFiles(BaseMakeFilesTask):
+    def output(self):
+        return self.local_target("datasets_{}.json".format(self.year))
+
+    def run(self):
+        lep = ["Muon", "Electron"]
+        # lep = ["Events"]
+        var = ["HT", "LT", "LeptonPt_1", "MuonPt", "ElectronPt"]
+        for root, dirs, files in os.walk(self.directory_path):
+            for directory in dirs:
+                # print(directory)
+                for r, d, f in os.walk(self.directory_path + "/" + directory):
+                    for filename in f:
+                        print("\n max values in file:", filename)
+                        with up.open(self.directory_path + "/" + directory + "/" + filename) as file:
+                            for l in lep:
+                                for v in var:
+                                    max_v = np.min(file[l][v].array())
+                                    # print(filename, l, v, max_v)
+                                    # mask = file[l]["nJet"].array() > 6
+                                    # diff = file[l]["HT"].array() - file[l]["JetPt_1"].array() - file[l]["JetPt_2"].array()
+                                    # argmin = np.argmin(diff)
+                                    # print(filename, l, "HT-jetpt1-jetpt2", diff[argmin], "with njet", file[l]["nJet"].array()[argmin])
+                                    if max_v > 1e4:
+                                        print(v, "max in", l, max_v)
+
+
 class WriteDatasets(BaseMakeFilesTask):
     def output(self):
         return self.local_target("datasets_{}.json".format(self.year))
@@ -291,7 +318,7 @@ class CollectInputData(BaseMakeFilesTask):
 class CalcBTagSF(BaseMakeFilesTask, HTCondorWorkflow, law.LocalWorkflow):
     # require more ressources
     RAM = 2000
-    hours = 3
+    hours = 5
 
     def requires(self):
         return WriteDatasets.req(self)
@@ -299,6 +326,8 @@ class CalcBTagSF(BaseMakeFilesTask, HTCondorWorkflow, law.LocalWorkflow):
     def create_branch_map(self):
         # define job number according to number of files of the dataset that you want to process
         data_list_keys, _ = self.get_datalist_items()
+        if self.debug:
+            data_list_keys = data_list_keys[0]
         return list(range(len(data_list_keys)))
 
     def output(self):
@@ -350,9 +379,7 @@ class CalcBTagSF(BaseMakeFilesTask, HTCondorWorkflow, law.LocalWorkflow):
 
     @law.decorator.safe_output
     def run(self):
-        print("start")
         data_list_keys, data_list_values = self.get_datalist_items()
-        # from IPython import embed; embed()
         sum_gen_weights_dict = {}
         # cutflow_dict = {
         #     "Muon": {},
@@ -415,9 +442,51 @@ class CalcBTagSF(BaseMakeFilesTask, HTCondorWorkflow, law.LocalWorkflow):
                     # sum_gen_weights_dict[path.split("/")[1]] = np.array(weights)
                     self.output()[lep + "_" + path.split("/")[1]].parent.touch()
                     self.output()[lep + "_" + path.split("/")[1]].dump(np.array(weights))
-        # TODO
-        # sum efficiencies per process (global) (true and nBTag)
-        # calculate global efficiency
-        # construct scale factors on global scale
-        # In [9]: np.prod(np.array([]))
-        # Out[9]: 1.0
+                    # if key == 'SMS-T5qqqqVV_TuneCP2_13TeV-madgraphMLM-pythia8':
+                    #     total_arr.append(weights)
+
+        # if key == 'SMS-T5qqqqVV_TuneCP2_13TeV-madgraphMLM-pythia8':
+        #     total_signal_weights=np.concatenate(total_arr)
+        #     np.save(self.output()[lep + "_" + path.split("/")[1]].path.replace(".npy", "_total_signal.npy"), np.array(total_signal_weights))
+
+
+class CollectMasspoints(BaseMakeFilesTask):
+    def requires(self):
+        return WriteDatasetPathDict.req(self)
+
+    def output(self):
+        return self.local_target("masspoints.json")
+
+    # written by ChatGPT
+    def find_filled_bins(self, hist):
+        # Get the number of bins along X and Y axes
+        n_bins_x = hist.GetNbinsX()
+        n_bins_y = hist.GetNbinsY()
+
+        masspoints = []
+
+        # Iterate over the bins
+        for i in range(1, n_bins_x + 1):
+            for j in range(1, n_bins_y + 1):
+                # Check the bin content
+                bin_content = hist.GetBinContent(i, j)
+                if bin_content != 0.0:
+                    bin_center_x = hist.GetXaxis().GetBinCenter(i)
+                    bin_center_y = hist.GetYaxis().GetBinCenter(j)
+                    print(f"Bin ({i}, {j}) with label ({bin_center_x:.2f}, {bin_center_y:.2f}) is filled with content: {bin_content}")
+                    masspoints.append((bin_center_x, bin_center_y))
+        return masspoints
+
+    @law.decorator.safe_output
+    def run(self):
+        inp = self.input()
+        path = inp["dataset_path"].load()
+        signal_name = inp["dataset_dict"].load()["SMS-T5qqqqVV_TuneCP2_13TeV-madgraphMLM-pythia8"][0]
+        file = ROOT.TFile(path + "/" + signal_name)
+        hist = file.Get("numberOfT5qqqqWWGenEvents;1")
+        masspoints = self.find_filled_bins(hist)
+        from IPython import embed
+
+        embed()
+        self.output().dump({"masspoints": masspoints})
+        os.system("cp {} {}".format(self.output().path, self.config_inst.get_aux("masspoints")))
