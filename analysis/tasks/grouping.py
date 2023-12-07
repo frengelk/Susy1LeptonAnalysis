@@ -108,12 +108,15 @@ class MergeArrays(CoffeaTask):  # , law.LocalWorkflow, HTCondorWorkflow):
                         for ind in inverse_np_dict[p]:
                             key = cat + "_" + p + "_" + str(ind)
                             cat_list.append(np_dict[key]["array"].load())
+                            if len(np_dict[key]["array"].load()) > 1:
+                                if np.max(np_dict[key]["array"].load()) > 1e6:
+                                    print("WARNING, C++ skimming messed up", key)
                             # get weights as well for each process
-                            if p == "QCD_HT300to500_TuneCP5_13TeV-madgraphMLM-pythia8" and lep == "Electron":
-                                # something wrong with weights in this sample
-                                weights_list.append(np.ones(len(np_dict[key]["weights"].load())))
-                            else:
-                                weights_list.append(np_dict[key]["weights"].load())
+                            # if p == "QCD_HT300to500_TuneCP5_13TeV-madgraphMLM-pythia8" and lep == "Electron":
+                            #     # something wrong with weights in this sample
+                            #     weights_list.append(np.ones(len(np_dict[key]["weights"].load())))
+                            # else:
+                            weights_list.append(np_dict[key]["weights"].load())
                             DNNId_list.append(np_dict[key]["DNNId"].load())
                             # import boost_histogram as bh
                             # boost_hist =  bh.Histogram(bh.axis.Regular(var.binning[0], var.binning[1], var.binning[2]))
@@ -291,15 +294,16 @@ class MergeShiftArrays(CoffeaTask):
                         inverse_np_dict[p] += [ind]
 
         for dat in tqdm(self.datasets_to_process):
+            print(dat)
             # check if job either in root process or leafes
             proc_list = self.get_proc_list([dat])
             # if dat == "TTbar":
             # proc_list = [p for p in proc_list if "TTTo" in p]
             for cat in self.config_inst.categories.names():
-                weights_list = []
-                DNNId_list = []
-                cat_list = []
-                for shift in self.shifts:  # ("nominal",)+
+                for shift in self.shifts:
+                    weights_list = []
+                    DNNId_list = []
+                    cat_list = []
                     # merging different lepton channels together according to self.channel
                     for lep in self.channel:
                         np_dict = self.input()[shift + "_" + lep]["collection"].targets[0]
@@ -310,10 +314,16 @@ class MergeShiftArrays(CoffeaTask):
                             for ind in inverse_np_dict[p]:
                                 key = cat + "_" + p + "_" + str(ind)
                                 # get weights as well for each process
+                                print(p)
+                                if len(np_dict[key]["array"].load()) > 0:
+                                    print(len(np_dict[key]["array"].load()[0]))
                                 weights_list.append(np_dict[key]["weights"].load())
                                 cat_list.append(np_dict[key]["array"].load())
                                 DNNId_list.append(np_dict[key]["DNNId"].load())
 
+                    print(shift)
+                    # if shift == "PreFireWeightDown":
+                    #     from IPython import embed; embed()
                     full_arr = np.concatenate(cat_list)  # , dtype=np.float16
                     self.output()[cat + "_" + dat + "_" + shift]["array"].dump(full_arr)
                     weights_arr = np.concatenate(weights_list)
