@@ -31,7 +31,7 @@ class PytorchMulticlass(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
 
     def requires(self):
         # return PrepareDNN.req(self)
-        return ArrayNormalisation.req(self, channel="N0b_CR")
+        return ArrayNormalisation.req(self)
 
     def output(self):
         return {
@@ -61,25 +61,15 @@ class PytorchMulticlass(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
             + (debug_str,)
         )
 
-    def calc_class_weights(self, y_train, norm=1, sqrt=False):  # , weight_train
+    def calc_class_weights(self, y_train, y_weight, norm=1, sqrt=False):  # , weight_train
         # calc class weights to battle imbalance
-        # norm to tune down huge factors, sqrt to smooth the distribution
-        from sklearn.utils import class_weight
-
-        weight_array = norm * class_weight.compute_class_weight(
-            "balanced",
-            classes=np.unique(np.argmax(y_train, axis=-1)),
-            y=np.argmax(y_train, axis=-1),
-        )
-
-        if sqrt:
-            # smooth by exponential function
-            # return dict(enumerate(np.sqrt(weight_array)))
-            return dict(enumerate((weight_array) ** 0.88))
-        if not sqrt:
-            # set at minimum to 1.0
-            # return dict(enumerate([a if a>1.0 else 1.0 for a in weight_array]))
-            return dict(enumerate(weight_array))
+        n_processes = len(self.config_inst.get_aux("DNN_process_template")[self.category].keys())
+        total_weight = np.sum(y_weight)
+        class_weights = {}
+        for i in range(n_processes):
+            mask = np.argmax(y_train, axis=-1) == i
+            class_weights[i] = total_weight / np.sum(y_weight[mask])
+        return class_weights
 
     def multi_acc(self, y_pred, y_test):
         y_pred_softmax = torch.softmax(y_pred, dim=1)
@@ -95,6 +85,11 @@ class PytorchMulticlass(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
     @law.decorator.timeit(publish_message=True)
     @law.decorator.safe_output
     def run(self):
+        # multiprocessing enabling
+        import torch.multiprocessing
+
+        torch.multiprocessing.set_sharing_strategy("file_system")
+
         tic = time()
 
         # define dimensions, working with aux template for processes
@@ -103,13 +98,13 @@ class PytorchMulticlass(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
 
         # load the prepared data and labels
         X_train = self.input()["X_train"].load()
-        y_train = self.input()["y_train"].load()
-        X_val = self.input()["X_val"].load()
-        y_val = self.input()["y_val"].load()
-        X_test = self.input()["X_test"].load()
-        y_test = self.input()["y_test"].load()
-
+        y_train = self.input()["y_train"].load()  # [:,1]
         weight_train = self.input()["weight_train"].load()
+        X_val = self.input()["X_val"].load()
+        y_val = self.input()["y_val"].load()  # [:,1]
+        weight_val = self.input()["weight_val"].load()
+        X_test = self.input()["X_test"].load()
+        y_test = self.input()["y_test"].load()  # [:,1]
 
         # definition for the normalization layer
         means, stds = (
@@ -117,7 +112,7 @@ class PytorchMulticlass(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
             self.input()["means_stds"].load()[1],
         )
 
-        class_weights = self.calc_class_weights(y_train)
+        class_weights = self.calc_class_weights(y_train, weight_train)
         # class_weights = {1: 1, 2: 1, 3: 1}
 
         # declare device
@@ -125,33 +120,11 @@ class PytorchMulticlass(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
         device = torch.device("cuda:0" if use_cuda else "cpu")
 
         # datasets are loaded
-        train_dataset = util.ClassifierDataset(torch.from_numpy(X_train).float(), torch.from_numpy(y_train).float())
-        val_dataset = util.ClassifierDataset(torch.from_numpy(X_val).float(), torch.from_numpy(y_val).float())
+        train_dataset = util.ClassifierDatasetWeight(torch.from_numpy(X_train).float(), torch.from_numpy(y_train).float(), torch.from_numpy(weight_train).float())
+        val_dataset = util.ClassifierDatasetWeight(torch.from_numpy(X_val).float(), torch.from_numpy(y_val).float(), torch.from_numpy(weight_val).float())
         test_dataset = util.ClassifierDataset(torch.from_numpy(X_test).float(), torch.from_numpy(y_test).float())
 
         self.steps_per_epoch = n_processes * np.sum(y_test[:, 0] == 1) // self.batch_size
-
-        # all in dat
-        """
-        train_dataloader = data.DataLoader(
-            dataset=train_dataset,
-            # batch_size=self.batch_size,
-            batch_sampler=util.EventBatchSampler(
-                y_train,
-                self.batch_size,
-                n_processes,
-                self.steps_per_epoch,
-            ),
-            num_workers=8,
-        )
-
-        val_dataloader = data.DataLoader(
-            dataset=val_dataset,
-            batch_size=10 * self.batch_size,
-            #shuffle=True,  # len(val_dataset
-            num_workers=8,
-        )  # =1
-        """
 
         test_loader = data.DataLoader(
             dataset=test_dataset,
@@ -161,7 +134,7 @@ class PytorchMulticlass(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
 
         # declare lighnting callbacks
         early_stop_callback = pl.callbacks.early_stopping.EarlyStopping(
-            monitor="val_acc",
+            monitor="val_loss",
             min_delta=0.00,
             patience=3,
             verbose=False,
@@ -183,8 +156,9 @@ class PytorchMulticlass(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
             means=means,
             stds=stds,
             dropout=self.dropout,
-            class_weights=torch.tensor(list(class_weights.values())),  # no effect right now
+            class_weights=torch.tensor(list(class_weights.values())),
             n_nodes=self.n_nodes,
+            learning_rate=self.learning_rate,
         )
 
         # define data
@@ -194,11 +168,12 @@ class PytorchMulticlass(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
             weight_train,
             X_val,
             y_val,
+            weight_val,
             # X_test,
             # y_test,
             self.batch_size,
             n_processes,
-            self.steps_per_epoch,
+            # self.steps_per_epoch,
         )
 
         # needed for test evaluation
@@ -211,7 +186,6 @@ class PytorchMulticlass(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
 
         # collect callbacks
         callbacks = [early_stop_callback]  # , swa_callback
-
         # Trainer, for gpu gpus=1
         trainer = pl.Trainer(
             max_epochs=self.epochs,
@@ -229,7 +203,7 @@ class PytorchMulticlass(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
         # pdb.run(trainer.fit(model, dat))
         # ipdb.set_trace()
 
-        data_collection.setup("train")
+        # data_collection.setup("train")
         trainer.fit(model, data_collection)
 
         # replace this loop with model(torch.tensor(X_test)) ?
@@ -264,13 +238,39 @@ class PytorchMulticlass(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
         self.output()["loss_stats"].dump(model.loss_stats)
         self.output()["accuracy_stats"].dump(model.accuracy_stats)
 
+        # plot loss comp
+        fig = plt.figure()
+        plt.plot(np.arange(0, len(model.loss_per_node["val_MC"]), 1), torch.tensor(model.loss_per_node["val_MC"]).numpy(), label="bkg")
+        plt.plot(np.arange(0, len(model.loss_per_node["val_T5"]), 1), torch.tensor(model.loss_per_node["val_T5"]).numpy(), label="T5")
+        plt.xlabel("Iterations")
+        plt.ylabel("val_loss")
+        plt.legend()
+        plt.savefig(self.output()["model"].parent.path + "/val_losses.png")
+
+        # plot loss comp
+        fig = plt.figure()
+        plt.plot(np.arange(0, len(model.loss_per_node["val_MC_weight"]), 1), torch.tensor(model.loss_per_node["val_MC_weight"]).numpy(), label="bkg")
+        plt.plot(np.arange(0, len(model.loss_per_node["val_T5_weight"]), 1), torch.tensor(model.loss_per_node["val_T5_weight"]).numpy(), label="T5")
+        plt.xlabel("Iterations")
+        plt.ylabel("val_loss_weight")
+        plt.legend()
+        plt.savefig(self.output()["model"].parent.path + "/val_losses_weight.png")
+
+        # signal_batch_fraction
+        fig = plt.figure()
+        plt.hist(torch.tensor(model.signal_batch_fraction).numpy(), label="Signal per batch", bins=np.arange(0.1, 0.75, 0.01))
+        plt.xlabel("Fraction")
+        plt.ylabel("a.u.")
+        plt.legend()
+        plt.savefig(self.output()["model"].parent.path + "/signal_fraction.png")
+
 
 class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):  # , CoffeaTask
     # define it here again so training can be started from here
     kfold = IntParameter(default=2)
     # setting needed RAM high and time long
-    RAM = 40000
-    hours = 10
+    RAM = 20000
+    hours = 5
 
     def create_branch_map(self):
         # overwrite branch map
@@ -378,6 +378,7 @@ class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):  # , Coffea
             dropout=self.dropout,
             class_weights=torch.tensor(list(class_weights.values())),
             n_nodes=self.n_nodes,
+            learning_rate=self.learning_rate,
         )
 
         # weight resetting
@@ -400,7 +401,7 @@ class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):  # , Coffea
             # y_test,
             self.batch_size,
             n_processes,
-            self.steps_per_epoch,
+            # self.steps_per_epoch,
         )
 
         early_stop_callback = pl.callbacks.early_stopping.EarlyStopping(
@@ -449,21 +450,21 @@ class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):  # , Coffea
 
         # plot loss comp
         fig = plt.figure()
-        plt.plot(np.arange(0, len(model.loss_per_node["MC"]), 1), torch.tensor(model.loss_per_node["MC"]).numpy(), label="bkg")
-        plt.plot(np.arange(0, len(model.loss_per_node["T5"]), 1), torch.tensor(model.loss_per_node["T5"]).numpy(), label="T5")
-        plt.xlabel("epochs")
-        plt.ylabel("loss")
+        plt.plot(np.arange(0, len(model.loss_per_node["val_MC"]), 1), torch.tensor(model.loss_per_node["val_MC"]).numpy(), label="bkg")
+        plt.plot(np.arange(0, len(model.loss_per_node["val_T5"]), 1), torch.tensor(model.loss_per_node["val_T5"]).numpy(), label="T5")
+        plt.xlabel("Iterations")
+        plt.ylabel("val_loss")
         plt.legend()
-        plt.savefig(self.output()["fold_" + str(i)]["model"].parent.path + "/losses_fold{}.png".format(str(i)))
+        plt.savefig(self.output()["fold_" + str(i)]["model"].parent.path + "/val_losses_fold{}.png".format(str(i)))
 
         # plot loss comp
         fig = plt.figure()
-        plt.plot(np.arange(0, len(model.loss_per_node["MC_weight"]), 1), torch.tensor(model.loss_per_node["MC_weight"]).numpy(), label="bkg")
-        plt.plot(np.arange(0, len(model.loss_per_node["T5_weight"]), 1), torch.tensor(model.loss_per_node["T5_weight"]).numpy(), label="T5")
-        plt.xlabel("epochs")
-        plt.ylabel("loss_weight")
+        plt.plot(np.arange(0, len(model.loss_per_node["val_MC_weight"]), 1), torch.tensor(model.loss_per_node["val_MC_weight"]).numpy(), label="bkg")
+        plt.plot(np.arange(0, len(model.loss_per_node["val_T5_weight"]), 1), torch.tensor(model.loss_per_node["val_T5_weight"]).numpy(), label="T5")
+        plt.xlabel("Iterations")
+        plt.ylabel("val_loss_weight")
         plt.legend()
-        plt.savefig(self.output()["fold_" + str(i)]["model"].parent.path + "/losses_fold{}_weight.png".format(str(i)))
+        plt.savefig(self.output()["fold_" + str(i)]["model"].parent.path + "/val_losses_fold{}_weight.png".format(str(i)))
 
         # signal_batch_fraction
         fig = plt.figure()
@@ -584,15 +585,15 @@ class CalcNormFactors(DNNTask):  # Requiring MergeArrays from a DNNTask leads to
         scores, labels, weights = [], [], []
         data_scores = {}
         data = self.input()["samples"]["data"].load()
-        MC_scores = self.input()["scores"]["scores"].load()
+        MC_scores = self.input()["scores"]["collection"].targets[0]["scores"].load()
 
-        data_scores = self.input()["scores"]["data"].load()
+        data_scores = self.input()["scores"]["collection"].targets[0]["data"].load()
 
-        MC_labels = self.input()["scores"]["labels"].load()
+        MC_labels = self.input()["scores"]["collection"].targets[0]["labels"].load()
         MC_labels = np.argmax(MC_labels, axis=-1)
         MC_pred = np.argmax(MC_scores, axis=-1)
 
-        weights = self.input()["scores"]["weights"].load()
+        weights = self.input()["scores"]["collection"].targets[0]["weights"].load()
 
         # assigning notes
         tt_node_0 = weights[(MC_labels == 0) & (MC_pred == 0)]
@@ -608,6 +609,7 @@ class CalcNormFactors(DNNTask):  # Requiring MergeArrays from a DNNTask leads to
         right_side = np.array([np.sum(data_node_0), np.sum(data_node_1)])
         factors = np.linalg.solve(left_side, right_side)
 
+        # alpha * tt + beta * Wjets
         factor_dict = {"alpha": factors[0], "beta": factors[1]}
         self.output().dump(factor_dict)
 
