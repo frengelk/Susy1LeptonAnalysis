@@ -90,9 +90,22 @@ class CoffeaTask(DatasetTask):
             job_number_dict = {0: job_number_dict[0]}
         return data_list, job_number, job_number_dict, process_dict
 
+    # for Shift Arrays and Inference
+    def unpack_shifts(self):
+        shifts_long = []
+        for sh in self.shifts:
+            if sh == "systematic_shifts":
+                shifts_long.extend(self.config_inst.get_aux("systematic_shifts"))
+            else:
+                shifts_long.append(sh)
+        return shifts_long
+
 
 class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
     additional_plots = BoolParameter(default=False)
+    # require more ressources
+    RAM = 5000
+    hours = 1
     """
     this is a HTCOndor workflow, normally it will get submitted with configurations defined
     in the htcondor_bottstrap.sh or the basetasks.HTCondorWorkflow
@@ -106,7 +119,6 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
 
     def requires(self):
         return {"files": WriteDatasetPathDict.req(self), "weights": CollectInputData.req(self), "btagSF": CalcBTagSF.req(self)}
-        # return WriteDatasets.req(self)
 
     def create_branch_map(self):
         # define job number according to number of files of the dataset that you want to process
@@ -124,15 +136,29 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
                 "array": self.local_target(cat + "_" + dat + "_" + str(job) + ".npy"),
                 "weights": self.local_target(cat + "_" + dat + "_" + str(job) + "_weights.npy"),
                 "DNNId": self.local_target(cat + "_" + dat + "_" + str(job) + "_DNNId.npy"),
-                # "sum_gen_weights": self.local_target(cat + "_" + dat.split("/")[0] + "_" + str(job) + "_sum_gen_weights.npy"),
                 "cutflow": self.local_target(cat + "_" + dat + "_" + str(job) + "cutflow.coffea"),
                 "n_minus1": self.local_target(cat + "_" + dat + "_" + str(job) + "n_minus1.coffea"),
             }
             for cat in self.config_inst.categories.names()
-            # for job, dat in job_number_dict.items() dat.split("/")[0]
             for job, dat in process_dict.items()
-            # for i in range(job_number)  + "_" + str(job_number)
         }
+        if self.shift == "systematic_shifts":
+            out = {
+                cat
+                + "_"
+                + dat.split("/")[0]
+                + "_"
+                + str(job): {
+                    "array": self.local_target(cat + "_" + dat + "_" + str(job) + ".npy"),
+                    "weights": self.local_target(cat + "_" + dat + "_" + str(job) + "_weights.npy"),
+                    "DNNId": self.local_target(cat + "_" + dat + "_" + str(job) + "_DNNId.npy"),
+                    "cutflow": self.local_target(cat + "_" + dat + "_" + str(job) + "cutflow.coffea"),
+                    "n_minus1": self.local_target(cat + "_" + dat + "_" + str(job) + "n_minus1.coffea"),
+                    "systematic_shifts": {shift: self.local_target(cat + "_" + dat + "_" + shift + "_" + str(job) + "_shifted_weights.npy") for shift in self.config_inst.get_aux("systematic_shifts")},
+                }
+                for cat in self.config_inst.categories.names()
+                for job, dat in process_dict.items()
+            }
         return out
 
     def store_parts(self):
@@ -156,7 +182,6 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
         # building together the respective strings to use for the coffea call
         files, job_number, job_number_dict, process_dict = self.load_job_dict()
         treename = self.lepton_selection
-        # key_name = self.datasets_to_process[self.branch] # list(data_dict.keys())[0]
         # self.branch=145
         subset = job_number_dict[self.branch]
         # dataset = subset.split("/")[0]  # split("_")[0]
@@ -243,7 +268,10 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
                 self.output()[cat + "_" + str(self.branch)]["array"].dump(out["arrays"][cat]["hl"].value)
                 self.output()[cat + "_" + str(self.branch)]["cutflow"].dump(out["cutflow"])
                 self.output()[cat + "_" + str(self.branch)]["n_minus1"].dump(out["n_minus1"])
-                print(cat)
+                if self.shift == "systematic_shifts":
+                    for shift in self.config_inst.get_aux("systematic_shifts"):
+                        self.output()[cat + "_" + str(self.branch)]["systematic_shifts"][shift].dump(out["arrays"][cat][shift].value)
+                print(cat, len(out["arrays"][cat]["weights"].value), len(out["arrays"][cat]["hl"].value), len(out["arrays"][cat][shift].value))
 
 
 class CollectCoffeaOutput(CoffeaTask):
@@ -341,93 +369,3 @@ class CollectCoffeaOutput(CoffeaTask):
             vals += signal_bin_counts[key]
 
         print("Sum over signal region:", vals)
-
-
-class CoffeaPerMasspoint(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
-    def requires(self):
-        out = {
-            # sel: CoffeaProcessor.req(
-            #     self,
-            #     lepton_selection=sel,
-            #     # workflow="local",
-            # )
-            # for sel in ["Electron", "Muon"]
-        }
-
-        out.update({"files": WriteDatasetPathDict.req(self), "weights": CollectInputData.req(self), "masspoints": CollectMasspoints.req(self)})  # , "btagSF": CalcBTagSF.req(self)
-        return out
-
-    # def output(self):
-    def output(self):
-        return self.local_target("event_counts.json")
-
-    def create_branch_map(self):
-        # define job number according to number of files of the dataset that you want to process
-        with open(self.config_inst.get_aux("masspoints")) as f:
-            masspoints = json.load(f)
-        job_number = len(masspoints["masspoints"])
-        # if self.debug:
-        job_number = 1
-        return list(range(job_number))
-
-    @law.decorator.timeit(publish_message=True)
-    @law.decorator.safe_output
-    def run(self):
-        masspoints = self.input()["masspoints"].load()["masspoints"]
-        mp = masspoints[self.branch]
-
-        data_dict = self.input()["files"]["dataset_dict"].load()  # ["SingleMuon"]  # {self.dataset: [self.file]}
-        data_path = self.input()["files"]["dataset_path"].load()
-        sum_gen_weights_dict = self.input()["weights"]["sum_gen_weights"].load()
-        # declare processor
-        processor_inst = ArrayExporter(self, Lepton=self.lepton_selection)
-        # building together the respective strings to use for the coffea call
-        files, job_number, job_number_dict, process_dict = self.load_job_dict()
-        treename = self.lepton_selection
-        out_list = []
-        # we are spawning 800 jobs, one per masspoints, so each job will have to process all files
-        # for i, file in range(job_number_dict.values()):
-        # first file should have same contents as every signal file
-        subset = job_number_dict[0]
-        dataset = process_dict[0]
-        proc = self.config_inst.get_process(dataset)
-        with up.open(data_path + "/" + subset) as file:
-            primaryDataset = file["MetaData"]["primaryDataset"].array()[0]
-            isData = file["MetaData"]["IsData"].array()[0]
-            isFastSim = file["MetaData"]["IsFastSim"].array()[0]
-            isSignal = proc.get_aux("isSignal")
-            # assert all events with the same Xsec in scope with float precision
-            xSec = proc.xsecs[13].nominal
-            lumi = file["MetaData"]["Luminosity"].array()[0]
-            # find the calculated btag SFs per file and save path
-            # subsub = subset.split("/")[1]
-            # btagSF = self.input()["btagSF"][treename + "_" + subsub].path
-
-        tot_path = "/nfs/dust/cms/group/susy-desy/Susy1Lepton/0b/Run2_pp_13TeV_2017/CalcBTagSF/new_muon_2017/Electron_SMS-T5qqqqVV_TuneCP2_13TeV-madgraphMLM-pythia8_7_mergedtotal_signal.npy"
-        all_files, all_btagSF = [], []
-        for filename in job_number_dict.values():
-            all_files.append(data_path + "/" + filename)
-            all_btagSF.append(self.input()["btagSF"][treename + "_" + filename.split("/")[1]].load())
-
-        fileset = {
-            dataset: {
-                "files": all_files,  # file for file in
-                "metadata": {"PD": primaryDataset, "isData": isData, "isFastSim": isFastSim, "isSignal": isSignal, "xSec": xSec, "Luminosity": lumi, "sumGenWeight": sum_gen_weights_dict[dataset], "btagSF": tot_path, "shift": self.shift, "masspoint": mp},
-            }
-        }
-        from IPython import embed
-
-        embed()
-        # call imported processor, magic happens here
-        out = processor.run_uproot_job(
-            fileset,
-            treename=treename,
-            processor_instance=processor_inst,
-            # pre_executor=processor.futures_executor,
-            # pre_args=dict(workers=32),
-            executor=processor.iterative_executor,
-            executor_args=dict(status=False),  # desc="", unit="Trolling"), # , desc="Trolling"
-            # metadata_cache = 'MetaData',
-            # schema=BaseSchema,),
-            chunksize=10000,
-        )

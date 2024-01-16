@@ -201,7 +201,6 @@ class BaseSelection:
             JetPt = events.JetPt_TotalDown
         goodJets = (JetPt > 30) & (abs(events.JetEta) < 2.4)
         HT = ak.sum(JetPt[goodJets], axis=-1)
-        print(HT)
         jetPt_1 = ak.fill_none(ak.firsts(JetPt[:, 0:1]), value=-999)
         jetPt_2 = ak.fill_none(ak.firsts(JetPt[:, 1:2]), value=-999)
 
@@ -257,13 +256,13 @@ class BaseSelection:
             if proc.has_aux("masspoint"):
                 mGlu_cut = events.mGluino == proc.aux["masspoint"][0]
                 mNeu_cut = events.mNeutralino == proc.aux["masspoint"][1]
-            # else:
-            #     # make sure only masses with defined xsec are in sample
-            #     mGlu_cut = events.mGluino % 5 == 0
-            #     mNeu_cut = events.mNeutralino % 5 == 0
             if "masspoint" in events.metadata:
                 mGlu_cut = events.mGluino == events.metadata["masspoint"][0]
                 mNeu_cut = events.mNeutralino == events.metadata["masspoint"][1]
+            else:
+                # make sure only masses with defined xsec are in sample
+                mGlu_cut = events.mGluino % 5 == 0
+                mNeu_cut = events.mNeutralino % 5 == 0
             # apply cut here as well to check for T5
             iso_cut = iso_cut & (mGlu_cut) & (mNeu_cut) & (events.isT5qqqqWW)
 
@@ -323,26 +322,17 @@ class BaseSelection:
             if events.metadata["isSignal"]:
                 weights.add("xSec", events.susyXSectionNLLO * 1000)
 
-            if events.metadata["treename"] == "Muon":
-                sfs = ["MuonMediumSf", "MuonTriggerSf", "MuonMediumIsoSf"]
-                for sf in sfs:
-                    weights.add(
-                        sf,
-                        getattr(events, sf)[:, 0],
-                        weightDown=getattr(events, sf + "Down")[:, 0],
-                        weightUp=getattr(events, sf + "Up")[:, 0],
-                    )
-
-            if events.metadata["treename"] == "Electron":
-                sfs = ["ElectronTightSf", "ElectronRecoSf"]
-                for sf in sfs:
-                    weights.add(
-                        sf,
-                        getattr(events, sf)[:, 0],
-                        weightDown=getattr(events, sf + "Down")[:, 0],
-                        weightUp=getattr(events, sf + "Up")[:, 0],
-                    )
-
+            # All leptons at once, don't seperate dependent on lepton selection
+            sfs = ["MuonMediumSf", "MuonTriggerSf", "MuonMediumIsoSf", "ElectronTightSf", "ElectronRecoSf"]
+            for sf in sfs:
+                # if sf == "ElectronTightSf":
+                #     from IPython import embed; embed()
+                weights.add(
+                    sf,
+                    ak.fill_none(ak.firsts(getattr(events, sf)), 1.0),
+                    weightDown=ak.fill_none(ak.firsts(getattr(events, sf + "Down")), 1.0),
+                    weightUp=ak.fill_none(ak.firsts(getattr(events, sf + "Up")), 1.0),
+                )
             # weights.add(
             # "nISRWeight_Mar17",
             # events.nISRWeight_Mar17,
@@ -444,20 +434,18 @@ class ArrayExporter(BaseProcessor, BaseSelection):
         # arrays.setdefault("weights", np.stack([np.full_like(weights, 1), weights], axis=-1))
         weights = selected_output["weights"]
         # if we selected a shift beforehand, we don't set nominal weight but instead shift one weight accordingly
-        if selected_output["events"].metadata["shift"] == "nominal":  # which is the default value
-            arrays.setdefault("weights", weights.weight())
-        else:
-            included_weights = []
-            for wei in weights._weightStats.keys():
-                if wei not in selected_output["events"].metadata["shift"]:
-                    included_weights.append(wei)
-                else:
-                    included_weights.append(selected_output["events"].metadata["shift"])
-            shift_weight = weights.partial_weight(include=included_weights)
-            arrays.setdefault("weights", shift_weight)
+        # Data only should get nominal which is the default value
+        arrays.setdefault("weights", weights.weight())
+        if selected_output["events"].metadata["shift"] in self.config.get_aux("systematic_variable_shifts"):
+            arrays.setdefault(selected_output["events"].metadata["shift"], weights.weight())
+        elif selected_output["events"].metadata["shift"] == "systematic_shifts":
+            # calling the weight object with the wanted shift varies the nominal by the Up/Down
+            for shift in self.config.get_aux("systematic_shifts"):
+                shift_weight = weights.weight(shift)
+                arrays.setdefault(shift, shift_weight)
 
-        if self.dtype:
-            arrays = {key: array.astype(self.dtype) for key, array in arrays.items()}
+        # if self.dtype:
+        #     arrays = {key: array.astype(self.dtype) for key, array in arrays.items()}
         if np.max(arrays["hl"]) > 1e20:
             from IPython import embed
 
