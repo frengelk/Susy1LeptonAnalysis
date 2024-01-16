@@ -272,6 +272,9 @@ class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):  # , Coffea
     RAM = 20000
     hours = 5
 
+    # This parameters worked
+    #  --batch-size 512 --dropout 0.3 --learning-rate 0.0003 --n-nodes 256
+
     def create_branch_map(self):
         # overwrite branch map
         return list(range(self.kfold))
