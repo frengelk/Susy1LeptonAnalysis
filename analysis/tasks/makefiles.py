@@ -485,8 +485,5 @@ class CollectMasspoints(BaseMakeFilesTask):
         file = ROOT.TFile(path + "/" + signal_name)
         hist = file.Get("numberOfT5qqqqWWGenEvents;1")
         masspoints = self.find_filled_bins(hist)
-        from IPython import embed
-
-        embed()
         self.output().dump({"masspoints": masspoints})
         os.system("cp {} {}".format(self.output().path, self.config_inst.get_aux("masspoints")))
