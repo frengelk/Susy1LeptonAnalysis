@@ -251,9 +251,17 @@ class YieldsFromArrays(CoffeaTask):
         self.output().dump(yields)
 
 
-class MergeShiftArrays(CoffeaTask):
+# to check all requirements. comment out the Workflow dependencies, no idea why)
+class MergeShiftArrays(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
+    # require more ressources
+    RAM = 2500
+    hours = 1
     channel = luigi.ListParameter(default=["Muon", "Electron"])
-    shifts = luigi.ListParameter(default=["PreFireWeightUp"])
+    shifts = luigi.ListParameter(default=["systematic_shifts"])
+
+    def create_branch_map(self):
+        # define job number according to number of files of the dataset that you want to process
+        return list(range(len(self.datasets_to_process)))
 
     def requires(self):
         inp = {
@@ -263,8 +271,7 @@ class MergeShiftArrays(CoffeaTask):
                 self,
                 lepton_selection=sel,
                 datasets_to_process=self.datasets_to_process,
-                # workflow="local",
-                shift=shift,
+                shift=shift,  # workflow="local"
             )
             for sel in self.channel
             for shift in self.shifts  # ("nominal",)+
@@ -272,7 +279,8 @@ class MergeShiftArrays(CoffeaTask):
         return inp
 
     def output(self):
-        out = {cat + "_" + dat + "_" + shift: {"array": self.local_target("merged_{}_{}_{}.npy".format(cat, dat, shift)), "weights": self.local_target("weights_{}_{}_{}.npy".format(cat, dat, shift)), "DNNId": self.local_target("DNNId_{}_{}_{}.npy".format(cat, dat, shift))} for cat in self.config_inst.categories.names() for dat in self.datasets_to_process for shift in self.shifts}
+        shifts_long = self.unpack_shifts()
+        out = {cat + "_" + dat + "_" + shift: {"array": self.local_target("merged_{}_{}_{}.npy".format(cat, dat, shift)), "weights": self.local_target("weights_{}_{}_{}.npy".format(cat, dat, shift)), "DNNId": self.local_target("DNNId_{}_{}_{}.npy".format(cat, dat, shift))} for cat in self.config_inst.categories.names() for dat in self.datasets_to_process for shift in shifts_long}
         return out
 
     @law.decorator.timeit(publish_message=True)
@@ -293,40 +301,49 @@ class MergeShiftArrays(CoffeaTask):
                     else:
                         inverse_np_dict[p] += [ind]
 
-        for dat in tqdm(self.datasets_to_process):
-            print(dat)
-            # check if job either in root process or leafes
-            proc_list = self.get_proc_list([dat])
-            # if dat == "TTbar":
-            # proc_list = [p for p in proc_list if "TTTo" in p]
-            for cat in self.config_inst.categories.names():
-                for shift in self.shifts:
-                    weights_list = []
-                    DNNId_list = []
-                    cat_list = []
-                    # merging different lepton channels together according to self.channel
-                    for lep in self.channel:
-                        np_dict = self.input()[shift + "_" + lep]["collection"].targets[0]
-                        # looping over all keys each time is rather slow
-                        # but constructing keys yourself is tricky since there can be multiple jobs with different numbers
-                        # so now I loop over possible keys for each dataset and append the correct arrays
+        # for dat in tqdm(self.datasets_to_process):
+        dat = self.datasets_to_process[self.branch]
+        print(dat)
+        # check if job either in root process or leafes
+        proc_list = self.get_proc_list([dat])
+        # if dat == "TTbar":
+        # proc_list = [p for p in proc_list if "TTTo" in p]
+        for cat in self.config_inst.categories.names():
+            # replace systematic shifts in self.shifts so we can properly loop
+            shifts_long = self.unpack_shifts()
+            for shift in tqdm(shifts_long):
+                weights_list = []
+                DNNId_list = []
+                cat_list = []
+                # looping over all keys each time is rather slow
+                # but constructing keys yourself is tricky since there can be multiple jobs with different numbers
+                # so now I loop over possible keys for each dataset and append the correct arrays
+                # merging different lepton channels together according to self.channel
+                for lep in self.channel:
+                    if shift in self.config_inst.get_aux("systematic_shifts"):
+                        np_dict = self.input()["systematic_shifts" + "_" + lep]  # ["collection"].targets[0]
                         for p in proc_list:
                             for ind in inverse_np_dict[p]:
                                 key = cat + "_" + p + "_" + str(ind)
                                 # get weights as well for each process
-                                print(p)
-                                if len(np_dict[key]["array"].load()) > 0:
-                                    print(len(np_dict[key]["array"].load()[0]))
+                                weights_list.append(np_dict[key]["systematic_shifts"][shift].load())
+                                cat_list.append(np_dict[key]["array"].load())
+                                DNNId_list.append(np_dict[key]["DNNId"].load())
+                    else:  # should be TotalUp Down
+                        np_dict = self.input()[shift + "_" + lep]
+                        for p in proc_list:
+                            for ind in inverse_np_dict[p]:
+                                key = cat + "_" + p + "_" + str(ind)
+                                # get weights as well for each process
                                 weights_list.append(np_dict[key]["weights"].load())
                                 cat_list.append(np_dict[key]["array"].load())
                                 DNNId_list.append(np_dict[key]["DNNId"].load())
 
-                    print(shift)
-                    # if shift == "PreFireWeightDown":
-                    #     from IPython import embed; embed()
-                    full_arr = np.concatenate(cat_list)  # , dtype=np.float16
-                    self.output()[cat + "_" + dat + "_" + shift]["array"].dump(full_arr)
-                    weights_arr = np.concatenate(weights_list)
-                    self.output()[cat + "_" + dat + "_" + shift]["weights"].dump(weights_arr)
-                    DNNId_arr = np.concatenate(DNNId_list)
-                    self.output()[cat + "_" + dat + "_" + shift]["DNNId"].dump(DNNId_arr)
+                print(shift)
+                # if shift == "PreFireWeightDown":
+                full_arr = np.concatenate(cat_list)  # , dtype=np.float16
+                self.output()[cat + "_" + dat + "_" + shift]["array"].dump(full_arr)
+                weights_arr = np.concatenate(weights_list)
+                self.output()[cat + "_" + dat + "_" + shift]["weights"].dump(weights_arr)
+                DNNId_arr = np.concatenate(DNNId_list)
+                self.output()[cat + "_" + dat + "_" + shift]["DNNId"].dump(DNNId_arr)

@@ -47,7 +47,7 @@ for year, cfg in ("2016", config_2016), ("2017", config_2017):
     )
     cfg.set_aux(
         "signal_binning",
-        [0, 0.5, 0.9, 1],  # how to bin signal region DNN output
+        [0, 0.35, 0.7, 0.9, 0.91, 0.93, 0.95, 0.97, 0.99, 0.996, 1],  # how to bin signal region DNN output
     )
 
     cfg.set_aux("job_dict", os.path.expandvars("$ANALYSIS_BASE/config/datasets_2017.json"))
@@ -58,6 +58,10 @@ for year, cfg in ("2016", config_2016), ("2017", config_2017):
     cfg.set_aux("channels", ["Muon", "Electron"])
     cfg.set_aux("DNNId", [-1, 1])
 
+    # for these, it's enough if we redo the event weights, don't need to process everything again
+    cfg.set_aux("systematic_shifts", ["MuonMediumIsoSfDown", "MuonMediumIsoSfUp", "MuonMediumSfDown", "MuonMediumSfUp", "MuonTriggerSfDown", "MuonTriggerSfUp", "PileDownWeightDown", "PileUpWeightDown", "PileUpWeightUp", "PreFireWeightDown", "PreFireWeightUp", "ElectronTightSfDown", "ElectronTightSfUp", "ElectronRecoSfDown", "ElectronRecoSfUp"])
+    cfg.set_aux("systematic_variable_shifts", ["TotalUp", "TotalDown"])
+
     cfg.set_aux(
         "DNN_process_template",
         {
@@ -67,7 +71,7 @@ for year, cfg in ("2016", config_2016), ("2017", config_2017):
                 "W+jets": ["WJets", "DY", "rare"],
             },
             "N0b": {
-                "ttjets": ["SingleTop", "TTbar"],
+                "ttjets": ["SingleTop", "TTbar", "QCD"],  # FIXME eject QCD!
                 # "ttbar": ["TTbar"],
                 "Wjets": ["WJets", "Rare", "DY"],
                 # "BG": ["SingleTop", "TTbar", "WJets", "Rare", "DY"],
