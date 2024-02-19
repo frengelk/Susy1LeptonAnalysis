@@ -31,7 +31,8 @@ class BaseTask(law.Task):
 class CampaignTask(BaseTask):
     year = luigi.Parameter(description="Year", default="2016")
     config = luigi.Parameter(default="SUSY_1lep_ML", description="current analysis")
-    analysis_choice = "common"
+    # analysis_choice = "common"
+    category = luigi.Parameter(default="SR0b", description="Category defines set cuts")
 
     def __init__(self, *args, **kwargs):
         super(CampaignTask, self).__init__(*args, **kwargs)
@@ -42,13 +43,14 @@ class CampaignTask(BaseTask):
         parts = (self.analysis_choice, self.campaign_name, self.__class__.__name__)
         if self.version is not None:
             parts += (self.version,)
+        if self.category is not None:
+            parts += (self.category,)
         return parts
 
 
 class AnalysisTask(CampaignTask):
     analysis_id = "0b"
     task_namespace = "{}".format(analysis_id)
-
     analysis_choice = analysis_id
 
     def __init__(self, *args, **kwargs):
@@ -76,7 +78,7 @@ class ConfigTask(AnalysisTask):
         return parts
 
 
-class DNNTask(ConfigTask):
+class DNNTask(AnalysisTask):
     """
     define parameters here for all relevant tasks
     """
