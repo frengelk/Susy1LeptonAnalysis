@@ -52,7 +52,6 @@ class PytorchMulticlass(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
         # put hyperparameters in path to make an easy optimization search
         return (
             super(PytorchMulticlass, self).store_parts()
-            + (self.category,)
             # + (self.n_layers,)
             + (self.n_nodes,)
             + (self.dropout,)
@@ -283,7 +282,7 @@ class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):  # , Coffea
         # return PrepareDNN.req(self)
         return {
             "data": CrossValidationPrep.req(self, kfold=self.kfold),
-            "mean_std": ArrayNormalisation.req(self, datasets_to_process=["WJets", "SingleTop", "TTbar", "Rare", "DY", "T5qqqqVV", "MET", "SingleMuon", "SingleElectron"], channel=["Muon", "Electron"]),
+            "mean_std": ArrayNormalisation.req(self, datasets_to_process=["WJets", "SingleTop", "TTbar", "Rare", "DY", "T5qqqqVV", "MET", "SingleMuon", "SingleElectron"]),
         }
 
     def output(self):
@@ -302,7 +301,6 @@ class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):  # , Coffea
         # put hyperparameters in path to make an easy optimization search
         return (
             super(PytorchCrossVal, self).store_parts()
-            + (self.category,)
             # + (self.n_layers,)
             + (self.n_nodes,)
             + (self.dropout,)
@@ -408,7 +406,7 @@ class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):  # , Coffea
         )
 
         early_stop_callback = pl.callbacks.early_stopping.EarlyStopping(
-            monitor="val_loss",
+            monitor="val_acc",
             min_delta=0.00,
             patience=10,
             verbose=False,
@@ -487,19 +485,19 @@ class PredictDNNScores(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
         out = {
             "samples": CrossValidationPrep.req(self, kfold=self.kfold),
             "models": PytorchCrossVal.req(self, kfold=self.kfold),
+            "QCD": MergeArrays.req(self, datasets_to_process=["QCD"]),
             # "data": ArrayNormalisation.req(self),
         }
 
         return out
 
     def output(self):
-        return {"scores": self.local_target("scores.npy"), "labels": self.local_target("labels.npy"), "data": self.local_target("data_scores.npy"), "weights": self.local_target("weights.npy")}
+        return {"scores": self.local_target("scores.npy"), "labels": self.local_target("labels.npy"), "data": self.local_target("data_scores.npy"), "weights": self.local_target("weights.npy"), "QCD_scores": self.local_target("QCD_scores.npy"), "QCD_weights": self.local_target("QCD_weights.npy")}
 
     def store_parts(self):
         # put hyperparameters in path to make an easy optimization search
         return (
             super(PredictDNNScores, self).store_parts()
-            + (self.category,)
             # + (self.n_layers,)
             + (self.n_nodes,)
             + (self.dropout,)
@@ -512,47 +510,58 @@ class PredictDNNScores(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
         samples = self.input()["samples"]
         scores, labels, weights = [], [], []
         data_scores = {}
+        QCD_scores = {}
         data = self.input()["samples"]["data"].load()
+        QCD = self.input()["QCD"][self.category + "_QCD"]
+
+        # first extractz QCD to substract predicted from data
+        QCD_arr = QCD["array"].load()
+        QCD_weights = QCD["weights"].load()
+
         for i in range(self.kfold):
             # to switch training/validation
             j = abs(i - 1)
             # each model should now predict labels for the validation data
             model = torch.load(models["fold_" + str(i)]["model"].path)
-            inp_data = self.input()["samples"]["cross_val_" + str(j)]
-            X_test = np.concatenate([inp_data["cross_val_X_train_" + str(j)].load(), inp_data["cross_val_X_val_" + str(j)].load()])
-            y_test = np.concatenate([inp_data["cross_val_y_train_" + str(j)].load(), inp_data["cross_val_y_val_" + str(j)].load()])
-            weight_test = np.concatenate([inp_data["cross_val_weight_train_" + str(j)].load(), inp_data["cross_val_weight_val_" + str(j)].load()])
+            inputs = self.input()["samples"]["cross_val_" + str(j)]
+            X_test = np.concatenate([inputs["cross_val_X_train_" + str(j)].load(), inputs["cross_val_X_val_" + str(j)].load()])
+            y_test = np.concatenate([inputs["cross_val_y_train_" + str(j)].load(), inputs["cross_val_y_val_" + str(j)].load()])
+            weight_test = np.concatenate([inputs["cross_val_weight_train_" + str(j)].load(), inputs["cross_val_weight_val_" + str(j)].load()])
 
-            pred_dataset = util.ClassifierDatasetWeight(torch.from_numpy(X_test).float(), torch.from_numpy(y_test).float(), torch.from_numpy(weight_test).float())
-            pred_loader = torch.utils.data.DataLoader(dataset=pred_dataset, batch_size=len(X_test))
+            # pred_dataset = util.ClassifierDatasetWeight(torch.from_numpy(X_test).float(), torch.from_numpy(y_test).float(), torch.from_numpy(weight_test).float())
+            # pred_loader = torch.utils.data.DataLoader(dataset=pred_dataset, batch_size=len(X_test))
 
             with torch.no_grad():
                 model.eval()
-                for X_pred_batch, y_pred_batch, weight_pred_batch in pred_loader:
-                    X_scores = model(X_pred_batch)
+                X_scores = model(torch.tensor(X_test))
+                data_pred = model(torch.tensor(data))
+                QCD_pred = model(torch.tensor(QCD_arr))
+            scores.append(X_scores.numpy())
+            labels.append(y_test)
+            weights.append(weight_test)
+            data_scores.update({i: data_pred.numpy()})
+            QCD_scores.update({i: QCD_pred.numpy()})
+            # for X_pred_batch, y_pred_batch, weight_pred_batch in pred_loader:
+            # X_scores = model(X_pred_batch)
 
-                    scores.append(X_scores.numpy())
-                    labels.append(y_pred_batch)
-                    weights.append(weight_pred_batch)
+            # scores.append(X_scores.numpy())
+            # labels.append(y_pred_batch)
+            # weights.append(weight_pred_batch)
 
-                    # test_predict = reconstructed_model.predict(X_test)
-                    # y_predictions_0 = np.array(y_predictions[0])
+            # test_predict = reconstructed_model.predict(X_test)
+            # y_predictions_0 = np.array(y_predictions[0])
 
-            data_pred_list = []
-            data_loader = torch.utils.data.DataLoader(dataset=data, batch_size=1000)
-            with torch.no_grad():
-                model.eval()
-                for X_data in data_loader:
-                    data_pred = model(X_data)
-                    data_pred_list.append(data_pred.numpy())
-
-            data_scores.update({i: np.concatenate(data_pred_list)})
+            # data_loader = torch.utils.data.DataLoader(dataset=data, batch_size=1000)
+            # for X_data in data_loader:
 
         averaged_data_scores = sum(list(data_scores.values())) / len(data_scores.values())
+        averaged_QCD_scores = sum(list(QCD_scores.values())) / len(QCD_scores.values())
         self.output()["scores"].dump(np.concatenate(scores))
         self.output()["labels"].dump(np.concatenate(labels))
         self.output()["weights"].dump(np.concatenate(weights))
         self.output()["data"].dump(averaged_data_scores)
+        self.output()["QCD_scores"].dump(averaged_QCD_scores)
+        self.output()["QCD_weights"].dump(QCD_weights)
 
 
 class CalcNormFactors(DNNTask):  # Requiring MergeArrays from a DNNTask leads to JSON errors
@@ -562,8 +571,8 @@ class CalcNormFactors(DNNTask):  # Requiring MergeArrays from a DNNTask leads to
     def requires(self):
         out = {
             "samples": CrossValidationPrep.req(self, kfold=self.kfold),
-            "models": PytorchCrossVal.req(self, kfold=self.kfold, workflow="local"),
-            "scores": PredictDNNScores.req(self),
+            "models": PytorchCrossVal.req(self, kfold=self.kfold),
+            "scores": PredictDNNScores.req(self, workflow="local"),
         }
 
         return out
@@ -574,7 +583,6 @@ class CalcNormFactors(DNNTask):  # Requiring MergeArrays from a DNNTask leads to
     def store_parts(self):
         return (
             super(CalcNormFactors, self).store_parts()
-            + (self.category,)
             # + (self.n_layers,)
             + (self.n_nodes,)
             + (self.dropout,)
@@ -585,20 +593,28 @@ class CalcNormFactors(DNNTask):  # Requiring MergeArrays from a DNNTask leads to
     def run(self):
         models = self.input()["models"]["collection"].targets[0]
         samples = self.input()["samples"]
+        inp_scores = self.input()["scores"]["collection"].targets[0]
+
+        # loading predicted scores for EWK and data
         scores, labels, weights = [], [], []
         data_scores = {}
         data = self.input()["samples"]["data"].load()
-        MC_scores = self.input()["scores"]["collection"].targets[0]["scores"].load()
+        MC_scores = inp_scores["scores"].load()
 
-        data_scores = self.input()["scores"]["collection"].targets[0]["data"].load()
+        data_scores = inp_scores["data"].load()
 
-        MC_labels = self.input()["scores"]["collection"].targets[0]["labels"].load()
+        MC_labels = inp_scores["labels"].load()
         MC_labels = np.argmax(MC_labels, axis=-1)
         MC_pred = np.argmax(MC_scores, axis=-1)
+        weights = inp_scores["weights"].load()
 
-        weights = self.input()["scores"]["collection"].targets[0]["weights"].load()
+        # QCD
+        QCD_scores = inp_scores["QCD_scores"].load()
+        QCD_weights = inp_scores["QCD_weights"].load()
+        QCD_node_0 = QCD_weights[np.argmax(QCD_scores, axis=-1) == 0]
+        QCD_node_1 = QCD_weights[np.argmax(QCD_scores, axis=-1) == 1]
 
-        # assigning notes
+        # assigning nodes
         tt_node_0 = weights[(MC_labels == 0) & (MC_pred == 0)]
         WJets_node_0 = weights[(MC_labels == 1) & (MC_pred == 0)]
         data_node_0 = np.argmax(data_scores, axis=-1) == 0
@@ -607,13 +623,16 @@ class CalcNormFactors(DNNTask):  # Requiring MergeArrays from a DNNTask leads to
         WJets_node_1 = weights[(MC_labels == 1) & (MC_pred == 1)]
         data_node_1 = np.argmax(data_scores, axis=-1) == 1
 
-        # constructing and solving linear equation system
+        # constructing and solving linear equation system, QCD for now weighted with delta = 1
         left_side = np.array([[np.sum(tt_node_0), np.sum(WJets_node_0)], [np.sum(tt_node_1), np.sum(WJets_node_1)]])
-        right_side = np.array([np.sum(data_node_0), np.sum(data_node_1)])
+        right_side = np.array([np.sum(data_node_0) - np.sum(QCD_node_0), np.sum(data_node_1) - np.sum(QCD_node_1)])
         factors = np.linalg.solve(left_side, right_side)
+
+        print("Left: ", left_side, "\nRight: ", right_side)
 
         # alpha * tt + beta * Wjets
         factor_dict = {"alpha": factors[0], "beta": factors[1]}
+        print(factor_dict)
         self.output().dump(factor_dict)
 
 
