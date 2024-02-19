@@ -27,7 +27,10 @@ def setup_categories(cfg):
     # write "cut" for boolean cuts
     # Otherwise declare variable from skimmed root file with respective cut
     # ("hard_lep", "cut"), ("selected", "cut"), ("no_veto_lepton", "cut"), ("nJet", ">=3"), ("HLT_Or", "cut"),
-    N0b = cfg.add_category("N0b", label="0 btagged jets", label_short="0 btag", aux={"cuts": [("LT", ">250"), ("HT", ">500"), ("ghost_muon_filter", "cut"), ("JetPt_2", ">80"), ("nDeepJetMediumBTag", "==0"), ("iso_cut", "cut"), ("doubleCounting_XOR", "cut")]})
+    N0b = cfg.add_category("N0b", label="0 btagged jets", label_short="0 btag", aux={"cuts": [("LT", ">250"), ("HT", ">500"), ("nJet", ">=3"), ("ghost_muon_filter", "cut"), ("JetPt_2", ">80"), ("nDeepJetMediumBTag", "==0"), ("iso_cut", "cut"), ("doubleCounting_XOR", "cut")]})
+    SR0b = cfg.add_category("SR0b", label="0 btagged jets, njet5", label_short="0 btag", aux={"cuts": [("LT", ">250"), ("HT", ">500"), ("nJet5", "cut"), ("ghost_muon_filter", "cut"), ("JetPt_2", ">80"), ("nDeepJetMediumBTag", "==0"), ("iso_cut", "cut"), ("doubleCounting_XOR", "cut")]})
     # N1ib = cfg.add_category("N1ib", label=">=1 btagged jets", label_short=">=1 btag", aux={"cuts": [("LT", ">250"), ("HT", ">500"), ("ghost_muon_filter", "cut"), ("JetPt_2", ">80"), ("nDeepJetMediumBTag", ">=1"), ("iso_cut", "cut"), ("doubleCounting_XOR", "cut")]})
-    # Min_cuts = cfg.add_category("Min_cuts", label="Min_cuts", label_short="min cuts", aux={"cuts": [("LT", "> 350"), ("HT", ">500")]})
+    Anti_cuts = cfg.add_category("Anti_cuts", label="Anti_cuts", label_short="min cuts", aux={"cuts": [("LT", ">250"), ("HT", ">500"), ("nJet34", "cut"), ("ghost_muon_filter", "cut"), ("JetPt_2", ">80"), ("nDeepJetMediumBTag", "==0"), ("iso_cut", "cut"), ("lepton_anti_sel", "cut"), ("doubleCounting_XOR", "cut")]})
+    SB_cuts = cfg.add_category("SB_cuts", label="Sideband cuts", label_short="SB cuts", aux={"cuts": [("LT", ">250"), ("HT", ">500"), ("nJet34", "cut"), ("ghost_muon_filter", "cut"), ("JetPt_2", ">80"), ("nDeepJetMediumBTag", "==0"), ("iso_cut", "cut"), ("lepton_sel", "cut"), ("doubleCounting_XOR", "cut")]})
+    SR_Anti = cfg.add_category("SR_Anti", label="SR_Anti", label_short="SR_Anti cuts", aux={"cuts": [("LT", ">250"), ("HT", ">500"), ("nJet5", "cut"), ("ghost_muon_filter", "cut"), ("JetPt_2", ">80"), ("nDeepJetMediumBTag", "==0"), ("iso_cut", "cut"), ("lepton_anti_sel", "cut"), ("doubleCounting_XOR", "cut")]})
     # No_cuts = cfg.add_category("No_cuts", label="No_cuts", label_short="No cuts", aux={"cuts": []})
