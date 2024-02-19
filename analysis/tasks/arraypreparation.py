@@ -16,7 +16,6 @@ class ArrayNormalisation(CoffeaTask):
     Current idea: normalise them to prepare for the DNN
     """
 
-    channel = luigi.Parameter(default="N0b_CR", description="channel to prepare")
     data = luigi.BoolParameter(default=False, description="save data")
 
     def requires(self):
@@ -83,33 +82,34 @@ class ArrayNormalisation(CoffeaTask):
 
         # loop through datasets and sort according to aux template
         # only N0b for now
-        for cat in self.config_inst.categories.names()[:1]:
-            for i, key in enumerate(self.config_inst.get_aux("DNN_process_template")[cat].keys()):
-                # fill MC classes
-                proc_list = []
-                weight_list = []
-                for subproc in self.config_inst.get_aux("DNN_process_template")[cat][key]:
-                    proc_list.append(self.input()[cat + "_" + subproc]["array"].load())
-                    weight_list.append(self.input()[cat + "_" + subproc]["weights"].load())
-                    print("\n", subproc, np.max(self.input()[cat + "_" + subproc]["array"].load()))
-                    argmax = np.argmax(self.input()[cat + "_" + subproc]["array"].load(), axis=0)
-                    arr = self.input()[cat + "_" + subproc]["array"].load()
-                    var_names = self.config_inst.variables.names()
-                    # for j in range(len(argmax)):
-                    #     print(var_names[j] , arr[argmax[j]][j])#, arr[argmax[i]])
-                proc_dict.update({key: np.concatenate(proc_list)})
-                weight_dict.update({key + "_weights": np.concatenate(weight_list)})
+        # for cat in self.config_inst.categories.names()[:1]:
+        cat = self.category
+        for i, key in enumerate(self.config_inst.get_aux("DNN_process_template")[cat].keys()):
+            # fill MC classes
+            proc_list = []
+            weight_list = []
+            for subproc in self.config_inst.get_aux("DNN_process_template")[cat][key]:
+                proc_list.append(self.input()[cat + "_" + subproc]["array"].load())
+                weight_list.append(self.input()[cat + "_" + subproc]["weights"].load())
+                print("\n", subproc, np.max(self.input()[cat + "_" + subproc]["array"].load()))
+                argmax = np.argmax(self.input()[cat + "_" + subproc]["array"].load(), axis=0)
+                arr = self.input()[cat + "_" + subproc]["array"].load()
+                var_names = self.config_inst.variables.names()
+                # for j in range(len(argmax)):
+                #     print(var_names[j] , arr[argmax[j]][j])#, arr[argmax[i]])
+            proc_dict.update({key: np.concatenate(proc_list)})
+            weight_dict.update({key + "_weights": np.concatenate(weight_list)})
 
-                # build labels for classification
-                output_nodes = len(self.config_inst.get_aux("DNN_process_template")[cat].keys())
-                labels = np.zeros((len(np.concatenate(proc_list)), output_nodes))
-                labels[:, i] = 1
-                print(i, key)
-                one_hot_labels.append(labels)
-            # fill data
-            for dat in self.datasets_to_process:
-                if self.config_inst.get_process(dat).aux["isData"]:
-                    data_list.append(self.input()[cat + "_" + dat]["array"].load())
+            # build labels for classification
+            output_nodes = len(self.config_inst.get_aux("DNN_process_template")[cat].keys())
+            labels = np.zeros((len(np.concatenate(proc_list)), output_nodes))
+            labels[:, i] = 1
+            print(i, key)
+            one_hot_labels.append(labels)
+        # fill data
+        for dat in self.datasets_to_process:
+            if self.config_inst.get_process(dat).aux["isData"]:
+                data_list.append(self.input()[cat + "_" + dat]["array"].load())
 
         # merge all processes
         MC_compl = np.concatenate(list(proc_dict.values()))
@@ -189,30 +189,31 @@ class CrossValidationPrep(CoffeaTask):
         # loop through datasets and sort according to aux template
         # for now only 1st category
 
-        for cat in self.config_inst.categories.names()[:1]:
-            for i, key in enumerate(self.config_inst.get_aux("DNN_process_template")[cat].keys()):
-                proc_list = []
-                weight_list = []
-                DNNId_list = []
-                print("node", key)
-                for subproc in self.config_inst.get_aux("DNN_process_template")[cat][key]:
-                    proc_list.append(self.input()[cat + "_" + subproc]["array"].load())
-                    weight_list.append(self.input()[cat + "_" + subproc]["weights"].load())
-                    DNNId_list.append(self.input()[cat + "_" + subproc]["DNNId"].load())
-                    print(subproc, "len, weightsum", len(self.input()[cat + "_" + subproc]["array"].load()), np.sum(self.input()[cat + "_" + subproc]["weights"].load()))
+        # for cat in self.config_inst.categories.names()[:1]:
+        cat = self.category
+        for i, key in enumerate(self.config_inst.get_aux("DNN_process_template")[cat].keys()):
+            proc_list = []
+            weight_list = []
+            DNNId_list = []
+            print("node", key)
+            for subproc in self.config_inst.get_aux("DNN_process_template")[cat][key]:
+                proc_list.append(self.input()[cat + "_" + subproc]["array"].load())
+                weight_list.append(self.input()[cat + "_" + subproc]["weights"].load())
+                DNNId_list.append(self.input()[cat + "_" + subproc]["DNNId"].load())
+                print(subproc, "len, weightsum", len(self.input()[cat + "_" + subproc]["array"].load()), np.sum(self.input()[cat + "_" + subproc]["weights"].load()))
 
-                # print(proc_list)
-                proc_dict.update({key: np.concatenate(proc_list)})
-                weight_dict.update({key + "_weights": np.concatenate(weight_list)})
-                DNNId_dict.update({key + "_DNNId": np.concatenate(DNNId_list)})
-                # build labels for classification
-                output_nodes = len(self.config_inst.get_aux("DNN_process_template")[cat].keys())
-                labels = np.zeros((len(np.concatenate(proc_list)), output_nodes))
-                labels[:, i] = 1
-                print(key, i)
-                one_hot_labels.append(labels)
-            for dat in self.config_inst.aux["data"]:
-                data_list.append(self.input()[cat + "_" + dat]["array"].load())
+            # print(proc_list)
+            proc_dict.update({key: np.concatenate(proc_list)})
+            weight_dict.update({key + "_weights": np.concatenate(weight_list)})
+            DNNId_dict.update({key + "_DNNId": np.concatenate(DNNId_list)})
+            # build labels for classification
+            output_nodes = len(self.config_inst.get_aux("DNN_process_template")[cat].keys())
+            labels = np.zeros((len(np.concatenate(proc_list)), output_nodes))
+            labels[:, i] = 1
+            print(key, i)
+            one_hot_labels.append(labels)
+        for dat in self.config_inst.aux["data"]:
+            data_list.append(self.input()[cat + "_" + dat]["array"].load())
 
         # merge all processes
         MC_compl = np.concatenate(list(proc_dict.values()))
