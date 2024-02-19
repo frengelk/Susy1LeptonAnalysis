@@ -12,14 +12,14 @@ from luigi import BoolParameter, ListParameter, Parameter
 from rich.console import Console
 
 # other modules
-from tasks.base import DatasetTask, HTCondorWorkflow
-from utils.coffea_base import ArrayExporter, ArrayAccumulator
+from tasks.base import AnalysisTask, DatasetTask, HTCondorWorkflow
+from utils.coffea_base import ArrayExporter, ArrayAccumulator, AntiExporter
 from utils.signal_regions import signal_regions_0b
 from tasks.makefiles import WriteDatasetPathDict, CollectInputData, CalcBTagSF, CollectMasspoints
 from utils.coffea_base import ArrayExporter
 
 
-class CoffeaTask(DatasetTask):
+class CoffeaTask(AnalysisTask):  # DatasetTask
     """
     token task to define attributes
     shared functions between tasks also defined here
@@ -50,7 +50,7 @@ class CoffeaTask(DatasetTask):
         return proc_list
 
     def load_job_dict(self):
-        with open(self.config_inst.get_aux("job_dict").replace(".json", "_" + self.version + ".json")) as f:
+        with open(self.config_inst.get_aux("job_dict").replace(".json", "_" + self.version + "_" + self.category + ".json")) as f:
             data_list = json.load(f)
         # redoing datalist to incorporate mass points for signal
         """
@@ -139,7 +139,7 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
                 "cutflow": self.local_target(cat + "_" + dat + "_" + str(job) + "cutflow.coffea"),
                 "n_minus1": self.local_target(cat + "_" + dat + "_" + str(job) + "n_minus1.coffea"),
             }
-            for cat in self.config_inst.categories.names()
+            for cat in [self.category]  # self.config_inst.categories.names()
             for job, dat in process_dict.items()
         }
         if self.shift == "systematic_shifts":
@@ -156,7 +156,7 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
                     "n_minus1": self.local_target(cat + "_" + dat + "_" + str(job) + "n_minus1.coffea"),
                     "systematic_shifts": {shift: self.local_target(cat + "_" + dat + "_" + shift + "_" + str(job) + "_shifted_weights.npy") for shift in self.config_inst.get_aux("systematic_shifts")},
                 }
-                for cat in self.config_inst.categories.names()
+                for cat in [self.category]  # self.config_inst.categories.names()
                 for job, dat in process_dict.items()
             }
         return out
@@ -220,10 +220,15 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
                         "cutflow": hist.Hist("Counts", hist.Bin("cutflow", "Cut", 20, 0, 20)),
                         "n_minus1": hist.Hist("Counts", hist.Bin("Nminus1", "Cut", 20, 0, 20)),
                         "arrays": {
-                            "N0b_" + dataset: {"hl": ArrayAccumulator(np.reshape(np.array([], dtype=np.float64), (0, len(self.config_inst.variables)))), "weights": ArrayAccumulator(np.array([], dtype=np.float64)), "DNNId": ArrayAccumulator(np.array([], dtype=np.float64))},
-                            # "N1ib_" + dataset: {"hl": ArrayAccumulator(np.reshape(np.array([], dtype=np.float64), (0, len(self.config_inst.variables)))), "weights": ArrayAccumulator(np.array([], dtype=np.float64)), "DNNId": ArrayAccumulator(np.array([], dtype=np.float64))},
+                            self.category + "_" + dataset: {"hl": ArrayAccumulator(np.reshape(np.array([], dtype=np.float64), (0, len(self.config_inst.variables)))), "weights": ArrayAccumulator(np.array([], dtype=np.float64)), "DNNId": ArrayAccumulator(np.array([], dtype=np.float64))},
                         },
                     }
+                    if self.shift == "systematic_shifts":
+                        for shift in self.config_inst.get_aux("systematic_shifts"):
+                            out["arrays"][self.category + "_" + dataset][shift] = ArrayAccumulator(np.array([], dtype=np.float64))
+                            # elif self.shift != "nominal":
+                            #     out[self.shift]=ArrayAccumulator(np.array([], dtype=np.float64)
+                            # "N1ib_" + dataset: {"hl": ArrayAccumulator(np.reshape(np.array([], dtype=np.float64), (0, len(self.config_inst.variables)))), "weights": ArrayAccumulator(np.array([], dtype=np.float64)), "DNNId": ArrayAccumulator(np.array([], dtype=np.float64))},
                 # sum_gen_weight = np.sum(file["MetaData"]["SumGenWeight"].array())
             else:
                 # filler values so they are defined
@@ -233,7 +238,7 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
         fileset = {
             dataset: {
                 "files": [data_path + "/" + subset],  # file for file in
-                "metadata": {"PD": primaryDataset, "isData": isData, "isFastSim": isFastSim, "isSignal": isSignal, "xSec": xSec, "Luminosity": lumi, "sumGenWeight": sum_gen_weights_dict[dataset], "btagSF": btagSF, "shift": self.shift},
+                "metadata": {"PD": primaryDataset, "isData": isData, "isFastSim": isFastSim, "isSignal": isSignal, "xSec": xSec, "Luminosity": lumi, "sumGenWeight": sum_gen_weights_dict[dataset], "btagSF": btagSF, "shift": self.shift, "category": self.category},
             }
         }
         if not empty:
@@ -271,7 +276,124 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
                 if self.shift == "systematic_shifts":
                     for shift in self.config_inst.get_aux("systematic_shifts"):
                         self.output()[cat + "_" + str(self.branch)]["systematic_shifts"][shift].dump(out["arrays"][cat][shift].value)
-                print(cat, len(out["arrays"][cat]["weights"].value), len(out["arrays"][cat]["hl"].value), len(out["arrays"][cat][shift].value))
+
+
+class AntiProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
+    # require more ressources
+    RAM = 5000
+    hours = 1
+
+    def requires(self):
+        return {"files": WriteDatasetPathDict.req(self, category=self.category), "weights": CollectInputData.req(self, category=self.category)}
+
+    def create_branch_map(self):
+        # define job number according to number of files of the dataset that you want to process
+        job_number = self.load_job_dict()[1]
+        return list(range(job_number))
+
+    def output(self):
+        files, job_number, job_number_dict, process_dict = self.load_job_dict()
+        out = {
+            cat
+            + "_"
+            + dat.split("/")[0]
+            + "_"
+            + str(job): {
+                "array": self.local_target(cat + "_" + dat + "_" + str(job) + ".npy"),
+                "weights": self.local_target(cat + "_" + dat + "_" + str(job) + "_weights.npy"),
+            }
+            for cat in [self.category]
+            for job, dat in process_dict.items()
+        }
+        # from IPython import embed; embed()
+        return out
+
+    def store_parts(self):
+        parts = (self.processor, self.lepton_selection)
+        return super(AntiProcessor, self).store_parts() + parts
+
+    @law.decorator.timeit(publish_message=True)
+    def run(self):
+        data_dict = self.input()["files"]["dataset_dict"].load()  # ["SingleMuon"]  # {self.dataset: [self.file]}
+        data_path = self.input()["files"]["dataset_path"].load()
+        sum_gen_weights_dict = self.input()["weights"]["sum_gen_weights"].load()
+        # declare processor
+        processor_inst = AntiExporter(self, Lepton=self.lepton_selection)
+        # building together the respective strings to use for the coffea call
+        files, job_number, job_number_dict, process_dict = self.load_job_dict()
+        treename = self.lepton_selection
+        subset = job_number_dict[self.branch]
+        dataset = process_dict[self.branch]
+        if dataset == "merged":
+            dataset = data_path.split("/")[-2]
+        proc = self.config_inst.get_process(dataset)
+
+        # check for empty dataset
+        empty = False
+        with up.open(data_path + "/" + subset) as file:
+            # data_path + "/" + subset[self.branch]
+            primaryDataset = file["MetaData"]["primaryDataset"].array()[0]
+            isData = file["MetaData"]["IsData"].array()[0]
+            isFastSim = file["MetaData"]["IsFastSim"].array()[0]
+            if proc.is_leaf_process:
+                # check parent
+                isSignal = proc.parent_processes.get_first().get_aux("isSignal")
+            else:
+                isSignal = proc.get_aux("isSignal")
+            if not isData:
+                # assert all events with the same Xsec in scope with float precision
+                # assert abs(np.mean(file["MetaData"]["xSection"].array()) - file["MetaData"]["xSection"].array()[0]) < file["MetaData"]["xSection"].array()[0] * 1e-5
+                # FIXME xSec = file["MetaData"]["xSection"].array()[0]
+                xSec = proc.xsecs[13].nominal
+                lumi = file["MetaData"]["Luminosity"].array()[0]
+                # find the calculated btag SFs per file and save path
+                subsub = subset.split("/")[1]
+                # if empty skip and construct placeholder output
+                if len(file[treename]["Event"].array()) == 0:
+                    empty = True
+                    out = {
+                        "arrays": {
+                            self.config_inst.categories.names()[0] + "_" + dataset: {"hl": ArrayAccumulator(np.reshape(np.array([], dtype=np.float64), (0, len(self.config_inst.variables)))), "weights": ArrayAccumulator(np.array([], dtype=np.float64)), "DNNId": ArrayAccumulator(np.array([], dtype=np.float64))},
+                        }
+                    }
+            else:
+                # filler values so they are defined
+                xSec = 1
+                lumi = 1
+        fileset = {
+            dataset: {
+                "files": [data_path + "/" + subset],  # file for file in
+                "metadata": {"PD": primaryDataset, "isData": isData, "isFastSim": isFastSim, "isSignal": isSignal, "xSec": xSec, "Luminosity": lumi, "sumGenWeight": sum_gen_weights_dict[dataset], "shift": self.shift, "category": self.category},
+            }
+        }
+        if not empty:
+            start = time.time()
+            # call imported processor, magic happens here
+            out = processor.run_uproot_job(
+                fileset,
+                treename=treename,
+                processor_instance=processor_inst,
+                # pre_executor=processor.futures_executor,
+                # pre_args=dict(workers=32),
+                executor=processor.iterative_executor,
+                executor_args=dict(status=False),  # desc="", unit="Trolling"), # , desc="Trolling"
+                # metadata_cache = 'MetaData',
+                # schema=BaseSchema,),
+                chunksize=10000,
+            )
+            # show summary
+            console = Console()
+            all_events = out["n_events"]["sumAllEvents"]
+            total_time = time.time() - start
+            console.print("\n[u][bold magenta]Summary metrics:[/bold magenta][/u]")
+            console.print(f"* Total time: {total_time:.2f}s")
+            console.print(f"* Total events: {all_events:e}")
+            console.print(f"* Events / s: {all_events/total_time:.0f}")
+        # save outputs, seperated for processor, both need different touch calls
+        self.output().popitem()[1]["array"].parent.touch()
+        for cat in out["arrays"]:
+            self.output()[cat + "_" + str(self.branch)]["weights"].dump(out["arrays"][cat]["weights"].value)
+            self.output()[cat + "_" + str(self.branch)]["array"].dump(out["arrays"][cat]["hl"].value)
 
 
 class CollectCoffeaOutput(CoffeaTask):
