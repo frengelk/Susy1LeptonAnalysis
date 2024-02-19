@@ -105,29 +105,34 @@ class DataModuleClass(pl.LightningDataModule):
             mask = self.y_train[:, i] == 1
             sum = np.sum(weight_train[mask])
             # overall weight tensor should yield num_classes
+            # FIXME the sqrt is just a test np.sqrt(sum)
             weight_train[mask] /= sum  # * len(self.y_train[0]) / tot_weight
 
+        # FIXME oversample signal, or undersample? undersampling seems to be better
+        mask = self.y_train[:, -1] == 1
+        # weight_train[mask] *= 1/1.5
+
         sampler = data.WeightedRandomSampler(weight_train, len(weight_train), replacement=True)
-        dataloader = data.DataLoader(
-            dataset=self.train_dataset,
-            sampler=sampler,
-            batch_size=self.batch_size,
-            num_workers=8,
-        )
         # dataloader = data.DataLoader(
         #     dataset=self.train_dataset,
+        #     sampler=sampler,
         #     batch_size=self.batch_size,
-        #     shuffle=True,
         #     num_workers=8,
         # )
+        # FIXME train without sampling
+        dataloader = data.DataLoader(
+            dataset=self.train_dataset,
+            batch_size=self.batch_size,
+            shuffle=True,
+            num_workers=8,
+        )
 
         return dataloader
 
     def val_dataloader(self):
         return data.DataLoader(
             dataset=self.val_dataset,
-            batch_size=self.batch_size,
-            shuffle=True,  # 10 *  , shuffle=True  # len(val_dataset
+            batch_size=10 * self.batch_size,  # 10 *  , shuffle=True  # len(val_dataset
             num_workers=8,
         )
 
@@ -159,8 +164,7 @@ class MulticlassClassification(pl.LightningModule):  # nn.Module core.lightning.
         self.layer_out = nn.Linear(n_nodes, num_class)
         self.softmax = nn.Softmax(dim=1)  # log_
         self.class_weights = class_weights
-        # self.loss = nn.CrossEntropyLoss(reduction="mean")  # weight=class_weights,
-        self.loss = nn.BCELoss(reduction="mean")  # FIXME
+        self.loss = nn.CrossEntropyLoss(reduction="mean")  # weight=class_weights,
 
         self.relu = nn.ELU()  # FIXME nn.ReLU()
         self.dropout = nn.Dropout(p=dropout)
@@ -325,6 +329,8 @@ class NormalizeInputs(nn.Module):
     def forward(self, input):
         x = input - self.mean
         x = x / self.std
+        # cast x to correct dtype
+        x = x.to(torch.float32)
         return x
 
 
