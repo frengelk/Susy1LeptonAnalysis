@@ -64,7 +64,7 @@ class ArrayPlotting(CoffeaTask):  # , HTCondorWorkflow, law.LocalWorkflow):
                     "log": self.local_target(cat + "/" + "density/" * self.density + "/log/" + var + "." + ending),
                 }
                 for var in self.config_inst.variables.names()
-                for cat in self.config_inst.categories.names()
+                for cat in [self.category]  # self.config_inst.categories.names()
                 for ending in self.formats
             }
         return {
@@ -76,7 +76,7 @@ class ArrayPlotting(CoffeaTask):  # , HTCondorWorkflow, law.LocalWorkflow):
                 "log": self.local_target(cat + "/" + lep + "/" + "density/" * self.density + "/log/" + var + "." + ending),
             }
             for var in self.config_inst.variables.names()
-            for cat in self.config_inst.categories.names()
+            for cat in [self.category]  # self.config_inst.categories.names()
             for lep in self.channel
             for ending in self.formats
         }
@@ -129,187 +129,189 @@ class ArrayPlotting(CoffeaTask):  # , HTCondorWorkflow, law.LocalWorkflow):
                         # for key in self.input()[lep].keys():
                         np_dict.update({key: self.input()[lep]["collection"].targets[0][key]})
                         # np_dict.update({key: self.input()[lep][key]})
-                for cat in self.config_inst.categories.names():
-                    sumOfHists = []
-                    if self.unblinded:
-                        fig, (ax, rax) = plt.subplots(2, 1, figsize=(12, 10), sharex=True, gridspec_kw={"height_ratios": [3, 1], "hspace": 0})
-                    else:
-                        fig, ax = plt.subplots(figsize=(12, 10))
-                    hep.style.use("CMS")
-                    # hep.style.use("CMS")
-                    # hep.cms.label(
-                    # label="Private Work",
-                    # loc=0,
-                    # ax=ax,
-                    # )
-                    hep.cms.text("Private work (CMS simulation)", loc=0, ax=ax)
-                    hep.cms.lumitext(text=str(np.round(self.config_inst.get_aux("lumi") / 1000, 2)) + r"$fb^{-1}$", ax=ax)
-                    # save histograms for ratio computing
-                    hist_counts = {}
-                    signal_hists = {}
-                    if self.unblinded:
-                        # filling all data in one boost_hist
-                        data_boost_hist = bh.Histogram(self.construct_axis(var.binning, not var.x_discrete))
-                    # if self.signal:
-                    #    signal_boost_hist = bh.Histogram(self.construct_axis(var.binning, not var.x_discrete))
-                    for dat in self.datasets_to_process:
-                        proc = self.config_inst.get_process(dat)
-                        if not proc.aux["isData"]:
-                            boost_hist = bh.Histogram(self.construct_axis(var.binning, not var.x_discrete))
-                        # for key, value in np_dict.items():
-                        # for pro in self.get_proc_list([dat]):
-                        key = cat + "_" + dat
-                        # this will only be true for merged
-                        if key in np_dict.keys():
-                            if proc.aux["isData"] and self.unblinded:
-                                data_boost_hist.fill(np_dict[key]["array"].load()[:, ind])
-                                if var.x_discrete:
-                                    data_boost_hist = data_boost_hist / np.prod(data_boost_hist.axes.widths, axis=0)
-                                # np.load(value["array"].path)  # , weight=np.load(value["weights"].path))
-                            elif proc.aux["isSignal"] and self.signal:
-                                signal_boost_hist = bh.Histogram(self.construct_axis(var.binning, not var.x_discrete))
-                                signal_boost_hist.fill(np_dict[key]["array"].load()[:, ind], weight=np_dict[key]["weights"].load())
-                                if var.x_discrete:
-                                    signal_boost_hist = signal_boost_hist / np.prod(signal_boost_hist.axes.widths, axis=0)
-                                signal_hists.update(
-                                    {
-                                        dat: {
-                                            "hist": signal_boost_hist,
-                                            "label": "{}".format(proc.label),
-                                            "color": proc.color,
-                                        }
+                # for cat in self.config_inst.categories.names():
+                cat = self.category
+                sumOfHists = []
+                if self.unblinded:
+                    fig, (ax, rax) = plt.subplots(2, 1, figsize=(12, 10), sharex=True, gridspec_kw={"height_ratios": [3, 1], "hspace": 0})
+                else:
+                    fig, ax = plt.subplots(figsize=(12, 10))
+                hep.style.use("CMS")
+                # hep.style.use("CMS")
+                # hep.cms.label(
+                # label="Private Work",
+                # loc=0,
+                # ax=ax,
+                # )
+                hep.cms.text("Private work (CMS simulation)", loc=0, ax=ax)
+                hep.cms.lumitext(text=str(np.round(self.config_inst.get_aux("lumi") / 1000, 2)) + r"$fb^{-1}$", ax=ax)
+                # save histograms for ratio computing
+                hist_counts = {}
+                signal_hists = {}
+                if self.unblinded:
+                    # filling all data in one boost_hist
+                    data_boost_hist = bh.Histogram(self.construct_axis(var.binning, not var.x_discrete))
+                # if self.signal:
+                #    signal_boost_hist = bh.Histogram(self.construct_axis(var.binning, not var.x_discrete))
+                for dat in self.datasets_to_process:
+                    proc = self.config_inst.get_process(dat)
+                    if not proc.aux["isData"]:
+                        boost_hist = bh.Histogram(self.construct_axis(var.binning, not var.x_discrete))
+                    # for key, value in np_dict.items():
+                    # for pro in self.get_proc_list([dat]):
+                    key = cat + "_" + dat
+                    # this will only be true for merged
+                    if key in np_dict.keys():
+                        if proc.aux["isData"] and self.unblinded:
+                            data_boost_hist.fill(np_dict[key]["array"].load()[:, ind])
+                            if var.x_discrete:
+                                data_boost_hist = data_boost_hist / np.prod(data_boost_hist.axes.widths, axis=0)
+                            # np.load(value["array"].path)  # , weight=np.load(value["weights"].path))
+                        elif proc.aux["isSignal"] and self.signal:
+                            signal_boost_hist = bh.Histogram(self.construct_axis(var.binning, not var.x_discrete))
+                            signal_boost_hist.fill(np_dict[key]["array"].load()[:, ind], weight=np_dict[key]["weights"].load())
+                            if var.x_discrete:
+                                signal_boost_hist = signal_boost_hist / np.prod(signal_boost_hist.axes.widths, axis=0)
+                            signal_hists.update(
+                                {
+                                    dat: {
+                                        "hist": signal_boost_hist,
+                                        "label": "{}".format(proc.label),
+                                        "color": proc.color,
                                     }
-                                )
-
-                            elif not proc.aux["isData"] and not proc.aux["isSignal"]:
-                                boost_hist.fill(np_dict[key]["array"].load()[:, ind], weight=np_dict[key]["weights"].load())
-                                if var.x_discrete:
-                                    boost_hist = boost_hist / np.prod(boost_hist.axes.widths, axis=0)
-
-                        if not self.merged:
-                            for pro in self.get_proc_list([dat]):
-                                boost_hist = bh.Histogram(self.construct_axis(var.binning, not var.x_discrete))
-                                k = cat + "_" + pro
-                                for key in np_dict.keys():
-                                    if k in key:
-                                        boost_hist.fill(np_dict[key]["array"].load()[:, ind], weight=np_dict[key]["weights"].load())
-                                hep.histplot(boost_hist, label=k, histtype="step", ax=ax)  # flow="sum",
-
-                        if self.divide_by_binwidth:
-                            boost_hist = boost_hist / np.prod(boost_hist.axes.widths, axis=0)
-                        if self.density:
-                            boost_hist = self.get_density(boost_hist)
-                        # don't stack data and signal, defined in config/processes
-                        if proc.aux["isData"]:
-                            continue
-                        if proc.aux["isSignal"]:
-                            continue
-                        hist_counts.update(
-                            {
-                                dat: {
-                                    "hist": boost_hist,
-                                    "label": proc.label,
-                                    "color": proc.color,
                                 }
+                            )
+
+                        elif not proc.aux["isData"] and not proc.aux["isSignal"]:
+                            boost_hist.fill(np_dict[key]["array"].load()[:, ind], weight=np_dict[key]["weights"].load())
+                            if var.x_discrete:
+                                boost_hist = boost_hist / np.prod(boost_hist.axes.widths, axis=0)
+
+                    if not self.merged:
+                        for pro in self.get_proc_list([dat]):
+                            boost_hist = bh.Histogram(self.construct_axis(var.binning, not var.x_discrete))
+                            k = cat + "_" + pro
+                            for key in np_dict.keys():
+                                if k in key:
+                                    boost_hist.fill(np_dict[key]["array"].load()[:, ind], weight=np_dict[key]["weights"].load())
+                            hep.histplot(boost_hist, label=k, histtype="step", ax=ax)  # flow="sum",
+
+                    if self.divide_by_binwidth:
+                        boost_hist = boost_hist / np.prod(boost_hist.axes.widths, axis=0)
+                    if self.density:
+                        boost_hist = self.get_density(boost_hist)
+                    # don't stack data and signal, defined in config/processes
+                    if proc.aux["isData"]:
+                        continue
+                    if proc.aux["isSignal"]:
+                        continue
+                    hist_counts.update(
+                        {
+                            dat: {
+                                "hist": boost_hist,
+                                "label": proc.label,
+                                "color": proc.color,
                             }
-                        )  # , histtype=proc.aux["histtype"])})
-                        # if you want yields, incorporate them like this:
-                        # hist_counts.update({dat: {"hist": boost_hist, "label": "{} {}: {}".format(proc.label, lep, np.round(boost_hist.sum(), 2)), "color": proc.color}})
-                        sumOfHists.append(boost_hist.sum())
-                    # sorting the labels/handels of the plt hist by descending magnitude of integral
-                    order = np.argsort(np.array(sumOfHists))
+                        }
+                    )  # , histtype=proc.aux["histtype"])})
+                    # if you want yields, incorporate them like this:
+                    # hist_counts.update({dat: {"hist": boost_hist, "label": "{} {}: {}".format(proc.label, lep, np.round(boost_hist.sum(), 2)), "color": proc.color}})
+                    sumOfHists.append(boost_hist.sum())
+                # sorting the labels/handels of the plt hist by descending magnitude of integral
+                order = np.argsort(np.array(sumOfHists))
 
-                    # one histplot together, ordered by integral
-                    # can't stack seperate histplot calls, so we have do it like that
-                    hist_list, label_list, color_list = [], [], []
-                    for key in np.array(list(hist_counts.keys()))[order]:
-                        hist_list.append(hist_counts[key]["hist"])
-                        label_list.append(hist_counts[key]["label"])
-                        color_list.append(hist_counts[key]["color"])
-                    if self.merged:
-                        hep.histplot(hist_list, histtype="fill", stack=True, label=label_list, color=color_list, ax=ax)  # flow="sum",
-                    # deciated data plotting
-                    if self.unblinded:
-                        proc = self.config_inst.get_process("data")
-                        hep.histplot(data_boost_hist, label="{} {}".format(proc.label, lep), color=proc.color, histtype=proc.aux["histtype"], ax=ax)  # , flow="sum"
-                        sumOfHists.append(data_boost_hist.sum())
-                        hist_counts.update({"data": {"hist": data_boost_hist}})
-                    # plot signal last
-                    if self.signal:
-                        # prc = {"0b": self.config_inst.get_process("SMS-T5qqqqVV_TuneCP2_13TeV-madgraphMLM-pythia8"), "mb": self.config_inst.get_process("T1tttt")}[self.analysis_choice]
-                        for key, val in signal_hists.items():
-                            prc = self.config_inst.get_process(key)
-                            hep.histplot(val["hist"], label="{}".format(val["label"]), color=val["color"], histtype=prc.aux["histtype"], linewidth=3, ax=ax)  # ,flow="sum"
-                            sumOfHists.append(val["hist"].sum())
-                            hist_counts.update({prc.name: {"hist": val["hist"]}})
-                    # missing boost hist divide and density
-                    handles, labels = ax.get_legend_handles_labels()
-                    if self.merged:
-                        # handles = [h for _, h in sorted(zip(sumOfHists, handles))]
-                        handles = [h for _, h in total_ordering(zip(sumOfHists, handles))]
-                        # labels = [l for _, l in sorted(zip(sumOfHists, labels))]
-                        labels = [l for _, l in total_ordering(zip(sumOfHists, labels))]
-                    ax.legend(
-                        handles,
-                        labels,
-                        ncol=3,
-                        # title=cat,
-                        loc="upper right",
-                        bbox_to_anchor=(1, 1),
-                        borderaxespad=0,
-                        prop={"size": 16},
-                    )
-                    ax.set_ylabel(var.y_title, fontsize=24)  # var.get_full_y_title()
-                    ax.tick_params(axis="both", which="major", labelsize=18)
+                # one histplot together, ordered by integral
+                # can't stack seperate histplot calls, so we have do it like that
+                hist_list, label_list, color_list = [], [], []
+                for key in np.array(list(hist_counts.keys()))[order]:
+                    hist_list.append(hist_counts[key]["hist"])
+                    label_list.append(hist_counts[key]["label"])
+                    color_list.append(hist_counts[key]["color"])
+                if self.merged:
+                    hep.histplot(hist_list, histtype="fill", stack=True, label=label_list, color=color_list, ax=ax)  # flow="sum",
+                # deciated data plotting
+                if self.unblinded:
+                    proc = self.config_inst.get_process("data")
+                    hep.histplot(data_boost_hist, label="{} {}".format(proc.label, lep), color=proc.color, histtype=proc.aux["histtype"], ax=ax)  # , flow="sum"
+                    sumOfHists.append(data_boost_hist.sum())
+                    hist_counts.update({"data": {"hist": data_boost_hist}})
+                # plot signal last
+                if self.signal:
+                    # prc = {"0b": self.config_inst.get_process("SMS-T5qqqqVV_TuneCP2_13TeV-madgraphMLM-pythia8"), "mb": self.config_inst.get_process("T1tttt")}[self.analysis_choice]
+                    for key, val in signal_hists.items():
+                        prc = self.config_inst.get_process(key)
+                        hep.histplot(val["hist"], label="{}".format(val["label"]), color=val["color"], histtype=prc.aux["histtype"], linewidth=3, ax=ax)  # ,flow="sum"
+                        sumOfHists.append(val["hist"].sum())
+                        hist_counts.update({prc.name: {"hist": val["hist"]}})
+                # missing boost hist divide and density
+                handles, labels = ax.get_legend_handles_labels()
+                if self.merged:
+                    # handles = [h for _, h in sorted(zip(sumOfHists, handles))]
+                    handles = [h for _, h in total_ordering(zip(sumOfHists, handles))]
+                    # labels = [l for _, l in sorted(zip(sumOfHists, labels))]
+                    labels = [l for _, l in total_ordering(zip(sumOfHists, labels))]
+                ax.legend(
+                    handles,
+                    labels,
+                    ncol=3,
+                    # title=cat,
+                    loc="upper right",
+                    bbox_to_anchor=(1, 1),
+                    borderaxespad=0,
+                    prop={"size": 16},
+                )
+                ax.set_ylabel(var.y_title, fontsize=24)  # var.get_full_y_title()
+                ax.tick_params(axis="both", which="major", labelsize=18)
+                if var.x_discrete:
+                    ax.set_xlim(var.binning[0], var.binning[-1])
+                if not var.x_discrete:
+                    ax.set_xlim(var.binning[1], var.binning[2])
+
+                if self.unblinded:
+                    MC_hist = bh.Histogram(self.construct_axis(var.binning, not var.x_discrete))
+                    data_hist = bh.Histogram(self.construct_axis(var.binning, not var.x_discrete))
+                    for dat, hist in hist_counts.items():
+                        proc = self.config_inst.get_process(dat)
+                        if proc.aux["isData"]:
+                            data_hist += hist["hist"]
+                        elif not proc.aux["isSignal"]:
+                            MC_hist += hist["hist"]
+                    ratio = data_hist / MC_hist
+                    stat_unc = np.sqrt(ratio * (ratio / MC_hist + ratio / data_hist))
+                    rax.axhline(1.0, color="black", linestyle="--")
+                    rax.fill_between(ratio.axes[0].centers, 1 - 0.023, 1 + 0.023, alpha=0.3, facecolor="black")
+                    hep.histplot(ratio, color="black", histtype="errorbar", stack=False, yerr=stat_unc, ax=rax)
+                    rax.set_xlabel(var.get_full_x_title(), fontsize=18)
                     if var.x_discrete:
-                        ax.set_xlim(var.binning[0], var.binning[-1])
+                        rax.set_xlim(var.binning[0], var.binning[-1])
                     if not var.x_discrete:
-                        ax.set_xlim(var.binning[1], var.binning[2])
+                        rax.set_xlim(var.binning[1], var.binning[2])
+                    rax.set_ylabel("Data/MC", fontsize=24)
+                    rax.set_ylim(0.5, 1.5)
+                    rax.tick_params(axis="both", which="major", labelsize=18)
+                else:
+                    ax.set_xlabel(var.get_full_x_title(), fontsize=24)
 
-                    if self.unblinded:
-                        MC_hist = bh.Histogram(self.construct_axis(var.binning, not var.x_discrete))
-                        data_hist = bh.Histogram(self.construct_axis(var.binning, not var.x_discrete))
-                        for dat, hist in hist_counts.items():
-                            proc = self.config_inst.get_process(dat)
-                            if proc.aux["isData"]:
-                                data_hist += hist["hist"]
-                            elif not proc.aux["isSignal"]:
-                                MC_hist += hist["hist"]
-                        ratio = data_hist / MC_hist
-                        stat_unc = np.sqrt(ratio * (ratio / MC_hist + ratio / data_hist))
-                        rax.axhline(1.0, color="black", linestyle="--")
-                        rax.fill_between(ratio.axes[0].centers, 1 - 0.023, 1 + 0.023, alpha=0.3, facecolor="black")
-                        hep.histplot(ratio, color="black", histtype="errorbar", stack=False, yerr=stat_unc, ax=rax)
-                        rax.set_xlabel(var.get_full_x_title(), fontsize=18)
-                        if var.x_discrete:
-                            rax.set_xlim(var.binning[0], var.binning[-1])
-                        if not var.x_discrete:
-                            rax.set_xlim(var.binning[1], var.binning[2])
-                        rax.set_ylabel("Data/MC", fontsize=24)
-                        rax.set_ylim(0.5, 1.5)
-                        rax.tick_params(axis="both", which="major", labelsize=18)
-                    else:
-                        ax.set_xlabel(var.get_full_x_title(), fontsize=24)
+                for ending in self.formats:
+                    outputKey = var.name + cat + lep + ending
+                    if self.merged:
+                        outputKey = var.name + cat + ending
+                    # create dir
+                    self.output()[outputKey]["nominal"].parent.touch()
+                    self.output()[outputKey]["log"].parent.touch()
 
-                    for ending in self.formats:
-                        outputKey = var.name + cat + lep + ending
-                        if self.merged:
-                            outputKey = var.name + cat + ending
-                        # create dir
-                        self.output()[outputKey]["nominal"].parent.touch()
-                        self.output()[outputKey]["log"].parent.touch()
+                    ax.set_yscale("linear")
+                    # for Benno ax.set_ylim(2e-2, 2e1)
+                    plt.savefig(self.output()[outputKey]["nominal"].path, bbox_inches="tight")
 
-                        ax.set_yscale("linear")
-                        plt.savefig(self.output()[outputKey]["nominal"].path, bbox_inches="tight")
-
-                        ax.set_yscale("log")
-                        ax.set_ylim(2e-2, 2e11)  # FIXME
-                        # ax.set_yticks(np.arange(10))
-                        ax.set_yticks([10 ** (i - 1) for i in range(12)])
-                        # ax.get_yaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
-                        plt.savefig(self.output()[outputKey]["log"].path, bbox_inches="tight")
-                    plt.gcf().clear()
-                    plt.close(fig)
+                    ax.set_yscale("log")
+                    ax.set_ylim(2e-2, 2e11)  # FIXME
+                    # ax.set_yticks(np.arange(10))
+                    ax.set_yticks([10 ** (i - 1) for i in range(12)])
+                    # ax.get_yaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
+                    plt.savefig(self.output()[outputKey]["log"].path, bbox_inches="tight")
+                plt.gcf().clear()
+                plt.close(fig)
 
 
 class StitchingPlot(CoffeaTask):
@@ -1025,13 +1027,12 @@ class DNNEvaluationCrossValPlotting(DNNTask):
 
 
 class DNNScorePlotting(DNNTask):
-    category = luigi.Parameter(default="N0b", description="set it for now, can be dynamical later")
     unblinded = luigi.BoolParameter(default=False)
     density = luigi.BoolParameter(default=False)
     unweighted = luigi.BoolParameter(default=False)
 
     def requires(self):
-        return {"scores": PredictDNNScores.req(self), "norm": CalcNormFactors.req(self)}
+        return {"scores": PredictDNNScores.req(self, workflow="local"), "norm": CalcNormFactors.req(self)}
         # return ConstructInferenceBins.req(self)
 
     def output(self):
@@ -1066,6 +1067,7 @@ class DNNScorePlotting(DNNTask):
         weights = inp["weights"].load()
         # alpha * tt + beta * Wjets
         norm = self.input()["norm"].load()
+        print("Norm", norm)
         if self.unweighted:
             weights = np.ones_like(weights)
         data_scores = inp["data"].load()
@@ -1081,13 +1083,13 @@ class DNNScorePlotting(DNNTask):
         # one plot per per output note
         for i, key in enumerate(self.config_inst.get_aux("DNN_process_template")[self.category].keys()):
             if key == self.config_inst.get_aux("signal_process").replace("V", "W"):
-                signal_node = False  # FIXME True
+                signal_node = True  # FIXME True
             else:
                 signal_node = False
-            fig = plt.figure(figsize=(12, 9))
+            fig, (ax, sig_ax) = plt.subplots(2, 1, figsize=(12, 10), sharex=True, gridspec_kw={"height_ratios": [3, 1], "hspace": 0})
             hep.style.use("CMS")
-            hep.cms.text("Private work (CMS simulation)", loc=0)
-            hep.cms.lumitext(text=str(np.round(self.config_inst.get_aux("lumi") / 1000, 2)) + r"$fb^{-1}$")
+            hep.cms.text("Private work (CMS simulation)", loc=0, ax=ax)
+            hep.cms.lumitext(text=str(np.round(self.config_inst.get_aux("lumi") / 1000, 2)) + r"$fb^{-1}$", ax=ax)
             MC_hists = {}
             signal_dict = {}
             for proc in scores_dict.keys():
@@ -1122,19 +1124,28 @@ class DNNScorePlotting(DNNTask):
                     signal_hist.fill(scores_dict[proc][mask][:, i], weight=scores_dict[proc + "_weight"][mask])
                     # signal_dict[proc] = signal_hist
 
-            hep.histplot(list(MC_hists.values()), histtype="fill", stack=True, label=list(MC_hists.keys()), color=["blue", "orange"], flow="none", density=self.density)
+            hep.histplot(list(MC_hists.values()), histtype="fill", stack=True, label=list(MC_hists.keys()), color=["blue", "orange"], flow="none", density=self.density, ax=ax)
             if self.unblinded:
-                hep.histplot(data_boost_hist, histtype="errorbar", label="Data", color="black", flow="none", density=self.density)
-            hep.histplot(signal_hist, histtype="step", label=self.config_inst.get_aux("signal_process").replace("V", "W"), color="red", flow="none", density=self.density)
-
-            plt.xlabel("DNN Scores in node " + key, fontsize=24)
-            plt.ylabel("Counts", fontsize=24)
-            plt.xlim = (0, 1)
-            plt.yscale("log")
-            plt.legend(ncol=1, loc="upper left", bbox_to_anchor=(0, 1), borderaxespad=0, prop={"size": 18})
+                hep.histplot(data_boost_hist, histtype="errorbar", label="Data", color="black", flow="none", density=self.density, ax=ax)
+            hep.histplot(signal_hist, histtype="step", label=self.config_inst.get_aux("signal_process").replace("V", "W"), color="red", flow="none", density=self.density, ax=ax)
+            ax.set_ylabel("Counts", fontsize=24)
+            ax.set_xlim(0, 1)
+            ax.set_yscale("log")
+            ax.legend(ncol=1, loc="upper left", bbox_to_anchor=(0, 1), borderaxespad=0, prop={"size": 18})
 
             if self.density:
-                plt.ylim(5e-2, 2e1)
+                ax.set_ylim(5e-2, 2e1)
+
+            # doing significance
+            bg = sum(MC_hists.values())
+            sig = signal_hist / np.sqrt(sum(MC_hists.values()))
+            sig_err = np.sqrt(np.power(1 / np.sqrt(bg) * np.sqrt(signal_hist), 2) + np.power(signal_hist / (2 * np.power(bg, 1.5)) * np.sqrt(bg), 2))
+            hep.histplot(sig, color="red", histtype="step", stack=False, yerr=sig_err, ax=sig_ax, label="Significance")
+
+            sig_ax.set_xlabel("DNN Scores in node " + key, fontsize=24)
+            sig_ax.set_ylabel("$signal / \sqrt{bg}$", fontsize=24)
+            sig_ax.set_xlim(0, 1)
+            sig_ax.legend(ncol=1, loc="upper left", bbox_to_anchor=(0, 1), borderaxespad=0, prop={"size": 18})
 
             self.output()[key + "_png"].parent.touch()
             plt.savefig(self.output()[key + "_argmax_png"].path, bbox_inches="tight")
@@ -1150,7 +1161,7 @@ class DNNScorePlotting(DNNTask):
             plt.hist(scores_i, bins=np.arange(0, 1, 0.01))
             plt.xlabel("All DNN Scores in node " + key, fontsize=24)
             plt.ylabel("Counts", fontsize=24)
-            plt.xlim = (0, 1)
+            plt.xlim(0, 1)
             plt.yscale("log")
             plt.savefig(self.output()[key + "_png"].path.replace(".png", "all_scores.png"), bbox_inches="tight")
             plt.gcf().clear()
@@ -1158,7 +1169,7 @@ class DNNScorePlotting(DNNTask):
         ################# plots without argmax ###############
         for i, key in enumerate(self.config_inst.get_aux("DNN_process_template")[self.category].keys()):
             if key == self.config_inst.get_aux("signal_process").replace("V", "W"):
-                signal_node = False  # FIXME True
+                signal_node = True  # FIXME True
             else:
                 signal_node = False
             if self.unblinded:
@@ -1173,7 +1184,6 @@ class DNNScorePlotting(DNNTask):
             for proc in scores_dict.keys():
                 if "weight" in proc:
                     continue
-
                 if proc != "data" and not self.config_inst.get_aux("signal_process").replace("V", "W") in proc:
                     # constructing hist and filling it with scores
                     if not signal_node:
@@ -1183,9 +1193,9 @@ class DNNScorePlotting(DNNTask):
                         boost_hist = bh.Histogram(self.construct_axis(self.config_inst.get_aux("signal_binning"), isRegular=False))
                     # assign norm factors
                     factor = 1
-                    if proc == "tt+jets":
+                    if proc == "ttjets":
                         factor = norm["alpha"]
-                    if proc == "W+jets":
+                    if proc == "Wjets":
                         factor = norm["beta"]
                     boost_hist.fill(scores_dict[proc][:, i], weight=factor * scores_dict[proc + "_weight"])
                     # assign legend labels and hists at same time using dict
@@ -1212,7 +1222,7 @@ class DNNScorePlotting(DNNTask):
             hep.histplot(signal_hist, histtype="step", label=self.config_inst.get_aux("signal_process").replace("V", "W"), color="red", flow="none", density=self.density, ax=ax)
 
             ax.set_ylabel("Counts", fontsize=24)
-            ax.set_xlim = (0, 1)
+            ax.set_xlim(0, 1)
             ax.legend(ncol=1, loc="upper left", bbox_to_anchor=(0, 1), borderaxespad=0, prop={"size": 18})
 
             if self.unblinded:
@@ -1243,3 +1253,162 @@ class DNNScorePlotting(DNNTask):
             plt.savefig(self.output()[key + "_pdf"].path.replace(".pdf", "_log.pdf"), bbox_inches="tight")
 
             plt.gcf().clear()
+
+
+class DNNScorePerProcess(CoffeaTask, DNNTask):
+    unblinded = luigi.BoolParameter(default=False)
+    signal = luigi.BoolParameter(default=False)
+    density = luigi.BoolParameter(default=False)
+    norm = luigi.BoolParameter(default=False)
+
+    def requires(self):
+        return {
+            "merged": MergeArrays.req(self),
+            "norm": CalcNormFactors.req(self),
+            "model": PytorchCrossVal.req(
+                self,
+                n_layers=self.n_layers,
+                n_nodes=self.n_nodes,
+                dropout=self.dropout,
+                kfold=self.kfold,
+                debug=False,
+            ),
+        }
+
+    def output(self):
+        return self.local_target("test.png")
+
+    def store_parts(self):
+        # make plots for each use case
+        parts = tuple()
+        if self.unblinded:
+            parts += ("unblinded",)
+        if self.signal:
+            parts += ("signal",)
+        if self.norm:
+            parts += ("norm",)
+        if self.density:
+            parts += ("density",)
+        return super(DNNScorePerProcess, self).store_parts() + (self.n_nodes,) + (self.dropout,) + (self.batch_size,) + (self.learning_rate,) + parts
+
+    def construct_axis(self, binning, isRegular=True):
+        if isRegular:
+            return bh.axis.Regular(binning[0], binning[1], binning[2])
+        else:
+            return bh.axis.Variable(binning)
+
+    @law.decorator.timeit(publish_message=True)
+    @law.decorator.safe_output
+    def run(self):
+        inp = self.input()["merged"]
+        norm_factors = self.input()["norm"].load()
+        proc_factor_dict = {"ttjets": "alpha", "Wjets": "beta"}
+
+        n_variables = len(self.config_inst.variables)
+        n_processes = len(self.config_inst.get_aux("DNN_process_template")[self.category].keys())
+        if self.unblinded:
+            fig, (ax, rax) = plt.subplots(2, 1, figsize=(12, 10), sharex=True, gridspec_kw={"height_ratios": [3, 1], "hspace": 0})
+        else:
+            fig, ax = plt.subplots(figsize=(12, 10))
+        hep.style.use("CMS")
+        hep.cms.text("Private work (CMS simulation)", loc=0, ax=ax)
+        hep.cms.lumitext(text=str(np.round(self.config_inst.get_aux("lumi") / 1000, 2)) + r"$fb^{-1}$", ax=ax)
+        # save histograms for ratio computing
+        hists = {"MC": {}, "signal": {}, "data": {}}
+        for dat in tqdm(self.datasets_to_process):
+            # print(dat)
+            # accessing the input and unpacking the condor submission structure
+            cat = self.category
+            sumOfHists = []
+            arr = inp[self.category + "_" + dat]["array"].load()
+            weights = inp[self.category + "_" + dat]["weights"].load()
+            DNNId = inp[self.category + "_" + dat]["DNNId"].load()
+            SR_scores, SR_weights = [], []
+            for i in range(self.kfold):
+                # switch around in 2 point k fold
+                j = abs(i - 1)
+                path = self.input()["model"]["collection"].targets[0]["fold_" + str(i)]["model"].path
+
+                # load complete model
+                reconstructed_model = torch.load(path)
+
+                # load all the prepared data thingies
+                X_test = torch.tensor(arr[DNNId == j])
+                weight_test = weights[DNNId == j]
+
+                with torch.no_grad():
+                    reconstructed_model.eval()
+                    y_predictions = reconstructed_model(X_test).numpy()
+                mask = np.argmax(y_predictions, axis=-1) == (n_processes - 1)
+                SR_scores.append(y_predictions[mask][:, -1])
+                SR_weights.append(weight_test[mask])
+
+            proc = self.config_inst.get_process(dat)
+            boost_hist = bh.Histogram(self.construct_axis(self.config_inst.get_aux("signal_binning"), isRegular=False))
+            boost_hist.fill(np.concatenate(SR_scores), weight=np.concatenate(SR_weights))
+
+            if proc.aux["isData"] and self.unblinded:
+                hists["data"][dat] = boost_hist
+            elif proc.aux["isSignal"] and self.signal:
+                hists["signal"][dat] = {
+                    "hist": boost_hist,
+                    "label": proc.label,
+                    "color": proc.color,
+                }
+            elif not proc.aux["isData"] and not proc.aux["isSignal"]:
+                # MC categorisation by exclusion, apply norm factors here, if we want
+                factor = 1.0
+                if self.norm:
+                    for factor_key in self.config_inst.get_aux("DNN_process_template")[self.category].keys():
+                        if dat in self.config_inst.get_aux("DNN_process_template")[self.category][factor_key]:
+                            factor = norm_factors[proc_factor_dict[factor_key]]
+                hists["MC"][dat] = {
+                    "hist": boost_hist * factor,
+                    "label": proc.label,
+                    "color": proc.color,
+                }
+
+        # one histplot together, ordered by integral
+        # can't stack seperate histplot calls, so we have do it like that
+        hist_list, label_list, color_list = [], [], []
+        for key in hists["MC"].keys():
+            hist_list.append(hists["MC"][key]["hist"])
+            label_list.append(hists["MC"][key]["label"])
+            color_list.append(hists["MC"][key]["color"])
+        # Always plot MC
+        order = np.argsort(np.sum(hist_list, axis=-1))
+        hep.histplot(np.array(hist_list)[order], bins=hist_list[0].axes[0].edges, histtype="fill", stack=True, label=np.array(label_list)[order], color=np.array(color_list)[order], ax=ax)
+
+        if self.unblinded:
+            hep.histplot(sum(list(hists["data"].values())), histtype="errorbar", label="data", color="black", ax=ax)
+            data_hist = sum(list(hists["data"].values()))
+            MC_hist = sum(hist_list)
+            ratio = data_hist / MC_hist
+            stat_unc = np.sqrt(ratio * (ratio / MC_hist + ratio / data_hist))
+            rax.axhline(1.0, color="black", linestyle="--")
+            rax.fill_between(ratio.axes[0].centers, 1 - 0.023, 1 + 0.023, alpha=0.3, facecolor="black")
+            hep.histplot(ratio, color="black", histtype="errorbar", stack=False, yerr=stat_unc, ax=rax)
+            rax.set_xlabel("DNN Scores in Signal node", fontsize=24)
+            rax.set_xlim(0, 1)
+            rax.set_ylabel("Data/MC", fontsize=24)
+            rax.set_ylim(0.5, 1.5)
+            rax.tick_params(axis="both", which="major", labelsize=18)
+        else:
+            ax.set_xlabel("DNN Scores in Signal node", fontsize=24)
+
+        if self.signal:
+            for key in hists["signal"].keys():
+                hep.histplot(hists["signal"][key]["hist"], histtype="step", label=hists["signal"][key]["label"], color=hists["signal"][key]["color"], ax=ax)
+
+        ax.set_ylabel("Counts", fontsize=24)
+        ax.set_xlim(0, 1)
+        if self.norm:
+            ax.legend(ncol=2, loc="upper left", bbox_to_anchor=(0, 1), borderaxespad=0, prop={"size": 16}, title="MC bg normalised")
+        else:
+            ax.legend(ncol=2, loc="upper left", bbox_to_anchor=(0, 1), borderaxespad=0, prop={"size": 16})
+
+        self.output().parent.touch()
+        plt.savefig(self.output().path, bbox_inches="tight")
+        ax.set_yscale("log")
+        ax.set_ylim(5e-2, 2e7)
+        plt.savefig(self.output().path.replace(".png", "_log.png"), bbox_inches="tight")

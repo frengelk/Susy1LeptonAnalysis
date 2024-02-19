@@ -24,8 +24,9 @@ from tasks.coffea import CoffeaProcessor, CoffeaTask
 from tasks.makefiles import WriteDatasetPathDict, CollectInputData, CalcBTagSF, CollectMasspoints
 from tasks.grouping import GroupCoffea, MergeArrays, MergeShiftArrays
 from tasks.arraypreparation import ArrayNormalisation, CrossValidationPrep
-from tasks.multiclass import PytorchMulticlass, PredictDNNScores, PytorchCrossVal
+from tasks.multiclass import PytorchMulticlass, PredictDNNScores, PytorchCrossVal, CalcNormFactors
 from tasks.base import HTCondorWorkflow, DNNTask
+from tasks.bgestimation import EstimateQCDinSR
 
 import utils.pytorch_base as util
 from utils.coffea_base import ArrayExporter, ArrayAccumulator
@@ -37,8 +38,10 @@ class ConstructInferenceBins(DNNTask):
 
     def requires(self):
         return {
-            "data_predicted": PredictDNNScores.req(self),
+            "data_predicted": PredictDNNScores.req(self, workflow="local"),
             "inputs": CrossValidationPrep.req(self, kfold=self.kfold),
+            "QCD_pred": EstimateQCDinSR.req(self),
+            "Norm_factors": CalcNormFactors.req(self),
             # "model":PytorchCrossVal.req(self, n_layers=self.n_layers, n_nodes=self.n_nodes,    dropout=self.dropout, kfold = self.kfold),
         }
 
@@ -63,6 +66,11 @@ class ConstructInferenceBins(DNNTask):
         MC_scores = self.input()["data_predicted"]["collection"].targets[0]["scores"].load()
         labels = self.input()["data_predicted"]["collection"].targets[0]["labels"].load()
         weights = self.input()["data_predicted"]["collection"].targets[0]["weights"].load()
+        QCD_scores = self.input()["data_predicted"]["collection"].targets[0]["QCD_scores"].load()
+        QCD_weights = self.input()["data_predicted"]["collection"].targets[0]["QCD_weights"].load()
+
+        # in SR, we take data-driven QCD prediction
+        QCD_estimate = self.input()["QCD_pred"].load()["SR_prediction"]
 
         binning = self.config_inst.get_aux("signal_binning")
         # writing data separatly
@@ -85,7 +93,7 @@ class ConstructInferenceBins(DNNTask):
         # double loop over node names since we have the labels and the predicted region
         bin_names, process_names, process_numbers, rates = [], [], [], []
         for node, key in enumerate(self.config_inst.get_aux("DNN_process_template")[self.category].keys()):
-            # leave CR as one bin, do a binning in SR to see high signal count
+            # leave CR as one bin, do a binning in SR to resolve high signal count regions better
             if key == self.config_inst.get_aux("signal_process").replace("V", "W"):
                 for i, proc in enumerate(self.config_inst.get_aux("DNN_process_template")[self.category].keys()):
                     if proc == "T5qqqqWW":
@@ -101,6 +109,11 @@ class ConstructInferenceBins(DNNTask):
                         process_names.append(proc)
                         process_numbers.append(str(len(self.config_inst.get_aux("DNN_process_template")[self.category].keys()) - (i + 1)))
                         rates.append(str(np.sum(weights_in_bin)))
+                        # QCD on top, append QCD on its own
+                        bin_names.append("DNN_Score_Node_" + key + "_" + str(edge))
+                        process_names.append("QCD")
+                        process_numbers.append(str(len(self.config_inst.get_aux("DNN_process_template")[self.category].keys())))
+                        rates.append(str(QCD_estimate[i]))
 
             else:
                 for i, proc in enumerate(self.config_inst.get_aux("DNN_process_template")[self.category].keys()):
@@ -115,10 +128,18 @@ class ConstructInferenceBins(DNNTask):
                     # signal is last process in proc_dict, so we want it to be 0
                     process_numbers.append(str(len(self.config_inst.get_aux("DNN_process_template")[self.category].keys()) - (i + 1)))
                     rates.append(str(np.sum(weights[find_proc][MC_mask])))
+                # append QCD on its own
+                QCD_mask = np.argmax(QCD_scores, axis=1) == j
+                QCD_counts_bin = np.sum(QCD_weights[QCD_mask])
+                bin_names.append("DNN_Score_Node_" + key)
+                process_names.append("QCD")
+                # just put QCD on top of all other processes
+                process_numbers.append(str(len(self.config_inst.get_aux("DNN_process_template")[self.category].keys())))
+                rates.append(str(QCD_counts_bin))
 
-                    # klen = max(len(samp) for samp in sampNames)
-                    # catDict = {"SR_MB" : "S", "CR_MB" : "C", "SR_SB" : "S2", "CR_SB" : "C2", "SR_SB_NB1i" : "S3", "CR_SB_NB1i" : "C3"}
-                    # np.random.seed(42)
+                # klen = max(len(samp) for samp in sampNames)
+                # catDict = {"SR_MB" : "S", "CR_MB" : "C", "SR_SB" : "S2", "CR_SB" : "C2", "SR_SB_NB1i" : "S3", "CR_SB_NB1i" : "C3"}
+                # np.random.seed(42)
         print(bin_names, process_names, process_numbers, rates)
 
         nominal_dict = {}
@@ -133,6 +154,7 @@ class ConstructInferenceBins(DNNTask):
         for step in np.arange(0.99, 1, 0.0001):
             print(np.round(step, 4), ": ", np.sum(MC_scores_bg_in_signode[MC_scores_bg_in_signode > step]))
         print("data max signal sore: ", np.max(data_scores[:, -1]), " and second highest: ", np.max(data_scores[:, -1][data_scores[:, -1] < np.max(data_scores[:, -1])]))
+        print("Max signal score:", np.max(MC_scores[:, -1]))
         # finish task
         self.output().dump(inference_bins)
 
@@ -145,7 +167,7 @@ class GetShiftedYields(CoffeaTask, DNNTask):
         # everything requires self, specify by arguments
         return {
             "nominal_bins": ConstructInferenceBins.req(self),
-            "shifted_arrays": MergeShiftArrays.req(self),
+            "shifted_arrays": MergeShiftArrays.req(self),  # , workflow="local"
             "samples": CrossValidationPrep.req(self),
             "predictions": PredictDNNScores.req(self),
             "model": PytorchCrossVal.req(self, n_layers=self.n_layers, n_nodes=self.n_nodes, dropout=self.dropout),
@@ -154,8 +176,8 @@ class GetShiftedYields(CoffeaTask, DNNTask):
     def output(self):
         return self.local_target("shift_unc.json")
 
-    # def store_parts(self):
-    #     return super(GetShiftedYields, self).store_parts() + (self.n_nodes,) + (self.dropout,) + (self.batch_size,) + (self.learning_rate,)
+    def store_parts(self):
+        return super(GetShiftedYields, self).store_parts() + (self.n_nodes,) + (self.dropout,) + (self.batch_size,) + (self.learning_rate,)
 
     @law.decorator.timeit(publish_message=True)
     @law.decorator.safe_output
@@ -259,6 +281,9 @@ class YieldPerMasspoint(CoffeaTask, DNNTask, HTCondorWorkflow, law.LocalWorkflow
         out = {"_".join(mp): {"scores": self.local_target("{}_{}_scores.npy".format(mp[0], mp[1])), "weights": self.local_target("{}_{}_weights.npy".format(mp[0], mp[1]))} for mp in masspoints}
         return out
 
+    def store_parts(self):
+        return super(YieldPerMasspoint, self).store_parts() + (self.n_nodes,) + (self.dropout,) + (self.batch_size,) + (self.learning_rate,)
+
     def create_branch_map(self):
         # define job number according to number of files of the dataset that you want to process
         masspoints, _ = self.load_masspoints()
@@ -321,7 +346,7 @@ class YieldPerMasspoint(CoffeaTask, DNNTask, HTCondorWorkflow, law.LocalWorkflow
         fileset = {
             dataset: {
                 "files": all_files,
-                "metadata": {"PD": primaryDataset, "isData": isData, "isFastSim": isFastSim, "isSignal": isSignal, "xSec": xSec, "Luminosity": lumi, "sumGenWeight": sum_gen_weights_dict[dataset], "btagSF": all_path, "shift": self.shift, "masspoint": mp},
+                "metadata": {"PD": primaryDataset, "isData": isData, "isFastSim": isFastSim, "isSignal": isSignal, "xSec": xSec, "Luminosity": lumi, "sumGenWeight": sum_gen_weights_dict[dataset], "btagSF": all_path, "shift": self.shift, "masspoint": mp, "category": self.category},
             }
         }
         # call imported processor, magic happens here
@@ -371,114 +396,21 @@ class YieldPerMasspoint(CoffeaTask, DNNTask, HTCondorWorkflow, law.LocalWorkflow
         self.output()["_".join(mp_str)]["weights"].dump(np.concatenate(weights))
 
 
-class DatacardWriting(DNNTask):
-    category = luigi.Parameter(default="N0b", description="set it for now, can be dynamical later")
-    kfold = luigi.IntParameter(default=2)
-
-    def requires(self):
-        return ConstructInferenceBins.req(self)
-
-    def output(self):
-        # from IPython import embed; embed()
-        return self.local_target("Datacard.txt")
-
-    """
-    def store_parts(self):
-        # make plots for each use case
-        parts = tuple()
-        if self.unblinded:
-            parts += ("unblinded",)
-        if self.density:
-            parts += ("density",)
-        return super(DatacardWriting, self).store_parts() + parts + (self.n_nodes,) + (self.dropout,) + (self.batch_size,) + (self.learning_rate,)
-    """
-
-    @law.decorator.timeit(publish_message=True)
-    @law.decorator.safe_output
-    def run(self):
-        print("if problem persists, replace + by _")
-        proc_dict = self.config_inst.get_aux("DNN_process_template")[self.category]
-        all_processes = list(proc_dict.keys())
-        n_processes = len(all_processes)
-        inp = self.input().load()
-        n_bins = len(inp["data_bins"])
-
-        # calculating xsec uncertainty, signal is tricky
-        scinums = {}
-        for p in list(self.config_inst.get_aux("DNN_process_template")[self.category].keys())[:-1]:
-            real_procs = self.config_inst.get_aux("DNN_process_template")[self.category][p]
-            a = 0
-            for pr in real_procs:
-                conf_p = self.config_inst.get_process(pr)
-                for child in conf_p.walk_processes():
-                    a += child[0].xsecs[13]
-            scinums[p] = a
-        scinums["T5qqqqWW"] = self.config_inst.get_process("T5qqqqWW").xsecs[13]
-
-        process_unc = {}
-        for key in scinums.keys():
-            unc = []
-            for name in inp["process_names"]:
-                if name == key:
-                    num = scinums[key]
-                    # absolute unc / nominal
-                    unc.append(str(1 + num.u()[0] / num.n))
-                else:
-                    unc.append("-")
-            process_unc[key] = unc
-
-        self.output().parent.touch()
-        with open(self.output().path, "w") as datacard:
-            datacard.write("## Datacard for (signal %s)\n" % (all_processes[-1]))
-            datacard.write("imax {}  number of channels \n".format(n_bins))
-            datacard.write("jmax %i  number of processes -1 \n" % (len(self.config_inst.get_aux("DNN_process_template")[self.category].keys()) - 1))
-            datacard.write("kmax * number of nuisance parameters (sources of systematical uncertainties) \n")  # .format(1)
-            datacard.write("---\n")
-
-            # shapes *           hww0j_8TeV  hwwof_0j.input_8TeV.root histo_$PROCESS histo_$PROCESS_$SYSTEMATIC
-            # shapes data_obs    hww0j_8TeV  hwwof_0j.input_8TeV.root histo_Data
-
-            datacard.write("bin " + " ".join(inp["data_bins"]) + "\n")
-            datacard.write("observation " + " ".join(inp["data_obs"]) + "\n")
-            datacard.write("---\n")
-
-            datacard.write("bin " + " ".join(inp["bin_names"]) + "\n")
-            datacard.write("process " + " ".join(inp["process_names"]) + "\n")
-            datacard.write("process " + " ".join(inp["process_numbers"]) + "\n")
-            datacard.write("rate " + " ".join(inp["rates"]) + "\n")
-
-            # datacard.write('bin '+ "DNN_Score_Node_0 "*n_processes +"\n")
-            # datacard.write("process " + " ".join([str(i ) for i in range(n_processes - 1, -1, -1)]) +"\n") # - n_processes+1
-            # datacard.write("process " + " ".join([proc for proc in all_processes]) +"\n")
-            # datacard.write("rate " + " ".join([str(val) for val in proc_dict.values()]) +"\n")
-
-            # systematics
-            datacard.write("---\n")
-            datacard.write("lumi lnN " + "1.023 " * len(inp["bin_names"]) + "\n")  # each process has a score in each process node
-            for key in process_unc.keys():
-                datacard.write("Xsec_{} lnN ".format(key) + " ".join(process_unc[key]) + "\n")
-
-            # doing background estimation
-            datacard.write("---\n")
-            # format name rateParam channel process initial value
-            datacard.write("alpha rateParam * {} 1 \n".format(all_processes[0]))
-            datacard.write("beta rateParam * {} 1 \n".format(all_processes[1]))
-            # maybe Calcnorm as initial values
-
-
 class DatacardPerMasspoint(CoffeaTask, DNNTask):
     shifts = luigi.ListParameter(default=["PreFireWeightUp"])
     channel = luigi.ListParameter(default=["Muon", "Electron"])
-    category = luigi.Parameter(default="N0b", description="set it for now, can be dynamical later")
     kfold = luigi.IntParameter(default=2)
 
     def requires(self):
-        return {"Signal_yields": YieldPerMasspoint.req(self), "Fixed_yields": ConstructInferenceBins.req(self), "Shifted_yields": GetShiftedYields.req(self)}
+        return {"Signal_yields": YieldPerMasspoint.req(self, datasets_to_process=["T5qqqqWW"]), "Fixed_yields": ConstructInferenceBins.req(self), "Shifted_yields": GetShiftedYields.req(self)}
 
     def output(self):
         _, masspoints = self.load_masspoints()
         out = {"_".join(mp): self.local_target("{}_{}_datacard.txt".format(mp[0], mp[1])) for mp in masspoints}
         return out
+
+    def store_parts(self):
+        return super(DatacardPerMasspoint, self).store_parts() + (self.n_nodes,) + (self.dropout,) + (self.batch_size,) + (self.learning_rate,)
 
     def load_masspoints(self):
         with open(self.config_inst.get_aux("masspoints")) as f:
@@ -552,10 +484,14 @@ class DatacardPerMasspoint(CoffeaTask, DNNTask):
                     process_unc[shift].append(str(shifted_yields[shift][new_key]))
                 else:
                     process_unc[shift].append("-")
+        max_scores = []
         for mp in tqdm(str_masspoints):
             rates, bin_names = [], []
             mp_scores = signal_yields["_".join(mp)]["scores"].load()
             mp_weights = signal_yields["_".join(mp)]["weights"].load()
+            # so large cross sections don't mess up limit plottinh
+            if int(mp[0]) < 1410:
+                mp_weights /= 100
             for node, key in enumerate(self.config_inst.get_aux("DNN_process_template")[self.category].keys()):
                 mask = np.argmax(mp_scores, axis=1) == node
                 scores_in_node = mp_scores[mask][:, node]
@@ -571,17 +507,20 @@ class DatacardPerMasspoint(CoffeaTask, DNNTask):
                     rates.append(str(np.sum(mp_weights[mask])))
                     bin_names.append("DNN_Score_Node_" + key)
 
+            # print("Max signal score: ", mp, " ", np.max(mp_scores[:,-1]))
+            max_scores.append(np.max(mp_scores[:, -1]))
             # construct uncertainty rows
             # deepcopy dict in each iteration so we don't print all masspoints in last datacard
             cp_process_unc = deepcopy(process_unc)
             for key in cp_process_unc.keys():
                 cp_process_unc[key] = ["-"] * len(bin_names) + cp_process_unc[key]
             # FIXME old analysis done by Uncertainty (NLO + NLL) [%]
-            cp_process_unc["Xsec_T5qqqqWW_" + mp[0]] = [str(1 + xsec_dic["Uncertainty (NNLOapprox + NNLL) [%]"][mp[0]] / 100)] * len(bin_names) + ["-"] * len(fixed_bin_names)
+            # cp_process_unc["Xsec_T5qqqqWW_" + mp[0]] = [str(1 + xsec_dic["Uncertainty (NNLOapprox + NNLL) [%]"][mp[0]] / 100)] * len(bin_names) + ["-"] * len(fixed_bin_names)
+            cp_process_unc["Flat_T5qqqqWW_Unc"] = ["1.20"] * len(bin_names) + ["-"] * len(fixed_bin_names)
             with open(self.output()["_".join(mp)].path, "w") as datacard:
-                datacard.write("## Datacard for (signal mGlu {} mNeu)\n".format(mp[0], mp[1]))
+                datacard.write("## Datacard for (signal mGlu {} mNeu {})\n".format(mp[0], mp[1]))
                 datacard.write("imax {}  number of channels \n".format(len(bin_names)))
-                datacard.write("jmax %i  number of processes -1 \n" % (n_processes - 1))
+                datacard.write("jmax %i  number of processes -1 \n" % (n_processes - 1 + 1))  # QCD extra
                 datacard.write("kmax * number of nuisance parameters (sources of systematical uncertainties) \n")  # .format(1)
                 datacard.write("---\n")
 
@@ -608,3 +547,99 @@ class DatacardPerMasspoint(CoffeaTask, DNNTask):
                 # format name rateParam channel process initial value
                 datacard.write("alpha rateParam * {} 1 \n".format(all_processes[0]))
                 datacard.write("beta rateParam * {} 1 \n".format(all_processes[1]))
+        print("least signal score:", np.min(np.array(max_scores)), masspoints[np.argmin(np.array(max_scores))])
+
+
+class DatacardWriting(DNNTask):
+    category = luigi.Parameter(default="N0b", description="set it for now, can be dynamical later")
+    kfold = luigi.IntParameter(default=2)
+
+    def requires(self):
+        return ConstructInferenceBins.req(self)
+
+    def output(self):
+        # from IPython import embed; embed()
+        return self.local_target("Datacard.txt")
+
+    """
+    def store_parts(self):
+        # make plots for each use case
+        parts = tuple()
+        if self.unblinded:
+            parts += ("unblinded",)
+        if self.density:
+            parts += ("density",)
+        return super(DatacardWriting, self).store_parts() + parts + (self.n_nodes,) + (self.dropout,) + (self.batch_size,) + (self.learning_rate,)
+    """
+
+    @law.decorator.timeit(publish_message=True)
+    @law.decorator.safe_output
+    def run(self):
+        print("if problem persists, replace + by _")
+        proc_dict = self.config_inst.get_aux("DNN_process_template")[self.category]
+        all_processes = list(proc_dict.keys())
+        n_processes = len(all_processes)
+        inp = self.input().load()
+        n_bins = len(inp["data_bins"])
+
+        # calculating xsec uncertainty, signal is tricky
+        scinums = {}
+        for p in list(self.config_inst.get_aux("DNN_process_template")[self.category].keys())[:-1]:
+            real_procs = self.config_inst.get_aux("DNN_process_template")[self.category][p]
+            a = 0
+            for pr in real_procs:
+                conf_p = self.config_inst.get_process(pr)
+                for child in conf_p.walk_processes():
+                    a += child[0].xsecs[13]
+            scinums[p] = a
+        scinums["T5qqqqWW"] = self.config_inst.get_process("T5qqqqWW").xsecs[13]
+
+        process_unc = {}
+        for key in scinums.keys():
+            unc = []
+            for name in inp["process_names"]:
+                if name == key:
+                    num = scinums[key]
+                    # absolute unc / nominal
+                    unc.append(str(1 + num.u()[0] / num.n))
+                else:
+                    unc.append("-")
+            process_unc[key] = unc
+
+        self.output().parent.touch()
+        with open(self.output().path, "w") as datacard:
+            datacard.write("## Datacard for (signal %s)\n" % (all_processes[-1]))
+            datacard.write("imax {}  number of channels \n".format(n_bins + 1))  # QCD now
+            datacard.write("jmax %i  number of processes -1 \n" % (len(self.config_inst.get_aux("DNN_process_template")[self.category].keys()) - 1 + 1))  # QCD extra
+            datacard.write("kmax * number of nuisance parameters (sources of systematical uncertainties) \n")  # .format(1)
+            datacard.write("---\n")
+
+            # shapes *           hww0j_8TeV  hwwof_0j.input_8TeV.root histo_$PROCESS histo_$PROCESS_$SYSTEMATIC
+            # shapes data_obs    hww0j_8TeV  hwwof_0j.input_8TeV.root histo_Data
+
+            datacard.write("bin " + " ".join(inp["data_bins"]) + "\n")
+            datacard.write("observation " + " ".join(inp["data_obs"]) + "\n")
+            datacard.write("---\n")
+
+            datacard.write("bin " + " ".join(inp["bin_names"]) + "\n")
+            datacard.write("process " + " ".join(inp["process_names"]) + "\n")
+            datacard.write("process " + " ".join(inp["process_numbers"]) + "\n")
+            datacard.write("rate " + " ".join(inp["rates"]) + "\n")
+
+            # datacard.write('bin '+ "DNN_Score_Node_0 "*n_processes +"\n")
+            # datacard.write("process " + " ".join([str(i ) for i in range(n_processes - 1, -1, -1)]) +"\n") # - n_processes+1
+            # datacard.write("process " + " ".join([proc for proc in all_processes]) +"\n")
+            # datacard.write("rate " + " ".join([str(val) for val in proc_dict.values()]) +"\n")
+
+            # systematics
+            datacard.write("---\n")
+            datacard.write("lumi lnN " + "1.023 " * len(inp["bin_names"]) + "\n")  # each process has a score in each process node
+            for key in process_unc.keys():
+                datacard.write("Xsec_{} lnN ".format(key) + " ".join(process_unc[key]) + "\n")
+
+            # doing background estimation
+            datacard.write("---\n")
+            # format name rateParam channel process initial value
+            datacard.write("alpha rateParam * {} 1 \n".format(all_processes[0]))
+            datacard.write("beta rateParam * {} 1 \n".format(all_processes[1]))
+            # maybe Calcnorm as initial values
