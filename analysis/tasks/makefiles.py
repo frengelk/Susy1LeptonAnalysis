@@ -50,6 +50,9 @@ class WriteDatasets(BaseMakeFilesTask):
     def output(self):
         return self.local_target("datasets_{}.json".format(self.year))
 
+    def store_parts(self):
+        return super(WriteDatasets, self).store_parts()
+
     def run(self):
         self.output().parent.touch()
 
@@ -77,8 +80,8 @@ class WriteDatasets(BaseMakeFilesTask):
             json.dump(file_dict, out)
 
         # copy the json file directly to the aux part
-        print("Writing job dict to:", self.config_inst.get_aux("job_dict").replace(".json", "_" + self.version + ".json"))
-        os.system("cp {} {}".format(self.output().path, self.config_inst.get_aux("job_dict").replace(".json", "_" + self.version + ".json")))
+        print("Writing job dict to:", self.config_inst.get_aux("job_dict").replace(".json", "_" + self.version + "_" + self.category + ".json"))
+        os.system("cp {} {}".format(self.output().path, self.config_inst.get_aux("job_dict").replace(".json", "_" + self.version + "_" + self.category + ".json")))
 
 
 class WriteDatasetPathDict(BaseMakeFilesTask):
@@ -96,6 +99,9 @@ class WriteDatasetPathDict(BaseMakeFilesTask):
             "dataset_path": self.local_target("path.json"),  # save this so you'll find the files
             "job_number_dict": self.local_target("job_number_dict.json"),
         }
+
+    def store_parts(self):
+        return super(WriteDatasetPathDict, self).store_parts()
 
     def run(self):
         self.output()["dataset_dict"].parent.touch()
@@ -215,10 +221,18 @@ class CollectInputData(BaseMakeFilesTask):
         return WriteDatasetPathDict.req(self)
 
     def output(self):
-        return {
-            "sum_gen_weights": self.local_target("sum_gen_weights.json"),
-            "cutflow": self.local_target("cutflow_dict.json"),
-        }
+        if "Anti" in self.category or "SB" in self.category:
+            return {
+                "sum_gen_weights": self.local_target("sum_gen_weights.json"),
+            }
+        else:
+            return {
+                "sum_gen_weights": self.local_target("sum_gen_weights.json"),
+                "cutflow": self.local_target("cutflow_dict.json"),
+            }
+
+    def store_parts(self):
+        return super(CollectInputData, self).store_parts()
 
     # written by ChatGPT
     def find_filled_bins(hist):
@@ -269,29 +283,35 @@ class CollectInputData(BaseMakeFilesTask):
                             if new_key not in sum_gen_weights_dict.keys():
                                 # cutflow_dict["Muon"][key] = file['cutflow_Muon;1'].values()
                                 # cutflow_dict["Electron"][key] = file['cutflow_Electron;1'].values()
-                                muon_arr = file["cutflow_Muon;1"].values()
-                                electron_arr = file["cutflow_Electron;1"].values()
                                 sum_gen_weights_dict[new_key] = sum_gen_weight
+                                if not ("Anti" in self.category or "SB" in self.category):
+                                    muon_arr = file["cutflow_Muon;1"].values()
+                                    electron_arr = file["cutflow_Electron;1"].values()
                             elif new_key in sum_gen_weights_dict.keys():
                                 sum_gen_weights_dict[new_key] += sum_gen_weight
-                                muon_arr += file["cutflow_Muon;1"].values()
+                                if not ("Anti" in self.category or "SB" in self.category):
+                                    muon_arr += file["cutflow_Muon;1"].values()
+                                    electron_arr += file["cutflow_Electron;1"].values()
 
                     # else:
                     # keys should do the same for both dicts
                     if key not in sum_gen_weights_dict.keys():
                         # cutflow_dict["Muon"][key] = file['cutflow_Muon;1'].values()
                         # cutflow_dict["Electron"][key] = file['cutflow_Electron;1'].values()
-                        muon_arr = file["cutflow_Muon;1"].values()
-                        electron_arr = file["cutflow_Electron;1"].values()
+                        if not ("Anti" in self.category or "SB" in self.category):
+                            muon_arr = file["cutflow_Muon;1"].values()
+                            electron_arr = file["cutflow_Electron;1"].values()
                         sum_gen_weights_dict[key] = sum_gen_weight
                         print("bg", key)
                     elif key in sum_gen_weights_dict.keys():
                         sum_gen_weights_dict[key] += sum_gen_weight
-                        muon_arr += file["cutflow_Muon;1"].values()
-                        electron_arr += file["cutflow_Electron;1"].values()
+                        if not ("Anti" in self.category or "SB" in self.category):
+                            muon_arr += file["cutflow_Muon;1"].values()
+                            electron_arr += file["cutflow_Electron;1"].values()
 
-            cutflow_dict["Muon"][key] = muon_arr[muon_arr > 0].tolist()
-            cutflow_dict["Electron"][key] = electron_arr[electron_arr > 0].tolist()
+            if not ("Anti" in self.category or "SB" in self.category):
+                cutflow_dict["Muon"][key] = muon_arr[muon_arr > 0].tolist()
+                cutflow_dict["Electron"][key] = electron_arr[electron_arr > 0].tolist()
 
             # that is our data
             if key in ["MET", "SingleMuon", "SingleElectron"]:
@@ -312,7 +332,8 @@ class CollectInputData(BaseMakeFilesTask):
                     sum_gen_weights_dict[new_key] = weighting
 
         self.output()["sum_gen_weights"].dump(sum_gen_weights_dict)
-        self.output()["cutflow"].dump(cutflow_dict)
+        if not ("Anti" in self.category or "SB" in self.category):
+            self.output()["cutflow"].dump(cutflow_dict)
 
 
 class CalcBTagSF(BaseMakeFilesTask, HTCondorWorkflow, law.LocalWorkflow):
@@ -321,7 +342,7 @@ class CalcBTagSF(BaseMakeFilesTask, HTCondorWorkflow, law.LocalWorkflow):
     hours = 5
 
     def requires(self):
-        return WriteDatasets.req(self)
+        return WriteDatasets.req(self, category=self.category)
 
     def create_branch_map(self):
         # define job number according to number of files of the dataset that you want to process
@@ -332,11 +353,14 @@ class CalcBTagSF(BaseMakeFilesTask, HTCondorWorkflow, law.LocalWorkflow):
 
     def output(self):
         values = self.get_datalist_items()[1]
-        out = {lep + "_" + val.split("/")[1]: self.local_target(lep + "_" + val.split("/")[1].replace(".root", ".npy")) for val in values for lep in self.config_inst.get_aux("channels")}
+        out = {lep + "_" + val.split("/")[1]: self.local_target(lep + "_" + val.split("/")[1].replace(".root", ".npy")) for val in values for lep in self.config_inst.get_aux("channels")[self.category]}
         return out
 
+    def store_parts(self):
+        return super(CalcBTagSF, self).store_parts()
+
     def get_datalist_items(self):
-        with open(self.config_inst.get_aux("job_dict").replace(".json", "_" + self.version + ".json")) as f:
+        with open(self.config_inst.get_aux("job_dict").replace(".json", "_" + self.version + "_" + self.category + ".json")) as f:
             data_list = json.load(f)
         # so we can pop in place
         keys = list(data_list.keys())
@@ -409,11 +433,15 @@ class CalcBTagSF(BaseMakeFilesTask, HTCondorWorkflow, law.LocalWorkflow):
 
         # total efficiency per file
         efficiency_hist = tagged_counts / true_counts
+        # special hardcoded case to do complete Btag SF for mass scan
+        # if key == 'SMS-T5qqqqVV_TuneCP2_13TeV-madgraphMLM-pythia8':
+        #     total_arr = []
 
         for path in dataset_dict[key]:
+            print(data_path + "/" + path)
             with up.open(data_path + "/" + path) as file:
                 # having to do both trees seperatly
-                for lep in self.config_inst.get_aux("channels"):
+                for lep in self.config_inst.get_aux("channels")[self.category]:
                     # following method from https://twiki.cern.ch/twiki/bin/viewauth/CMS/BTagSFMethods
                     TrueB = file["nTrueB;1"].to_numpy()
                     nBTag = file["nMediumBbTagDeepJet;1"].to_numpy()
@@ -441,6 +469,7 @@ class CalcBTagSF(BaseMakeFilesTask, HTCondorWorkflow, law.LocalWorkflow):
                     weights = P_MC / P_data
                     # sum_gen_weights_dict[path.split("/")[1]] = np.array(weights)
                     self.output()[lep + "_" + path.split("/")[1]].parent.touch()
+                    print("\n", self.output()[lep + "_" + path.split("/")[1]].path)
                     self.output()[lep + "_" + path.split("/")[1]].dump(np.array(weights))
                     # if key == 'SMS-T5qqqqVV_TuneCP2_13TeV-madgraphMLM-pythia8':
                     #     total_arr.append(weights)
