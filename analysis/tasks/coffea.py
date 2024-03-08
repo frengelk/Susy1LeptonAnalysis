@@ -27,6 +27,7 @@ class CoffeaTask(AnalysisTask):  # DatasetTask
 
     processor = Parameter(default="ArrayExporter")
     debug = BoolParameter(default=False)
+    channel = ListParameter(default=["Muon", "Electron"])
     # debug_dataset = Parameter(default="data_mu_C")  # take a small set to reduce computing time
     # debug_str = Parameter(default="/nfs/dust/cms/user/wiens/CMSSW/CMSSW_12_1_0/Testing/2022_11_10/TTJets/TTJets_1.root")
     # file = Parameter(
@@ -105,7 +106,7 @@ class CoffeaProcessor(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
     additional_plots = BoolParameter(default=False)
     # require more ressources
     RAM = 5000
-    hours = 1
+    hours = 2
     """
     this is a HTCOndor workflow, normally it will get submitted with configurations defined
     in the htcondor_bottstrap.sh or the basetasks.HTCondorWorkflow
