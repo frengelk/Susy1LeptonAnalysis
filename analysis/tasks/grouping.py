@@ -122,6 +122,9 @@ class MergeArrays(CoffeaTask):  # , law.LocalWorkflow, HTCondorWorkflow):
                     for ind in inverse_np_dict[p]:
                         key = cat + "_" + p + "_" + str(ind)
                         arr = np_dict[key]["array"].load()
+                        if len(arr) > 0:
+                            if len(arr[0]) > 21:
+                                print(lep, key, len(arr[0]))
                         weights = np_dict[key]["weights"].load()
                         IDs = np_dict[key]["DNNId"].load()
                         if len(np_dict[key]["array"].load()) > 1:
@@ -161,6 +164,8 @@ class MergeArrays(CoffeaTask):  # , law.LocalWorkflow, HTCondorWorkflow):
             DNNId_arr = np.concatenate(DNNId_list)
             self.output()[cat + "_" + dat]["DNNId"].dump(DNNId_arr)
             print(dat, " len: ", len(weights_arr), " sum: ", sum(weights_arr))
+        # exporting variables to be able to reconstruct array content
+        np.save(self.output()[cat + "_" + dat]["array"].parent.path + "/variables.npy", self.config_inst.variables.names())
 
 
 class ComputeEfficiencies(CoffeaTask):
