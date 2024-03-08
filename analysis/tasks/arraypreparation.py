@@ -200,7 +200,7 @@ class CrossValidationPrep(CoffeaTask):
                 proc_list.append(self.input()[cat + "_" + subproc]["array"].load())
                 weight_list.append(self.input()[cat + "_" + subproc]["weights"].load())
                 DNNId_list.append(self.input()[cat + "_" + subproc]["DNNId"].load())
-                print(subproc, "len, weightsum", len(self.input()[cat + "_" + subproc]["array"].load()), np.sum(self.input()[cat + "_" + subproc]["weights"].load()))
+                print(subproc, "len, weightsum, max, min", len(self.input()[cat + "_" + subproc]["array"].load()), np.sum(self.input()[cat + "_" + subproc]["weights"].load()), np.max(self.input()[cat + "_" + subproc]["weights"].load()), np.min(self.input()[cat + "_" + subproc]["weights"].load()))
 
             # print(proc_list)
             proc_dict.update({key: np.concatenate(proc_list)})
