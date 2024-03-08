@@ -747,7 +747,7 @@ class DNNEvaluationPlotting(DNNTask):
         with torch.no_grad():
             reconstructed_model.eval()
             for X_test_batch, y_test_batch in test_loader:
-                y_test_pred = reconstructed_model(X_test_batch)
+                y_test_pred = reconstructed_model(X_test_batch).softmax(dim=1)
 
                 y_predictions.append(y_test_pred.numpy())
 
@@ -877,7 +877,6 @@ class DNNEvaluationCrossValPlotting(DNNTask):
         n_processes = len(self.config_inst.get_aux("DNN_process_template")[self.category].keys())
         all_processes = list(self.config_inst.get_aux("DNN_process_template")[self.category].keys())
 
-        # from IPython import embed; embed()
         for i in range(self.kfold):
             print("fold", i)
             # switch around in 2 point k fold
@@ -891,27 +890,17 @@ class DNNEvaluationCrossValPlotting(DNNTask):
             inp_data = self.input()["data"]["cross_val_" + str(j)]
             X_test = np.concatenate([inp_data["cross_val_X_train_" + str(j)].load(), inp_data["cross_val_X_val_" + str(j)].load()])
             y_test = np.concatenate([inp_data["cross_val_y_train_" + str(j)].load(), inp_data["cross_val_y_val_" + str(j)].load()])
-            test_dataset = util.ClassifierDataset(torch.from_numpy(X_test).float(), torch.from_numpy(y_test).float())
-            test_loader = torch.utils.data.DataLoader(dataset=test_dataset, batch_size=len(y_test))
+            weight_test = np.concatenate([inp_data["cross_val_weight_train_" + str(j)].load(), inp_data["cross_val_weight_val_" + str(j)].load()])
 
-            # val_loss, val_acc = reconstructed_model.evaluate(X_test, y_test)
-            # print("Test accuracy:", val_acc)
-
-            y_predictions = []
             with torch.no_grad():
                 reconstructed_model.eval()
-                for X_test_batch, y_test_batch in test_loader:
-                    y_test_pred = reconstructed_model(X_test_batch)
+                # for X_pred_batch, y_pred_batch, weight_pred_batch in pred_loader:
+                y_predictions = reconstructed_model(torch.from_numpy(X_test)).softmax(dim=1)
 
-                    y_predictions.append(y_test_pred.numpy())
+            test_predictions = np.argmax(y_predictions, axis=1)
 
-                # test_predict = reconstructed_model.predict(X_test)
-                y_predictions = np.array(y_predictions[0])
-                test_predictions = np.argmax(y_predictions, axis=1)
-
-                # "signal"...
-                predict_signal = np.array(y_predictions)[:, -1]
-
+            # "signal"...
+            predict_signal = np.array(y_predictions)[:, -1]
             self.output()["fold_" + str(i)]["confusion_matrix_png"].parent.touch()
 
             # Roc curve, compare labels and predicted labels
@@ -932,15 +921,9 @@ class DNNEvaluationCrossValPlotting(DNNTask):
             plt.savefig(self.output()["fold_" + str(i)]["ROC_pdf"].path, bbox_inches="tight")
             plt.gcf().clear()
 
-            # from IPython import embed;embed()
             # Correlation Matrix Plot
             # plot correlation matrix
-            pred_matrix = sk.metrics.confusion_matrix(
-                np.argmax(y_test, axis=-1),
-                test_predictions,  # np.concatenate(test_predictions),
-                normalize=self.normalize,
-            )
-
+            pred_matrix = sk.metrics.confusion_matrix(np.argmax(y_test, axis=-1), test_predictions, normalize=self.normalize, sample_weight=weight_test)  # np.concatenate(test_predictions),
             print(pred_matrix)
             # TODO
             fig = plt.figure()  # figsize=(12, 9)
@@ -966,8 +949,8 @@ class DNNEvaluationCrossValPlotting(DNNTask):
             ax.set_yticks(ticks)
             ax.set_xticklabels(all_processes, fontsize=14)
             ax.set_yticklabels(all_processes, fontsize=14)
-            ax.set_xlabel("Predicted Processes", fontsize=16)
-            ax.set_ylabel("Real Processes", fontsize=16)
+            ax.set_xlabel("Predicted Processes (Incl. Event Weight)", fontsize=16)
+            ax.set_ylabel("Real Processes (Normed)", fontsize=16)
             hep.cms.text("Private work (CMS simulation)", loc=0, fontsize=14, ax=ax)
             # ax.grid(linestyle="--", alpha=0.5)
             plt.savefig(self.output()["fold_" + str(i)]["confusion_matrix_png"].path, bbox_inches="tight")
@@ -1077,7 +1060,6 @@ class DNNScorePlotting(DNNTask):
             scores_dict[key] = MC_scores[MC_labels[:, i] == 1]
             scores_dict[key + "_weight"] = weights[MC_labels[:, i] == 1]
         scores_dict.update({"data": data_scores})
-
         # FIXME signal as single line, not in stack
         signal_node = False
         # one plot per per output note
@@ -1103,7 +1085,6 @@ class DNNScorePlotting(DNNTask):
                     if not signal_node:
                         boost_hist = bh.Histogram(self.construct_axis((100, 0, 1)))
                     if signal_node:
-                        print("hu?")
                         boost_hist = bh.Histogram(self.construct_axis(self.config_inst.get_aux("signal_binning"), isRegular=False))
                     boost_hist.fill(scores_dict[proc][mask][:, i], weight=scores_dict[proc + "_weight"][mask])
                     MC_hists[proc] = boost_hist
@@ -1116,7 +1097,7 @@ class DNNScorePlotting(DNNTask):
                         data_boost_hist = bh.Histogram(self.construct_axis(self.config_inst.get_aux("signal_binning"), isRegular=False))
                     data_boost_hist.fill(scores_dict[proc][mask][:, i])
                 elif self.config_inst.get_aux("signal_process").replace("V", "W") in proc:
-                    #  signal as line
+                    # signal as line
                     if not signal_node:
                         signal_hist = bh.Histogram(self.construct_axis((100, 0, 1)))
                     if signal_node:
@@ -1189,7 +1170,6 @@ class DNNScorePlotting(DNNTask):
                     if not signal_node:
                         boost_hist = bh.Histogram(self.construct_axis((100, 0, 1)))
                     if signal_node:
-                        print("hu?")
                         boost_hist = bh.Histogram(self.construct_axis(self.config_inst.get_aux("signal_binning"), isRegular=False))
                     # assign norm factors
                     factor = 1
@@ -1272,6 +1252,7 @@ class DNNScorePerProcess(CoffeaTask, DNNTask):
                 dropout=self.dropout,
                 kfold=self.kfold,
                 debug=False,
+                category="All_Lep",  # FIXME, this is trained on inclusive cuts
             ),
         }
 
@@ -1303,6 +1284,10 @@ class DNNScorePerProcess(CoffeaTask, DNNTask):
         inp = self.input()["merged"]
         norm_factors = self.input()["norm"].load()
         proc_factor_dict = {"ttjets": "alpha", "Wjets": "beta"}
+        # loading all models
+        models = self.input()["model"]["collection"].targets[0]
+        print("loading models")
+        models_loaded = {fold: torch.load(models["fold_" + str(fold)]["model"].path) for fold in range(self.kfold)}
 
         n_variables = len(self.config_inst.variables)
         n_processes = len(self.config_inst.get_aux("DNN_process_template")[self.category].keys())
@@ -1324,13 +1309,11 @@ class DNNScorePerProcess(CoffeaTask, DNNTask):
             weights = inp[self.category + "_" + dat]["weights"].load()
             DNNId = inp[self.category + "_" + dat]["DNNId"].load()
             SR_scores, SR_weights = [], []
-            for i in range(self.kfold):
-                # switch around in 2 point k fold
-                j = abs(i - 1)
-                path = self.input()["model"]["collection"].targets[0]["fold_" + str(i)]["model"].path
-
+            for fold, Id in enumerate(self.config_inst.get_aux("DNNId")):
+                # to get respective switched id per fold
+                j = -1 * Id
                 # load complete model
-                reconstructed_model = torch.load(path)
+                reconstructed_model = models_loaded[fold]
 
                 # load all the prepared data thingies
                 X_test = torch.tensor(arr[DNNId == j])
@@ -1338,14 +1321,20 @@ class DNNScorePerProcess(CoffeaTask, DNNTask):
 
                 with torch.no_grad():
                     reconstructed_model.eval()
-                    y_predictions = reconstructed_model(X_test).numpy()
+                    y_predictions = reconstructed_model(X_test).softmax(dim=1).numpy()
                 mask = np.argmax(y_predictions, axis=-1) == (n_processes - 1)
                 SR_scores.append(y_predictions[mask][:, -1])
                 SR_weights.append(weight_test[mask])
 
+            scores = np.concatenate(SR_scores)
+            weights = np.concatenate(SR_weights)
             proc = self.config_inst.get_process(dat)
-            boost_hist = bh.Histogram(self.construct_axis(self.config_inst.get_aux("signal_binning"), isRegular=False))
-            boost_hist.fill(np.concatenate(SR_scores), weight=np.concatenate(SR_weights))
+            # boost_hist = bh.Histogram(self.construct_axis(self.config_inst.get_aux("signal_binning"), isRegular=False))
+            boost_hist = bh.Histogram(self.construct_axis([100, 0, 1]))
+            # We blind here!!! FIXME
+            if proc.aux["isData"] and self.unblinded:
+                weights[scores > 0.9] = 0
+            boost_hist.fill(scores, weight=weights)
 
             if proc.aux["isData"] and self.unblinded:
                 hists["data"][dat] = boost_hist
@@ -1380,9 +1369,9 @@ class DNNScorePerProcess(CoffeaTask, DNNTask):
         hep.histplot(np.array(hist_list)[order], bins=hist_list[0].axes[0].edges, histtype="fill", stack=True, label=np.array(label_list)[order], color=np.array(color_list)[order], ax=ax)
 
         if self.unblinded:
-            hep.histplot(sum(list(hists["data"].values())), histtype="errorbar", label="data", color="black", ax=ax)
             data_hist = sum(list(hists["data"].values()))
             MC_hist = sum(hist_list)
+            hep.histplot(sum(list(hists["data"].values())), histtype="errorbar", label="data (last bins blinded)", color="black", ax=ax)
             ratio = data_hist / MC_hist
             stat_unc = np.sqrt(ratio * (ratio / MC_hist + ratio / data_hist))
             rax.axhline(1.0, color="black", linestyle="--")
