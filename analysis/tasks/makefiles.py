@@ -207,6 +207,45 @@ class WriteFileset(BaseMakeFilesTask):
             json.dump(fileset, file)
 
 
+class CollectMasspoints(BaseMakeFilesTask):
+    def requires(self):
+        return WriteDatasetPathDict.req(self)
+
+    def output(self):
+        return self.local_target("masspoints.json")
+
+    # written by ChatGPT
+    def find_filled_bins(self, hist):
+        # Get the number of bins along X and Y axes
+        n_bins_x = hist.GetNbinsX()
+        n_bins_y = hist.GetNbinsY()
+
+        masspoints = []
+
+        # Iterate over the bins
+        for i in range(1, n_bins_x + 1):
+            for j in range(1, n_bins_y + 1):
+                # Check the bin content
+                bin_content = hist.GetBinContent(i, j)
+                if bin_content != 0.0:
+                    bin_center_x = hist.GetXaxis().GetBinCenter(i)
+                    bin_center_y = hist.GetYaxis().GetBinCenter(j)
+                    print(f"Bin ({i}, {j}) with label ({bin_center_x:.2f}, {bin_center_y:.2f}) is filled with content: {bin_content}")
+                    masspoints.append((bin_center_x, bin_center_y))
+        return masspoints
+
+    @law.decorator.safe_output
+    def run(self):
+        inp = self.input()
+        path = inp["dataset_path"].load()
+        signal_name = inp["dataset_dict"].load()["SMS-T5qqqqVV_TuneCP2_13TeV-madgraphMLM-pythia8"][0]
+        file = ROOT.TFile(path + "/" + signal_name)
+        hist = file.Get("numberOfT5qqqqWWGenEvents;1")
+        masspoints = self.find_filled_bins(hist)
+        self.output().dump({"masspoints": masspoints})
+        os.system("cp {} {}".format(self.output().path, self.config_inst.get_aux("masspoints")))
+
+
 class CollectInputData(BaseMakeFilesTask):
     def requires(self):
         # return {
@@ -221,18 +260,25 @@ class CollectInputData(BaseMakeFilesTask):
         return WriteDatasetPathDict.req(self)
 
     def output(self):
-        if "Anti" in self.category or "SB" in self.category:
+        # if not "SR" in self.category or "SR_Anti" in self.category:
             return {
                 "sum_gen_weights": self.local_target("sum_gen_weights.json"),
             }
-        else:
-            return {
-                "sum_gen_weights": self.local_target("sum_gen_weights.json"),
-                "cutflow": self.local_target("cutflow_dict.json"),
-            }
+        # else:
+        #     return {
+        #         "sum_gen_weights": self.local_target("sum_gen_weights.json"),
+        #         "cutflow": self.local_target("cutflow_dict.json"),
+        #     }
 
     def store_parts(self):
         return super(CollectInputData, self).store_parts()
+
+    def load_masspoints(self):
+        with open(self.config_inst.get_aux("masspoints")) as f:
+            masspoints = json.load(f)
+        ints = [[int(x) for x in lis] for lis in masspoints["masspoints"]]
+        strs = [[str(x) for x in lis] for lis in ints]
+        return ints, strs
 
     # written by ChatGPT
     def find_filled_bins(hist):
@@ -257,7 +303,10 @@ class CollectInputData(BaseMakeFilesTask):
             "Muon": {},
             "Electron": {},
         }
-        masspoint_dict = {"_".join([hist, str(masspoint[0]), str(masspoint[1])]): 0 for hist in ["nGen", "ISR"] for masspoint in self.config_inst.get_aux("signal_masspoints")}
+        # normalization seperate for each mass point on its own
+        masspoints, str_masspoints = self.load_masspoints()
+        masspoint_dict = {"_".join([hist, str(masspoint[0]), str(masspoint[1])]): 0 for hist in ["nGen", "ISR"] for masspoint in masspoints}
+        # for masspoint in self.config_inst.get_aux("signal_masspoints")}
         # sum weights same for both trees, do it once
         inp = self.input()  # [self.channel[0]].collection.targets[0]
         data_path = inp["dataset_path"].load()
@@ -267,7 +316,8 @@ class CollectInputData(BaseMakeFilesTask):
                 with up.open(data_path + "/" + path) as file:
                     sum_gen_weight = float(np.sum(file["MetaData;1"]["SumGenWeight"].array()))
                     if self.config_inst.get_aux("signal_process") in path:
-                        for masspoint in self.config_inst.get_aux("signal_masspoints"):
+                        # for masspoint in self.config_inst.get_aux("signal_masspoints"):
+                        for masspoint in masspoints:
                             mGlu, mLSP = masspoint[0], masspoint[1]
                             f_path = data_path + "/" + path
                             inFile = ROOT.TFile.Open(f_path, " READ ")
@@ -284,34 +334,34 @@ class CollectInputData(BaseMakeFilesTask):
                                 # cutflow_dict["Muon"][key] = file['cutflow_Muon;1'].values()
                                 # cutflow_dict["Electron"][key] = file['cutflow_Electron;1'].values()
                                 sum_gen_weights_dict[new_key] = sum_gen_weight
-                                if not ("Anti" in self.category or "SB" in self.category):
-                                    muon_arr = file["cutflow_Muon;1"].values()
-                                    electron_arr = file["cutflow_Electron;1"].values()
+                                # if "SR" in self.category and not "SR_Anti" in self.category:
+                                #     muon_arr = file["cutflow_Muon;1"].values()
+                                #     electron_arr = file["cutflow_Electron;1"].values()
                             elif new_key in sum_gen_weights_dict.keys():
                                 sum_gen_weights_dict[new_key] += sum_gen_weight
-                                if not ("Anti" in self.category or "SB" in self.category):
-                                    muon_arr += file["cutflow_Muon;1"].values()
-                                    electron_arr += file["cutflow_Electron;1"].values()
+                                # if "SR" in self.category and not "SR_Anti" in self.category:
+                                #     muon_arr += file["cutflow_Muon;1"].values()
+                                #     electron_arr += file["cutflow_Electron;1"].values()
 
                     # else:
                     # keys should do the same for both dicts
                     if key not in sum_gen_weights_dict.keys():
                         # cutflow_dict["Muon"][key] = file['cutflow_Muon;1'].values()
                         # cutflow_dict["Electron"][key] = file['cutflow_Electron;1'].values()
-                        if not ("Anti" in self.category or "SB" in self.category):
-                            muon_arr = file["cutflow_Muon;1"].values()
-                            electron_arr = file["cutflow_Electron;1"].values()
+                        # if "SR" in self.category and not "SR_Anti" in self.category:
+                        #     muon_arr = file["cutflow_Muon;1"].values()
+                        #     electron_arr = file["cutflow_Electron;1"].values()
                         sum_gen_weights_dict[key] = sum_gen_weight
                         print("bg", key)
                     elif key in sum_gen_weights_dict.keys():
                         sum_gen_weights_dict[key] += sum_gen_weight
-                        if not ("Anti" in self.category or "SB" in self.category):
-                            muon_arr += file["cutflow_Muon;1"].values()
-                            electron_arr += file["cutflow_Electron;1"].values()
+                        # if "SR" in self.category and not "SR_Anti" in self.category:
+                        #     muon_arr += file["cutflow_Muon;1"].values()
+                        #     electron_arr += file["cutflow_Electron;1"].values()
 
-            if not ("Anti" in self.category or "SB" in self.category):
-                cutflow_dict["Muon"][key] = muon_arr[muon_arr > 0].tolist()
-                cutflow_dict["Electron"][key] = electron_arr[electron_arr > 0].tolist()
+            # if "SR" in self.category and not "SR_Anti" in self.category:
+            #     cutflow_dict["Muon"][key] = muon_arr[muon_arr > 0].tolist()
+            #     cutflow_dict["Electron"][key] = electron_arr[electron_arr > 0].tolist()
 
             # that is our data
             if key in ["MET", "SingleMuon", "SingleElectron"]:
@@ -321,7 +371,8 @@ class CollectInputData(BaseMakeFilesTask):
             # sumgenWeight getting computed like normal, and then we need to normalize with nGen as well
             # for each signal masspoint, two fractions -> therefore two separate sums
             if self.config_inst.get_aux("signal_process") in key:
-                for masspoint in self.config_inst.get_aux("signal_masspoints"):
+                # for masspoint in self.config_inst.get_aux("signal_masspoints"):
+                for masspoint in masspoints:
                     new_key = key + "_{}_{}".format(masspoint[0], masspoint[1])
                     print(new_key)
                     nGen = masspoint_dict["_".join(["nGen", str(masspoint[0]), str(masspoint[1])])]
@@ -332,8 +383,8 @@ class CollectInputData(BaseMakeFilesTask):
                     sum_gen_weights_dict[new_key] = weighting
 
         self.output()["sum_gen_weights"].dump(sum_gen_weights_dict)
-        if not ("Anti" in self.category or "SB" in self.category):
-            self.output()["cutflow"].dump(cutflow_dict)
+        # if "SR" in self.category and not "SR_Anti" in self.category:
+        #     self.output()["cutflow"].dump(cutflow_dict)
 
 
 class CalcBTagSF(BaseMakeFilesTask, HTCondorWorkflow, law.LocalWorkflow):
@@ -463,8 +514,8 @@ class CalcBTagSF(BaseMakeFilesTask, HTCondorWorkflow, law.LocalWorkflow):
                     if len(efficiencies) > len(tagged):
                         # cumsum may result in empty array at the end
                         efficiencies = efficiencies[:-1]
-                    P_MC = np.prod(efficiencies[tagged], axis=-1) * np.prod((1 - efficiencies)[tagged], axis=-1)
-                    P_data = np.prod((SF * efficiencies)[tagged], axis=-1) * np.prod((1 - SF * efficiencies)[tagged], axis=-1)
+                    P_MC = np.prod(efficiencies[tagged], axis=-1) * np.prod((1 - efficiencies)[~tagged], axis=-1)
+                    P_data = np.prod((SF * efficiencies)[tagged], axis=-1) * np.prod((1 - SF * efficiencies)[~tagged], axis=-1)
 
                     weights = P_MC / P_data
                     # sum_gen_weights_dict[path.split("/")[1]] = np.array(weights)
@@ -477,42 +528,3 @@ class CalcBTagSF(BaseMakeFilesTask, HTCondorWorkflow, law.LocalWorkflow):
         # if key == 'SMS-T5qqqqVV_TuneCP2_13TeV-madgraphMLM-pythia8':
         #     total_signal_weights=np.concatenate(total_arr)
         #     np.save(self.output()[lep + "_" + path.split("/")[1]].path.replace(".npy", "_total_signal.npy"), np.array(total_signal_weights))
-
-
-class CollectMasspoints(BaseMakeFilesTask):
-    def requires(self):
-        return WriteDatasetPathDict.req(self)
-
-    def output(self):
-        return self.local_target("masspoints.json")
-
-    # written by ChatGPT
-    def find_filled_bins(self, hist):
-        # Get the number of bins along X and Y axes
-        n_bins_x = hist.GetNbinsX()
-        n_bins_y = hist.GetNbinsY()
-
-        masspoints = []
-
-        # Iterate over the bins
-        for i in range(1, n_bins_x + 1):
-            for j in range(1, n_bins_y + 1):
-                # Check the bin content
-                bin_content = hist.GetBinContent(i, j)
-                if bin_content != 0.0:
-                    bin_center_x = hist.GetXaxis().GetBinCenter(i)
-                    bin_center_y = hist.GetYaxis().GetBinCenter(j)
-                    print(f"Bin ({i}, {j}) with label ({bin_center_x:.2f}, {bin_center_y:.2f}) is filled with content: {bin_content}")
-                    masspoints.append((bin_center_x, bin_center_y))
-        return masspoints
-
-    @law.decorator.safe_output
-    def run(self):
-        inp = self.input()
-        path = inp["dataset_path"].load()
-        signal_name = inp["dataset_dict"].load()["SMS-T5qqqqVV_TuneCP2_13TeV-madgraphMLM-pythia8"][0]
-        file = ROOT.TFile(path + "/" + signal_name)
-        hist = file.Get("numberOfT5qqqqWWGenEvents;1")
-        masspoints = self.find_filled_bins(hist)
-        self.output().dump({"masspoints": masspoints})
-        os.system("cp {} {}".format(self.output().path, self.config_inst.get_aux("masspoints")))
