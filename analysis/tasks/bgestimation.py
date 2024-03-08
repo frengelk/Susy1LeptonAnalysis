@@ -140,6 +140,7 @@ class TransferQCD(CoffeaTask, DNNTask):
             n_nodes=self.n_nodes,
             dropout=self.dropout,
             kfold=self.kfold,
+            category="All_Lep",
         )
         inp["factors"] = FitQCDContribution.req(self, category="Anti_cuts")
         return inp
@@ -166,6 +167,11 @@ class TransferQCD(CoffeaTask, DNNTask):
         inp.pop("factors")
         factors = self.input()["factors"]["factors"].load()
 
+        # loading all models
+        models = self.input()["model"]["collection"].targets[0]
+        print("loading models")
+        models_loaded = {fold: torch.load(models["fold_" + str(fold)]["model"].path) for fold in range(self.kfold)}
+
         n_variables = len(self.config_inst.variables)
         n_processes = len(self.config_inst.get_aux("DNN_process_template")[self.category].keys())
 
@@ -180,21 +186,18 @@ class TransferQCD(CoffeaTask, DNNTask):
 
                 SR_scores[cat + "_" + dat] = {}
                 # SR_scores[cat+"_"+dat]["weights"]=weights
-                for i in range(self.kfold):
-                    # accessing the input and unpacking the condor submission structure
-                    path = self.input()["model"]["collection"].targets[0]["fold_" + str(i)]["model"].path
-
+                for fold in range(self.kfold):
                     # load complete model
-                    reconstructed_model = torch.load(path)
-
+                    reconstructed_model = models_loaded[fold]
                     # load all the prepared data thingies
                     X_test = torch.tensor(arr)
 
                     with torch.no_grad():
                         reconstructed_model.eval()
-                        y_predictions = reconstructed_model(X_test).numpy()
-                    SR_scores[cat + "_" + dat]["scores_" + str(i)] = y_predictions
+                        y_predictions = reconstructed_model(X_test).softmax(dim=1).numpy()
+                    SR_scores[cat + "_" + dat]["scores_" + str(fold)] = y_predictions
 
+                # hardcoded for two-fold, FIXME
                 scores_average = (SR_scores[cat + "_" + dat]["scores_0"] + SR_scores[cat + "_" + dat]["scores_1"]) / 2
                 mask = np.argmax(scores_average, axis=-1) == (n_processes - 1)
                 proc = self.config_inst.get_process(dat)
@@ -270,7 +273,14 @@ class IterativeQCDFitting(CoffeaTask, DNNTask):
             )
             for cat in ["Anti_cuts", "SB_cuts"]
         }
-        inp["model"] = PytorchCrossVal.req(self, n_layers=self.n_layers, n_nodes=self.n_nodes, dropout=self.dropout, kfold=self.kfold, category="SR0b")
+        inp["model"] = PytorchCrossVal.req(
+            self,
+            n_layers=self.n_layers,
+            n_nodes=self.n_nodes,
+            dropout=self.dropout,
+            kfold=self.kfold,
+            category="All_Lep",
+        )  # "SR0b"
         return inp
 
     def output(self):
@@ -297,6 +307,11 @@ class IterativeQCDFitting(CoffeaTask, DNNTask):
         # initial delta
         delta = 1.0
 
+        # loading all models
+        models = self.input()["model"]["collection"].targets[0]
+        print("loading models")
+        models_loaded = {fold: torch.load(models["fold_" + str(fold)]["model"].path) for fold in range(self.kfold)}
+
         # we need to get these scores once
         SR_scores = {}
         for cat in ["SB_cuts"]:  # inp.keys():
@@ -309,20 +324,17 @@ class IterativeQCDFitting(CoffeaTask, DNNTask):
 
                 SR_scores[cat + "_" + dat] = {}
                 # SR_scores[cat+"_"+dat]["weights"]=weights
-                for i in range(self.kfold):
-                    # accessing the input and unpacking the condor submission structure
-                    path = self.input()["model"]["collection"].targets[0]["fold_" + str(i)]["model"].path
-
+                for fold in range(self.kfold):
                     # load complete model
-                    reconstructed_model = torch.load(path)
+                    reconstructed_model = models_loaded[fold]
 
                     # load all the prepared data thingies
                     X_test = torch.tensor(arr)
 
                     with torch.no_grad():
                         reconstructed_model.eval()
-                        y_predictions = reconstructed_model(X_test).numpy()
-                    SR_scores[cat + "_" + dat]["scores_" + str(i)] = y_predictions
+                        y_predictions = reconstructed_model(X_test).softmax(dim=1).numpy()
+                    SR_scores[cat + "_" + dat]["scores_" + str(fold)] = y_predictions
                 SR_scores[cat + "_" + dat]["weights"] = weights
 
         sort_for_factors = {}
@@ -399,14 +411,17 @@ class IterativeQCDFitting(CoffeaTask, DNNTask):
             print("delta:", delta, " alpha beta: ", factor_dict, "\n")
         self.output()["factors"].parent.path
         self.output()["factors"].dump({"delta": delta, "alpha": factor_dict["ttjets"], "beta": factor_dict["Wjets"]})
-        F_Sel_Anti = (hist_dict["SB"]["QCD"] * delta) / hist_dict["Anti"]["QCD"]
+        # do the fraction directly on the sum so we are not binning dependent
+        F_Sel_Anti = sum(hist_dict["SB"]["QCD"] * delta) / sum(hist_dict["Anti"]["QCD"])
         print("F_Sel_Anti:", F_Sel_Anti, "\n")
-        self.output()["F_Sel_Anti"].dump({"F_Sel_Anti": sum(F_Sel_Anti)})
+        # print("F_Sel_Anti:", sum(F_Sel_Anti), "\n")
+        self.output()["F_Sel_Anti"].dump({"F_Sel_Anti": F_Sel_Anti})
 
 
 class EstimateQCDinSR(CoffeaTask, DNNTask):
     def requires(self):
-        channels = {"SR0b": ["Muon", "Electron"], "SR_Anti": ["LeptonIncl"]}
+        # channels = {"SR0b": ["Muon", "Electron"], "SR_Anti": ["LeptonIncl"]}
+        channels = ["LeptonIncl"]
         inp = {
             cat: MergeArrays.req(
                 self,
@@ -414,9 +429,16 @@ class EstimateQCDinSR(CoffeaTask, DNNTask):
                 datasets_to_process=self.datasets_to_process,
                 category=cat,
             )
-            for cat in channels.keys()
+            for cat in channels  # channels.keys()
         }
-        inp["model"] = PytorchCrossVal.req(self, n_layers=self.n_layers, n_nodes=self.n_nodes, dropout=self.dropout, kfold=self.kfold, category="SR0b")
+        inp["model"] = PytorchCrossVal.req(
+            self,
+            n_layers=self.n_layers,
+            n_nodes=self.n_nodes,
+            dropout=self.dropout,
+            kfold=self.kfold,
+            category="All_Lep",
+        )  # , category="SR0b"
         inp["F_Sel_Anti"] = IterativeQCDFitting.req(
             self,
             n_layers=self.n_layers,
@@ -444,6 +466,12 @@ class EstimateQCDinSR(CoffeaTask, DNNTask):
         n_variables = len(self.config_inst.variables)
         n_processes = len(self.config_inst.get_aux("DNN_process_template")[self.category].keys())
 
+        # loading all models
+        models = self.input()["model"]["collection"].targets[0]
+        print("loading models")
+        models_loaded = {fold: torch.load(models["fold_" + str(fold)]["model"].path) for fold in range(self.kfold)}
+        # factors= self.input()["F_Sel_Anti"]["factors"].load()
+
         # we need to get these scores once
         Anti_scores = {}
         for cat in ["SR_Anti"]:  # inp.keys():
@@ -455,20 +483,17 @@ class EstimateQCDinSR(CoffeaTask, DNNTask):
                 # don't need to care for ID, since network never saw
 
                 Anti_scores[cat + "_" + dat] = {}
-                for i in range(self.kfold):
-                    # accessing the input and unpacking the condor submission structure
-                    path = self.input()["model"]["collection"].targets[0]["fold_" + str(i)]["model"].path
-
+                for fold in range(self.kfold):
                     # load complete model
-                    reconstructed_model = torch.load(path)
+                    reconstructed_model = models_loaded[fold]
 
                     # load all the prepared data thingies
                     X_test = torch.tensor(arr)
 
                     with torch.no_grad():
                         reconstructed_model.eval()
-                        y_predictions = reconstructed_model(X_test).numpy()
-                    Anti_scores[cat + "_" + dat]["scores_" + str(i)] = y_predictions
+                        y_predictions = reconstructed_model(X_test).softmax(dim=1).numpy()
+                    Anti_scores[cat + "_" + dat]["scores_" + str(fold)] = y_predictions
                 Anti_scores[cat + "_" + dat]["weights"] = weights
 
         sort_for_factors = {}
@@ -480,6 +505,20 @@ class EstimateQCDinSR(CoffeaTask, DNNTask):
                 weights.append(Anti_scores["SR_Anti" + "_" + subproc]["weights"])
             sort_for_factors[key] = np.concatenate(subprocs)
             sort_for_factors[key + "_weights"] = np.concatenate(weights)
+
+        # calculating alpha beta here as well
+        tt_node_0 = np.sum(sort_for_factors["ttjets_weights"][np.argmax(sort_for_factors["ttjets"], axis=-1) == 0])
+        Wjets_node_0 = np.sum(sort_for_factors["Wjets_weights"][np.argmax(sort_for_factors["Wjets"], axis=-1) == 0])
+        data_node_0 = np.sum(sort_for_factors["data_weights"][np.argmax(sort_for_factors["data"], axis=-1) == 0]) - 1.0 * np.sum(sort_for_factors["QCD_weights"][np.argmax(sort_for_factors["QCD"], axis=-1) == 0])
+
+        tt_node_1 = np.sum(sort_for_factors["ttjets_weights"][np.argmax(sort_for_factors["ttjets"], axis=-1) == 1])
+        Wjets_node_1 = np.sum(sort_for_factors["Wjets_weights"][np.argmax(sort_for_factors["Wjets"], axis=-1) == 1])
+        data_node_1 = np.sum(sort_for_factors["data_weights"][np.argmax(sort_for_factors["data"], axis=-1) == 1]) - 1.0 * np.sum(sort_for_factors["QCD_weights"][np.argmax(sort_for_factors["QCD"], axis=-1) == 1])
+
+        # constructing and solving linear equation system
+        left_side = np.array([[tt_node_0, Wjets_node_0], [tt_node_1, Wjets_node_1]])
+        right_side = np.array([data_node_0, data_node_1])
+        factors = np.linalg.solve(left_side, right_side)
 
         # plotting and constructing SR bins for Anti-selection
         fig, ax = plt.subplots(figsize=(12, 10))
@@ -497,9 +536,14 @@ class EstimateQCDinSR(CoffeaTask, DNNTask):
                 data_boost_hist.fill(sort_for_factors[contrib][mask][:, -1], weight=sort_for_factors[contrib + "_weights"][mask])
                 hep.histplot(boost_hist, histtype="errorbar", label=contrib, color="black", ax=ax)
             else:
+                factor = 1.0
+                if contrib == "ttjets":
+                    factor = factors[0]
+                if contrib == "Wjets":
+                    factor = factors[1]
                 boost_hist = bh.Histogram(self.construct_axis(self.config_inst.get_aux("signal_binning"), isRegular=False))
                 boost_hist.fill(sort_for_factors[contrib][mask][:, -1], weight=sort_for_factors[contrib + "_weights"][mask])
-                hist_list.append(boost_hist)
+                hist_list.append(boost_hist * factor)
                 label_list.append(contrib)
 
         hep.histplot(hist_list, histtype="fill", stack=True, label=label_list, ax=ax)  # bins=hist_list[0].axes[0].edges,
@@ -512,16 +556,24 @@ class EstimateQCDinSR(CoffeaTask, DNNTask):
         plt.savefig(self.output().parent.path + "/Anti_SR_log.png", bbox_inches="tight")
 
         # predicting QCD in SR by removing QCD and substracting Data-EWK
+        QCD_old = hist_list[label_list.index("QCD")]
         del hist_list[label_list.index("QCD")]
         EWK = sum(hist_list)
         QCD_new = data_boost_hist - EWK
         F_Sel_Anti = self.input()["F_Sel_Anti"]["F_Sel_Anti"].load()["F_Sel_Anti"]
-        # FIXME abs now is for numeric stability, maybe try QCD MC for an estimate?
-        SR_prediction = {"SR_prediction": (abs(QCD_new.values()) * F_Sel_Anti).tolist()}
+        print("loaded F_Sel_Anti:", F_Sel_Anti)
+        # set to 0.5 FIXME
+        # F_Sel_Anti = 0.5
+        # FIXME if bkg > MC, take QCD MC as an better estimate
+        QCD_new_values = QCD_new.values()
+        print("\nQCD_new_values", QCD_new_values)
+        QCD_new_values[QCD_new_values < 0] = QCD_old.values()[QCD_new_values < 0]
+        print("With MC QCD correction and * F_Sel_Anti", QCD_new_values * F_Sel_Anti)
+
+        SR_prediction = {"SR_prediction": (QCD_new_values * F_Sel_Anti).tolist()}
         self.output().dump(SR_prediction)
 
         """
-        from IPython import embed; embed()
         SR0b_scores = {}
         for dat in tqdm(self.datasets_to_process):
             # accessing the input and unpacking the condor submission structure

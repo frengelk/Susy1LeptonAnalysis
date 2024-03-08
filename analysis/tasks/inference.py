@@ -40,7 +40,7 @@ class ConstructInferenceBins(DNNTask):
         return {
             "data_predicted": PredictDNNScores.req(self, workflow="local"),
             "inputs": CrossValidationPrep.req(self, kfold=self.kfold),
-            "QCD_pred": EstimateQCDinSR.req(self),
+            "QCD_pred": EstimateQCDinSR.req(self, datasets_to_process=["WJets", "SingleTop", "TTbar", "QCD", "Rare", "DY", "MET", "SingleMuon", "SingleElectron"]),
             "Norm_factors": CalcNormFactors.req(self),
             # "model":PytorchCrossVal.req(self, n_layers=self.n_layers, n_nodes=self.n_nodes,    dropout=self.dropout, kfold = self.kfold),
         }
@@ -68,11 +68,12 @@ class ConstructInferenceBins(DNNTask):
         weights = self.input()["data_predicted"]["collection"].targets[0]["weights"].load()
         QCD_scores = self.input()["data_predicted"]["collection"].targets[0]["QCD_scores"].load()
         QCD_weights = self.input()["data_predicted"]["collection"].targets[0]["QCD_weights"].load()
-
         # in SR, we take data-driven QCD prediction
         QCD_estimate = self.input()["QCD_pred"].load()["SR_prediction"]
 
         binning = self.config_inst.get_aux("signal_binning")
+        norm_factors = self.input()["Norm_factors"].load()
+        proc_factor_dict = {"ttjets": "alpha", "Wjets": "beta"}
         # writing data separatly
         data_bins, data_obs = [], []
         for j, bin in enumerate(self.config_inst.get_aux("DNN_process_template")[self.category].keys()):
@@ -95,25 +96,31 @@ class ConstructInferenceBins(DNNTask):
         for node, key in enumerate(self.config_inst.get_aux("DNN_process_template")[self.category].keys()):
             # leave CR as one bin, do a binning in SR to resolve high signal count regions better
             if key == self.config_inst.get_aux("signal_process").replace("V", "W"):
-                for i, proc in enumerate(self.config_inst.get_aux("DNN_process_template")[self.category].keys()):
-                    if proc == "T5qqqqWW":
-                        continue
-                    find_proc = labels[:, i] == 1
-                    MC_mask = np.argmax(MC_scores[find_proc], axis=1) == node
-                    scores_in_node = MC_scores[find_proc][MC_mask][:, node]
-                    for j, edge in enumerate(binning[:-1]):
+                for j, edge in enumerate(binning[:-1]):
+                    for i, proc in enumerate(self.config_inst.get_aux("DNN_process_template")[self.category].keys()):
+                        if proc == "T5qqqqWW":
+                            continue
+                        find_proc = labels[:, i] == 1
+                        MC_mask = np.argmax(MC_scores[find_proc], axis=1) == node
+                        scores_in_node = MC_scores[find_proc][MC_mask][:, node]
+
                         # we need to find weights in each bin
                         events_in_bin = (scores_in_node > binning[j]) & (scores_in_node < binning[j + 1])
                         weights_in_bin = weights[find_proc][MC_mask][events_in_bin]
                         bin_names.append("DNN_Score_Node_" + key + "_" + str(edge))
                         process_names.append(proc)
                         process_numbers.append(str(len(self.config_inst.get_aux("DNN_process_template")[self.category].keys()) - (i + 1)))
-                        rates.append(str(np.sum(weights_in_bin)))
-                        # QCD on top, append QCD on its own
-                        bin_names.append("DNN_Score_Node_" + key + "_" + str(edge))
-                        process_names.append("QCD")
-                        process_numbers.append(str(len(self.config_inst.get_aux("DNN_process_template")[self.category].keys())))
-                        rates.append(str(QCD_estimate[i]))
+                        # applying calculated norm factor on bg yields
+                        factor = 1.0
+                        if proc in proc_factor_dict.keys():
+                            factor = norm_factors[proc_factor_dict[proc]]
+                        rates.append(str(factor * np.sum(weights_in_bin)))
+
+                    # QCD on top, append QCD on its own, QCD estimate in SR was calculated beforehand
+                    bin_names.append("DNN_Score_Node_" + key + "_" + str(edge))
+                    process_names.append("QCD")
+                    process_numbers.append(str(len(self.config_inst.get_aux("DNN_process_template")[self.category].keys())))
+                    rates.append(str(QCD_estimate[j]))
 
             else:
                 for i, proc in enumerate(self.config_inst.get_aux("DNN_process_template")[self.category].keys()):
@@ -125,11 +132,14 @@ class ConstructInferenceBins(DNNTask):
 
                     bin_names.append("DNN_Score_Node_" + key)
                     process_names.append(proc)
-                    # signal is last process in proc_dict, so we want it to be 0
+                    # # signal is last process in proc_dict, so we want it to be 0
                     process_numbers.append(str(len(self.config_inst.get_aux("DNN_process_template")[self.category].keys()) - (i + 1)))
-                    rates.append(str(np.sum(weights[find_proc][MC_mask])))
+                    factor = 1.0
+                    if proc in proc_factor_dict.keys():
+                        factor = norm_factors[proc_factor_dict[proc]]
+                    rates.append(str(factor * np.sum(weights[find_proc][MC_mask])))
                 # append QCD on its own
-                QCD_mask = np.argmax(QCD_scores, axis=1) == j
+                QCD_mask = np.argmax(QCD_scores, axis=1) == node
                 QCD_counts_bin = np.sum(QCD_weights[QCD_mask])
                 bin_names.append("DNN_Score_Node_" + key)
                 process_names.append("QCD")
@@ -146,20 +156,33 @@ class ConstructInferenceBins(DNNTask):
         for i, rate in enumerate(rates):
             nominal_dict["{}_{}".format(bin_names[i], process_names[i])] = rate
 
+        # blinding last 5 signal bins, replace them by data_count FIXME!!!
+        sum_up_bg = {id: [] for id in np.unique(process_numbers)}
+        for id, numb in enumerate(process_numbers):
+            sum_up_bg[numb].append(float(rates[id]))
+        summed_bg = np.sum(list(sum_up_bg.values()), 0)
+        for iobs in range(len(data_obs)):
+            if iobs > (len(data_obs) - 6):
+                data_obs[iobs] = str(int(summed_bg[iobs] + 0.5))
+        # put together output dict to write datacards
         inference_bins = {"data_bins": data_bins, "data_obs": data_obs, "bin_names": bin_names, "process_names": process_names, "process_numbers": process_numbers, "rates": rates, "nominal_dict": nominal_dict}
 
         # optimising binning?
-        not_signal = labels[:, -1] == 0
-        MC_scores_bg_in_signode = MC_scores[not_signal][:, -1]
-        for step in np.arange(0.99, 1, 0.0001):
-            print(np.round(step, 4), ": ", np.sum(MC_scores_bg_in_signode[MC_scores_bg_in_signode > step]))
-        print("data max signal sore: ", np.max(data_scores[:, -1]), " and second highest: ", np.max(data_scores[:, -1][data_scores[:, -1] < np.max(data_scores[:, -1])]))
+        all_MC = np.append(MC_scores, QCD_scores, axis=0)
+        all_weights = np.append(weights, QCD_weights, axis=0)
+        all_labels = np.append(labels, np.resize([0.5, 0.5, 0], (len(QCD_weights), 3)), axis=0)
+        not_signal = all_labels[:, -1] == 0
+        MC_scores_bg_in_signode = all_MC[not_signal][:, -1]
+        weights_bg = all_weights[not_signal]
+        for step in np.arange(0.9, 1, 0.001):
+            print(np.round(step, 4), ": ", np.sum(weights_bg[MC_scores_bg_in_signode > step]))
+        # print("data max signal sore: ", np.max(data_scores[:, -1]), " and second highest: ", np.max(data_scores[:, -1][data_scores[:, -1] < np.max(data_scores[:, -1])]))
         print("Max signal score:", np.max(MC_scores[:, -1]))
         # finish task
         self.output().dump(inference_bins)
 
 
-class GetShiftedYields(CoffeaTask, DNNTask):
+class GetShiftedYields(CoffeaTask, DNNTask):  # jobs should be really small
     shifts = luigi.ListParameter(default=["PreFireWeightUp"])
     channel = luigi.ListParameter(default=["Muon", "Electron"])
 
@@ -168,9 +191,10 @@ class GetShiftedYields(CoffeaTask, DNNTask):
         return {
             "nominal_bins": ConstructInferenceBins.req(self),
             "shifted_arrays": MergeShiftArrays.req(self),  # , workflow="local"
-            "samples": CrossValidationPrep.req(self),
-            "predictions": PredictDNNScores.req(self),
-            "model": PytorchCrossVal.req(self, n_layers=self.n_layers, n_nodes=self.n_nodes, dropout=self.dropout),
+            # "samples": CrossValidationPrep.req(self),
+            # "predictions": PredictDNNScores.req(self),
+            "model": PytorchCrossVal.req(self, n_layers=self.n_layers, n_nodes=self.n_nodes, dropout=self.dropout, category="All_Lep"),  #
+            "Norm_factors": CalcNormFactors.req(self),
         }
 
     def output(self):
@@ -184,12 +208,20 @@ class GetShiftedYields(CoffeaTask, DNNTask):
     def run(self):
         inp = self.input()
         models = inp["model"]["collection"].targets[0]
-
+        # loading all models once
+        print("loading models")
+        models_loaded = {fold: torch.load(models["fold_" + str(fold)]["model"].path) for fold in range(self.kfold)}
         nominal = inp["nominal_bins"].load()
         nominal_dict = nominal["nominal_dict"]
 
-        # omitting signal
-        nodes = list(self.config_inst.get_aux("DNN_process_template")[self.category].keys())[:-1]
+        # correction factors
+        norm_factors = self.input()["Norm_factors"].load()
+        proc_factor_dict = {"ttjets": "alpha", "Wjets": "beta"}
+
+        # processes to loop over
+        nodes = list(self.config_inst.get_aux("DNN_process_template")[self.category].keys())
+        # signal binning
+        binning = self.config_inst.get_aux("signal_binning")
 
         # collecting results per shift
         out_dict = {}
@@ -198,13 +230,14 @@ class GetShiftedYields(CoffeaTask, DNNTask):
         for shift in tqdm(shifts_long):
             out_dict[shift] = {}
             shifted_yields = {}
-            for node, key in enumerate(nodes):
+            # only want to loop over backgrounds here
+            for key in nodes[:-1]:
                 scores, labels, weights = [], [], []
                 real_procs = self.config_inst.get_aux("DNN_process_template")[self.category][key]
                 for pr in real_procs:
                     if pr not in self.datasets_to_process:
                         continue
-                    shift_dict = inp["shifted_arrays"]["collection"].targets[0]["{}_{}_{}".format(self.category, pr, shift)]
+                    shift_dict = inp["shifted_arrays"]["collection"].targets[0]["{}_{}_{}".format(self.category, pr, shift)]  #
                     shift_ids = shift_dict["DNNId"].load()
                     shift_arr = shift_dict["array"].load()
                     shift_weight = shift_dict["weights"].load()
@@ -212,35 +245,42 @@ class GetShiftedYields(CoffeaTask, DNNTask):
                         # to get respective switched id per fold
                         j = -1 * DNNId
                         # each model should now predict labels for the validation data
-                        model = torch.load(models["fold_" + str(fold)]["model"].path)
+                        model = models_loaded[fold]
                         X_test = shift_arr[shift_ids == j]
                         # we know the process
-                        y_test = np.array([[0, 0, 0]] * len(X_test))
-                        y_test[:, node] = 1
+                        # y_test = np.array([[0, 0, 0]] * len(X_test))
+                        # y_test[:, node] = 1
                         weight_test = shift_weight[shift_ids == j]
 
-                        pred_dataset = util.ClassifierDatasetWeight(torch.from_numpy(X_test).float(), torch.from_numpy(y_test).float(), torch.from_numpy(weight_test).float())
-                        pred_loader = torch.utils.data.DataLoader(dataset=pred_dataset, batch_size=len(X_test))
-
+                        # pred_dataset = util.ClassifierDatasetWeight(torch.from_numpy(X_test).float(), torch.from_numpy(y_test).float(), torch.from_numpy(weight_test).float())
+                        # pred_loader = torch.utils.data.DataLoader(dataset=pred_dataset, batch_size=len(X_test))
                         with torch.no_grad():
                             model.eval()
-                            for X_pred_batch, y_pred_batch, weight_pred_batch in pred_loader:
-                                X_scores = model(X_pred_batch)
+                            # for X_pred_batch, y_pred_batch, weight_pred_batch in pred_loader:
+                            X_scores = model(torch.from_numpy(X_test)).softmax(dim=1)
 
-                                scores.append(X_scores.numpy())
-                                labels.append(y_pred_batch)
-                                weights.append(weight_pred_batch)
-
-                # merge predictions
-                scores, labels, weights = np.concatenate(scores), np.concatenate(labels), np.concatenate(weights)
-
+                            scores.append(X_scores.numpy())
+                            # labels.append(y_test)
+                            weights.append(weight_test)
+                # merge predictions labels, np.concatenate(labels),
+                scores, weights = np.concatenate(scores), np.concatenate(weights)
                 # in_node process shift yield
                 for ii, node in enumerate(nodes):
-                    weight_sum = np.sum(weights[np.argmax(scores, axis=-1) == ii])
-                    # FIXME doing right assignment of yields per node?
-                    # for now results look as expected
-                    shifted_yields["DNN_Score_Node_{}_{}_proc_{}".format(node, shift, key)] = weight_sum
-
+                    if node == self.config_inst.get_aux("signal_process").replace("V", "W"):
+                        mask = np.argmax(scores, axis=-1) == ii
+                        for j, edge in enumerate(binning[:-1]):
+                            scores_in_node = scores[mask][:, ii]
+                            events_in_bin = (scores_in_node > binning[j]) & (scores_in_node < binning[j + 1])
+                            weight_sum = np.sum(weights[mask][events_in_bin])
+                            weight_sum *= norm_factors[proc_factor_dict[key]]
+                            shifted_yields["DNN_Score_Node_{}_{}_proc_{}".format(node + "_" + str(edge), shift, key)] = weight_sum
+                    else:
+                        weight_sum = np.sum(weights[np.argmax(scores, axis=-1) == ii])
+                        # normalisation factors to correctly model yields
+                        weight_sum *= norm_factors[proc_factor_dict[key]]
+                        # FIXME doing right assignment of yields per node?
+                        # for now results look as expected
+                        shifted_yields["DNN_Score_Node_{}_{}_proc_{}".format(node, shift, key)] = weight_sum
             for key2, rate in shifted_yields.items():
                 nominal_key = key2.replace(shift + "_proc_", "")
                 nominal_rate = float(nominal_dict[nominal_key])
@@ -253,6 +293,7 @@ class GetShiftedYields(CoffeaTask, DNNTask):
         # only wanting to use the average by Up/Down, saving as 1+average
         averaged_shifts = {}
         for key in out_dict.keys():
+            # since we average out, only need to do it once for up, skip down
             if not "Up" in key:
                 continue
             else:
@@ -269,11 +310,11 @@ class GetShiftedYields(CoffeaTask, DNNTask):
 
 class YieldPerMasspoint(CoffeaTask, DNNTask, HTCondorWorkflow, law.LocalWorkflow):
     # jobs should be really small
-    RAM = 500
-    hours = 1
+    RAM = 5000
+    hours = 2
 
     def requires(self):
-        inp = {"files": WriteDatasetPathDict.req(self), "weights": CollectInputData.req(self), "masspoints": CollectMasspoints.req(self), "btagSF": CalcBTagSF.req(self), "model": PytorchCrossVal.req(self, n_layers=self.n_layers, n_nodes=self.n_nodes, dropout=self.dropout)}
+        inp = {"files": WriteDatasetPathDict.req(self), "weights": CollectInputData.req(self), "masspoints": CollectMasspoints.req(self), "btagSF": CalcBTagSF.req(self, debug=False), "model": PytorchCrossVal.req(self, n_layers=self.n_layers, n_nodes=self.n_nodes, dropout=self.dropout, category="All_Lep", debug=False)}  #
         return inp
 
     def output(self):
@@ -282,17 +323,21 @@ class YieldPerMasspoint(CoffeaTask, DNNTask, HTCondorWorkflow, law.LocalWorkflow
         return out
 
     def store_parts(self):
-        return super(YieldPerMasspoint, self).store_parts() + (self.n_nodes,) + (self.dropout,) + (self.batch_size,) + (self.learning_rate,)
+        parts = (self.n_nodes,) + (self.dropout,) + (self.batch_size,) + (self.learning_rate,)
+        if self.debug:
+            parts = ("debug",) + parts
+        return super(YieldPerMasspoint, self).store_parts() + parts
 
     def create_branch_map(self):
         # define job number according to number of files of the dataset that you want to process
         masspoints, _ = self.load_masspoints()
         job_number = len(masspoints)
-        if self.debug:
-            job_number = 1
         return list(range(job_number))
 
     def load_masspoints(self):
+        if self.debug:
+            # so we can generate one datacard quickly
+            return [[800, 100]], [["800", "100"]]
         with open(self.config_inst.get_aux("masspoints")) as f:
             masspoints = json.load(f)
         floats = masspoints["masspoints"]
@@ -306,6 +351,9 @@ class YieldPerMasspoint(CoffeaTask, DNNTask, HTCondorWorkflow, law.LocalWorkflow
         mp = masspoints[self.branch]
         mp_str = str_masspoints[self.branch]
 
+        # loading all models once
+        print("loading models")
+        models_loaded = {fold: torch.load(self.input()["model"]["fold_" + str(fold)]["model"].path) for fold in range(self.kfold)}
         data_dict = self.input()["files"]["dataset_dict"].load()  # ["SingleMuon"]  # {self.dataset: [self.file]}
         data_path = self.input()["files"]["dataset_path"].load()
         sum_gen_weights_dict = self.input()["weights"]["sum_gen_weights"].load()
@@ -321,6 +369,8 @@ class YieldPerMasspoint(CoffeaTask, DNNTask, HTCondorWorkflow, law.LocalWorkflow
         subset = job_number_dict[0]
         dataset = process_dict[0]
         proc = self.config_inst.get_process(dataset)
+        # key for masspoint
+        dataset_mp = "_".join([dataset] + mp_str)
         with up.open(data_path + "/" + subset) as file:
             primaryDataset = file["MetaData"]["primaryDataset"].array()[0]
             isData = file["MetaData"]["IsData"].array()[0]
@@ -335,6 +385,9 @@ class YieldPerMasspoint(CoffeaTask, DNNTask, HTCondorWorkflow, law.LocalWorkflow
 
         all_files, all_btagSF = [], []
         for filename in job_number_dict.values():
+            # so we don't use files needed for extra statistics
+            if "extra" in filename:
+                continue
             all_files.append(data_path + "/" + filename)
             all_btagSF.append(self.input()["btagSF"][treename + "_" + filename.split("/")[1]].load())
         # get joined btagSF file for skimming all signal at once
@@ -346,7 +399,7 @@ class YieldPerMasspoint(CoffeaTask, DNNTask, HTCondorWorkflow, law.LocalWorkflow
         fileset = {
             dataset: {
                 "files": all_files,
-                "metadata": {"PD": primaryDataset, "isData": isData, "isFastSim": isFastSim, "isSignal": isSignal, "xSec": xSec, "Luminosity": lumi, "sumGenWeight": sum_gen_weights_dict[dataset], "btagSF": all_path, "shift": self.shift, "masspoint": mp, "category": self.category},
+                "metadata": {"PD": primaryDataset, "isData": isData, "isFastSim": isFastSim, "isSignal": isSignal, "xSec": xSec, "Luminosity": lumi, "sumGenWeight": sum_gen_weights_dict[dataset_mp], "btagSF": all_path, "shift": self.shift, "masspoint": mp, "category": self.category},
             }
         }
         # call imported processor, magic happens here
@@ -366,32 +419,31 @@ class YieldPerMasspoint(CoffeaTask, DNNTask, HTCondorWorkflow, law.LocalWorkflow
         out_variables = out["arrays"][self.category + "_" + dataset]["hl"].value
         out_DNNIds = out["arrays"][self.category + "_" + dataset]["DNNId"].value
         out_weights = out["arrays"][self.category + "_" + dataset]["weights"].value
-
         scores, labels, weights = [], [], []
+
         # now using the produced output to predict events per masspoint
         for fold, Id in enumerate(self.config_inst.get_aux("DNNId")):
             # to get respective switched id per fold
             j = -1 * Id
             # each model should now predict labels for the validation data
-            model = torch.load(self.input()["model"]["fold_" + str(fold)]["model"].path)
+            model = models_loaded[fold]
             X_test = out_variables[out_DNNIds == j]
             # we know the process
             # we only have signal here
-            y_test = np.array([[0, 0, 1]] * len(X_test))
+            # y_test = np.array([[0, 0, 1]] * len(X_test))
             weight_test = out_weights[out_DNNIds == j]
 
-            pred_dataset = util.ClassifierDatasetWeight(torch.from_numpy(X_test).float(), torch.from_numpy(y_test).float(), torch.from_numpy(weight_test).float())
-            pred_loader = torch.utils.data.DataLoader(dataset=pred_dataset, batch_size=len(X_test))
+            # pred_dataset = util.ClassifierDatasetWeight(torch.from_numpy(X_test).float(), torch.from_numpy(y_test).float(), torch.from_numpy(weight_test).float())
+            # pred_loader = torch.utils.data.DataLoader(dataset=pred_dataset, batch_size=len(X_test))
 
             with torch.no_grad():
                 model.eval()
-                for X_pred_batch, y_pred_batch, weight_pred_batch in pred_loader:
-                    X_scores = model(X_pred_batch)
+                # for X_pred_batch, y_pred_batch, weight_pred_batch in pred_loader:
+                X_scores = model(torch.from_numpy(X_test)).softmax(dim=1)
 
-                    scores.append(X_scores.numpy())
-                    labels.append(y_pred_batch)
-                    weights.append(weight_pred_batch)
-
+                scores.append(X_scores.numpy())
+                # labels.append(y_test)
+                weights.append(weight_test)
         self.output()["_".join(mp_str)]["scores"].dump(np.concatenate(scores))
         self.output()["_".join(mp_str)]["weights"].dump(np.concatenate(weights))
 
@@ -410,9 +462,15 @@ class DatacardPerMasspoint(CoffeaTask, DNNTask):
         return out
 
     def store_parts(self):
-        return super(DatacardPerMasspoint, self).store_parts() + (self.n_nodes,) + (self.dropout,) + (self.batch_size,) + (self.learning_rate,)
+        parts = (self.n_nodes,) + (self.dropout,) + (self.batch_size,) + (self.learning_rate,)
+        if self.debug:
+            parts = ("debug",) + parts
+        return super(DatacardPerMasspoint, self).store_parts() + parts
 
     def load_masspoints(self):
+        if self.debug:
+            # so we can generate one datacard quickly
+            return [[800, 100]], [["800", "100"]]
         with open(self.config_inst.get_aux("masspoints")) as f:
             masspoints = json.load(f)
         floats = masspoints["masspoints"]
@@ -484,7 +542,10 @@ class DatacardPerMasspoint(CoffeaTask, DNNTask):
                     process_unc[shift].append(str(shifted_yields[shift][new_key]))
                 else:
                     process_unc[shift].append("-")
+        # flat QCD unc since estimate is rather rough
+        process_unc["QCD_estimate"] = ["1.5" if "QCD" == name else "-" for name in process_names]
         max_scores = []
+        # [("600", "100"),("1500","1000"), ("1500","1200"), ("1600","1100"), ("1700","1200"), ("1800","1300"), ("1900","100"), ("1900","800"), ("1900","1000"), ("2200","100"), ("2200","800"), ("1500", "500")]:
         for mp in tqdm(str_masspoints):
             rates, bin_names = [], []
             mp_scores = signal_yields["_".join(mp)]["scores"].load()
@@ -537,16 +598,17 @@ class DatacardPerMasspoint(CoffeaTask, DNNTask):
 
                 # systematics
                 datacard.write("---\n")
-                datacard.write("lumi lnN " + "1.023 " * (len(bin_names) + len(fixed_bin_names)) + "\n")  # each process has
-                # xsec uncertainties, dict filled beforehand and just written here
+                datacard.write("lumi lnN " + "1.023 " * (len(bin_names) + len(fixed_bin_names)) + "\n")
+                # each process has xsec uncertainties, dict filled beforehand and just written here
                 for key in cp_process_unc.keys():
                     datacard.write("{} lnN ".format(key.replace("Total", "Total_JEC")) + " ".join(cp_process_unc[key]) + "\n")
 
                 # doing background estimation
-                datacard.write("---\n")
+                # datacard.write("---\n")
                 # format name rateParam channel process initial value
-                datacard.write("alpha rateParam * {} 1 \n".format(all_processes[0]))
-                datacard.write("beta rateParam * {} 1 \n".format(all_processes[1]))
+                # FIXME, for now doing it in ConstructInferenceBins
+                # datacard.write("alpha rateParam * {} 1 \n".format(all_processes[0]))
+                # datacard.write("beta rateParam * {} 1 \n".format(all_processes[1]))
         print("least signal score:", np.min(np.array(max_scores)), masspoints[np.argmin(np.array(max_scores))])
 
 
@@ -633,13 +695,14 @@ class DatacardWriting(DNNTask):
 
             # systematics
             datacard.write("---\n")
-            datacard.write("lumi lnN " + "1.023 " * len(inp["bin_names"]) + "\n")  # each process has a score in each process node
-            for key in process_unc.keys():
-                datacard.write("Xsec_{} lnN ".format(key) + " ".join(process_unc[key]) + "\n")
+            datacard.write("lumi lnN " + "1.223 " * len(inp["bin_names"]) + "\n")  # each process has a score in each process node
+            # FIXME lumi is 1.023. all other systematics are commented out
+            # for key in process_unc.keys():
+            #    datacard.write("Xsec_{} lnN ".format(key) + " ".join(process_unc[key]) + "\n")
 
             # doing background estimation
-            datacard.write("---\n")
-            # format name rateParam channel process initial value
-            datacard.write("alpha rateParam * {} 1 \n".format(all_processes[0]))
-            datacard.write("beta rateParam * {} 1 \n".format(all_processes[1]))
+            # datacard.write("---\n")
+            # format name rateParam channel process initial value FIXME
+            # datacard.write("alpha rateParam * {} 1 \n".format(all_processes[0]))
+            # datacard.write("beta rateParam * {} 1 \n".format(all_processes[1]))
             # maybe Calcnorm as initial values
