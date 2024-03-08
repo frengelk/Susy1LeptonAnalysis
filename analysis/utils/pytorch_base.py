@@ -10,6 +10,8 @@ import random
 
 from time import time
 
+# problems with opening files on NAF
+torch.multiprocessing.set_sharing_strategy("file_system")
 """
 # help class for torch data loading
 class ClassifierDataset(data.Dataset):
@@ -70,9 +72,9 @@ class DataModuleClass(pl.LightningDataModule):
         # define data
         self.X_train = X_train
         self.y_train = y_train
+        self.weight_train = weight_train
         self.X_val = X_val
         self.y_val = y_val
-        self.weight_train = weight_train
         self.weight_val = weight_val
         # self.X_test=X_test , X_test, y_test
         # self.y_test=y_test
@@ -98,34 +100,41 @@ class DataModuleClass(pl.LightningDataModule):
         # Use BalancedWeightedSampler directly here
         # sampler = BalancedWeightedSampler(weights=abs(self.weight_train),
 
-        # setting all weights to positive
+        # #setting all weights to positive
         weight_train = abs(self.weight_train)
-        tot_weight = np.sum(weight_train)
+        # average out training weights over signal to not overvalue high xsec models FIXME
+        mask_T5 = self.y_train[:, -1] == 1
+        weight_train[mask_T5] = np.sum(weight_train[mask_T5]) / np.sum(mask_T5)
+
+        # tot_weight = np.sum(weight_train)
         for i in range(len(self.y_train[0])):
             mask = self.y_train[:, i] == 1
-            sum = np.sum(weight_train[mask])
-            # overall weight tensor should yield num_classes
-            # FIXME the sqrt is just a test np.sqrt(sum)
-            weight_train[mask] /= sum  # * len(self.y_train[0]) / tot_weight
+            summed = np.sum(weight_train[mask])
+            # overall weight tensor sum should yield num_classes
+            # if i == len(self.y_train[0]) - 1:
+            #     weight_train[mask] = 1/np.sum(mask) #1/summed
+            # else:
+            weight_train[mask] /= summed  # * len(self.y_train[0]) / tot_weight
 
-        # FIXME oversample signal, or undersample? undersampling seems to be better
-        mask = self.y_train[:, -1] == 1
-        # weight_train[mask] *= 1/1.5
-
+        # #sample all signal events with the same probability to not train on mainly high xsec, low gluino masses
+        # #mask = self.y_train[:, -1] == 1#weight_train[mask] = 1/np.sum(weight_train[mask])
         sampler = data.WeightedRandomSampler(weight_train, len(weight_train), replacement=True)
-        # dataloader = data.DataLoader(
-        #     dataset=self.train_dataset,
-        #     sampler=sampler,
-        #     batch_size=self.batch_size,
-        #     num_workers=8,
-        # )
-        # FIXME train without sampling
         dataloader = data.DataLoader(
             dataset=self.train_dataset,
+            sampler=sampler,
             batch_size=self.batch_size,
-            shuffle=True,
             num_workers=8,
+            drop_last=True,
         )
+        # FIXME train without sampling
+        # dataloader = data.DataLoader(
+        #     dataset=self.train_dataset,
+        #     batch_size=self.batch_size,
+        #     shuffle=True,
+        #     num_workers=8, #8
+        #     drop_last=True,
+        #     #persistent_workers=True,
+        # )
 
         return dataloader
 
@@ -133,7 +142,9 @@ class DataModuleClass(pl.LightningDataModule):
         return data.DataLoader(
             dataset=self.val_dataset,
             batch_size=10 * self.batch_size,  # 10 *  , shuffle=True  # len(val_dataset
-            num_workers=8,
+            num_workers=8,  # 8,
+            drop_last=True,
+            # persistent_workers=True,
         )
 
     # def test_dataloader(self):
@@ -146,16 +157,16 @@ class DataModuleClass(pl.LightningDataModule):
 
 # torch Multiclassifer
 class MulticlassClassification(pl.LightningModule):  # nn.Module core.lightning.LightningModule
-    def __init__(self, num_feature, num_class, means, stds, dropout, class_weights, n_nodes, learning_rate=1e-3):
+    def __init__(self, num_feature, num_class, means, stds, dropout, class_weights, n_nodes, learning_rate=1e-3, gamma=1.5):
         super(MulticlassClassification, self).__init__()
 
         # Attribute failure
         # self.prepare_data_per_node = True
         self.learning_rate = learning_rate
+        self.gamma = gamma
 
         # custom normalisation layer
         self.norm = NormalizeInputs(means, stds)
-
         self.layer_1 = nn.Linear(num_feature, n_nodes)  # // 2
         self.layer_2 = nn.Linear(n_nodes, n_nodes)  # // 2
         self.layer_3 = nn.Linear(n_nodes, n_nodes)
@@ -164,7 +175,10 @@ class MulticlassClassification(pl.LightningModule):  # nn.Module core.lightning.
         self.layer_out = nn.Linear(n_nodes, num_class)
         self.softmax = nn.Softmax(dim=1)  # log_
         self.class_weights = class_weights
-        self.loss = nn.CrossEntropyLoss(reduction="mean")  # weight=class_weights,
+        # self.NLLloss = nn.NLLLoss(reduction="mean")
+        self.loss = nn.CrossEntropyLoss(reduction="mean")  #  weight=class_weights,
+        # for testing binary classification
+        # self.BCEloss = nn.BCELoss(reduction="mean") # better use _with_logits
 
         self.relu = nn.ELU()  # FIXME nn.ReLU()
         self.dropout = nn.Dropout(p=dropout)
@@ -210,25 +224,23 @@ class MulticlassClassification(pl.LightningModule):  # nn.Module core.lightning.
         # x = self.dropout(x)
 
         x = self.layer_out(x)
-        x = self.softmax(x)
-
+        # in CE loss already included
+        # x = self.softmax(x)
         return x
 
     def validation_step(self, batch, batch_idx):
         x, y, weight = batch[0].squeeze(0), batch[1].squeeze(0), batch[2].squeeze(0)
         self.eval()
         logits = self(x)
-        # loss = nn.functional.nll_loss()
-        # loss = nn.CrossEntropyLoss()
         weighted_loss = self.weighted_loss(logits, y, weight)
-        loss_step = self.loss(logits, y)
+        ce_loss_step = self.loss(logits, y)  # .argmax(dim=1)
+        loss_step = self.focal_loss(logits, y, focusing_param=self.gamma)
         preds = torch.argmax(logits, dim=1)
         acc_step = self.accuracy(preds, y.argmax(dim=1))
 
-        self.validation_step_outputs.append({"val_loss": weighted_loss, "val_acc": acc_step})  # loss_step
-
+        self.validation_step_outputs.append({"val_loss": loss_step, "val_acc": acc_step})  # loss_step
         # print("val_loss", loss_step, "val_acc", acc_step)
-        return {"val_loss": loss_step, "val_acc": acc_step, "weighted_val_loss": weighted_loss}
+        return {"val_loss": loss_step, "val_acc": acc_step, "weighted_val_loss": weighted_loss, "ce_val_loss": ce_loss_step}
 
     def test_step(self, batch, batch_idx):
         # Here we just reuse the validation_step for testing
@@ -250,8 +262,23 @@ class MulticlassClassification(pl.LightningModule):  # nn.Module core.lightning.
         self.loss_per_node["val_T5_weight"].append(loss_weight[mask_T5].mean())
         return (loss_weight).mean()
 
+    def focal_loss(self, output, target, focusing_param=1.5):
+        cross_entropy = nn.functional.cross_entropy(output, target, reduction="none")
+        cross_entropy_log = torch.log(cross_entropy)
+        # logpt = - nn.functional.cross_entropy(output, target)
+        pt = torch.exp(-cross_entropy)
+
+        focal_loss = -((1 - pt) ** focusing_param) * (-cross_entropy)
+        # self.balance_param * balanced_focal_loss = focal_loss
+        return focal_loss.mean()
+
     def training_step(self, batch, batch_idx):
         x, y, weight = batch[0].squeeze(0), batch[1].squeeze(0), batch[2].squeeze(0)
+        if len(x.shape) == 1:
+            x = x.unsqueeze(0)
+            y = y.unsqueeze(0)
+            weight = weight.unsqueeze(0)
+
         self.train()
         logits = self(x)
         preds = torch.argmax(logits, dim=1)
@@ -261,8 +288,9 @@ class MulticlassClassification(pl.LightningModule):  # nn.Module core.lightning.
         self.signal_batch_fraction.append(frac)
         # maybe we do this and a softmax layer at the end
         # nll_loss = nn.functional.nll_loss(logits, y)
-        loss_step = self.loss(logits, y)
+        # loss_step = self.loss(logits, y) # .argmax(dim=1)
         # loss_step = self.weighted_loss(logits, y, weight)
+        loss_step = self.focal_loss(logits, y, focusing_param=self.gamma)
         # not necessary here, done during ? optimizer I guess
         # loss_step.backward(retain_graph=True)
         self.log("train_loss", loss_step, on_step=True, on_epoch=True, prog_bar=True, logger=True)
@@ -310,7 +338,9 @@ class MulticlassClassification(pl.LightningModule):  # nn.Module core.lightning.
         self.validation_step_outputs.clear()  # free memory
 
     def configure_optimizers(self):
-        return optim.Adam(self.parameters(), lr=self.learning_rate)
+        # weight decay to do L2 regularization, AdamW seems to be recommended
+        # return optim.Adam(self.parameters(), lr=self.learning_rate, weight_decay=1e-5)
+        return optim.AdamW(self.parameters(), lr=self.learning_rate, weight_decay=1e-4)
 
     # def get_metrics(self):
     # # don't show the version number, does not really seem to work

@@ -215,7 +215,7 @@ class PytorchMulticlass(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
             for X_test_batch, y_test_batch in test_loader:
                 X_test_batch, y_test_batch = X_test_batch.squeeze(0), y_test_batch.squeeze(0)
 
-                y_test_pred = model(X_test_batch)
+                y_test_pred = model(X_test_batch).softmax(dim=1)
 
                 test_loss = criterion(y_test_pred, y_test_batch)
                 test_acc = self.multi_acc(y_test_pred, y_test_batch)
@@ -268,8 +268,8 @@ class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):  # , Coffea
     # define it here again so training can be started from here
     kfold = IntParameter(default=2)
     # setting needed RAM high and time long
-    RAM = 20000
-    hours = 5
+    RAM = 12000
+    hours = 6
 
     # This parameters worked
     #  --batch-size 512 --dropout 0.3 --learning-rate 0.0003 --n-nodes 256
@@ -282,7 +282,7 @@ class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):  # , Coffea
         # return PrepareDNN.req(self)
         return {
             "data": CrossValidationPrep.req(self, kfold=self.kfold),
-            "mean_std": ArrayNormalisation.req(self, datasets_to_process=["WJets", "SingleTop", "TTbar", "Rare", "DY", "T5qqqqVV", "MET", "SingleMuon", "SingleElectron"]),
+            "mean_std": ArrayNormalisation.req(self, datasets_to_process=["WJets", "SingleTop", "TTbar", "Rare", "DY", "T5qqqqWW", "MET", "SingleMuon", "SingleElectron"]),
         }
 
     def output(self):
@@ -312,7 +312,7 @@ class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):  # , Coffea
     def calc_class_weights(self, y_train, y_weight, norm=1, sqrt=False):
         # calc class weights to battle imbalance
         # norm to tune down huge factors, sqrt to smooth the distribution
-        """
+
         from sklearn.utils import class_weight
 
         weight_array = norm * class_weight.compute_class_weight(
@@ -328,13 +328,13 @@ class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):  # , Coffea
             # set at minimum to 1.0
             # return dict(enumerate([a if a>1.0 else 1.0 for a in weight_array]))
             return dict(enumerate(weight_array))
-        """
-        n_processes = len(self.config_inst.get_aux("DNN_process_template")[self.category].keys())
-        total_weight = np.sum(y_weight)
-        class_weights = {}
-        for i in range(n_processes):
-            mask = np.argmax(y_train, axis=-1) == i
-            class_weights[i] = total_weight / np.sum(y_weight[mask])
+
+        # n_processes = len(self.config_inst.get_aux("DNN_process_template")[self.category].keys())
+        # total_weight = np.sum(y_weight)
+        # class_weights = {}
+        # for i in range(n_processes):
+        #     mask = np.argmax(y_train, axis=-1) == i
+        #     class_weights[i] = total_weight / np.sum(y_weight[mask])
         return class_weights
 
     def reset_weights(self, m):
@@ -348,6 +348,8 @@ class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):  # , Coffea
                 layer.reset_parameters()
 
     def run(self):
+        # problems with opening files on NAF
+        torch.multiprocessing.set_sharing_strategy("file_system")
         # define dimensions, working with aux template for processes
         n_variables = len(self.config_inst.variables)
         n_processes = len(self.config_inst.get_aux("DNN_process_template")[self.category].keys())
@@ -369,7 +371,7 @@ class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):  # , Coffea
         y_val = self.input()["data"]["cross_val_{}".format(i)]["cross_val_y_val_{}".format(i)].load()
         weight_val = self.input()["data"]["cross_val_{}".format(i)]["cross_val_weight_val_{}".format(i)].load()
 
-        class_weights = self.calc_class_weights(y_train, weight_train)
+        class_weights = self.calc_class_weights(y_train, weight_train, sqrt=False)
         # declare model
         model = util.MulticlassClassification(
             num_feature=n_variables,
@@ -380,15 +382,16 @@ class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):  # , Coffea
             class_weights=torch.tensor(list(class_weights.values())),
             n_nodes=self.n_nodes,
             learning_rate=self.learning_rate,
+            gamma=1.0,  # from Hyperparam Opt 1.5,
         )
 
         # weight resetting
         model.apply(self.reset_weights)
 
         # datasets are loaded
-        train_dataset = util.ClassifierDatasetWeight(torch.from_numpy(X_train).float(), torch.from_numpy(y_train).float(), torch.from_numpy(weight_train).float())
-        # val_dataset = util.ClassifierDataset(torch.from_numpy(X_val).float(), torch.from_numpy(y_val).float())
-        val_dataset = util.ClassifierDatasetWeight(torch.from_numpy(X_val).float(), torch.from_numpy(y_val).float(), torch.from_numpy(weight_val).float())
+        # train_dataset = util.ClassifierDatasetWeight(torch.from_numpy(X_train).float(), torch.from_numpy(y_train).float(), torch.from_numpy(weight_train).float())
+        # # val_dataset = util.ClassifierDataset(torch.from_numpy(X_val).float(), torch.from_numpy(y_val).float())
+        # val_dataset = util.ClassifierDatasetWeight(torch.from_numpy(X_val).float(), torch.from_numpy(y_val).float(), torch.from_numpy(weight_val).float())
 
         # define data
         data_collection = util.DataModuleClass(
@@ -406,15 +409,18 @@ class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):  # , Coffea
         )
 
         early_stop_callback = pl.callbacks.early_stopping.EarlyStopping(
-            monitor="val_acc",
+            monitor="val_loss",#"val_acc",
             min_delta=0.00,
             patience=10,
             verbose=False,
             mode="max",
             strict=False,
         )
+
+        # should help better generalization, reduce learning rate later
+        swa_callback = pl.callbacks.StochasticWeightAveraging(swa_lrs=self.learning_rate / 2, swa_epoch_start=0.25)
         # collect callbacks
-        callbacks = [early_stop_callback]  # , swa_callback
+        callbacks = [early_stop_callback, swa_callback]
 
         # Trainer, for gpu gpus=1
         trainer = pl.Trainer(
@@ -484,8 +490,8 @@ class PredictDNNScores(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
     def requires(self):
         out = {
             "samples": CrossValidationPrep.req(self, kfold=self.kfold),
-            "models": PytorchCrossVal.req(self, kfold=self.kfold),
-            "QCD": MergeArrays.req(self, datasets_to_process=["QCD"]),
+            "models": PytorchCrossVal.req(self, kfold=self.kfold,category="All_Lep"), # ,category="All_Lep" FIXME, this is trained on inclusive cuts
+            "QCD": MergeArrays.req(self, datasets_to_process=["QCD"], channel=["LeptonIncl"]),
             # "data": ArrayNormalisation.req(self),
         }
 
@@ -533,9 +539,9 @@ class PredictDNNScores(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
 
             with torch.no_grad():
                 model.eval()
-                X_scores = model(torch.tensor(X_test))
-                data_pred = model(torch.tensor(data))
-                QCD_pred = model(torch.tensor(QCD_arr))
+                X_scores = model(torch.tensor(X_test)).softmax(dim=1)
+                data_pred = model(torch.tensor(data)).softmax(dim=1)
+                QCD_pred = model(torch.tensor(QCD_arr)).softmax(dim=1)
             scores.append(X_scores.numpy())
             labels.append(y_test)
             weights.append(weight_test)
@@ -571,7 +577,7 @@ class CalcNormFactors(DNNTask):  # Requiring MergeArrays from a DNNTask leads to
     def requires(self):
         out = {
             "samples": CrossValidationPrep.req(self, kfold=self.kfold),
-            "models": PytorchCrossVal.req(self, kfold=self.kfold),
+            "models": PytorchCrossVal.req(self, kfold=self.kfold,category="All_Lep"), # ,category="All_Lep" FIXME, this is trained on inclusive cuts,
             "scores": PredictDNNScores.req(self, workflow="local"),
         }
 
@@ -653,3 +659,254 @@ class SavingDNNModel(CoffeaTask):
         #placeholder so task is complete
         self.output().touch()
 """
+
+
+class OptimizeHyperParam(DNNTask, HTCondorWorkflow, law.LocalWorkflow):  # , CoffeaTask
+    # define it here again so training can be started from here
+    nParameters = IntParameter(default=1)
+    # setting needed RAM high and time long
+    RAM = 10000
+    hours = 3
+
+    def create_parameter_dict(self):
+        parameter_dict = {}
+        n_nodes = [32, 64, 128, 256]
+        dropouts = [0.01, 0.1, 0.2, 0.3]
+        batch_sizes = [32, 64, 128, 512]
+        learning_rates = [0.01, 0.0003, 0.0001, 0.001]
+        gammas = [0.5, 1, 1.5, 2]
+        branch_counter = 0
+        for inode, node in enumerate(n_nodes[: self.nParameters]):
+            for idrop, drop in enumerate(dropouts[: self.nParameters]):
+                for ibatch, batch in enumerate(batch_sizes[: self.nParameters]):
+                    for ilr, lr in enumerate(learning_rates[: self.nParameters]):
+                        for igamma, gam in enumerate(gammas[: self.nParameters]):
+                            parameter_dict[branch_counter] = "_".join([str(node), str(drop), str(batch), str(lr), str(gam)])
+                            branch_counter += 1
+        return parameter_dict
+
+    def create_branch_map(self):
+        # overwrite branch map
+        parameter_dict = self.create_parameter_dict()
+        return list(parameter_dict.keys())
+
+    def requires(self):
+        # return PrepareDNN.req(self)
+        return {
+            "data": CrossValidationPrep.req(self, kfold=self.kfold),
+            "mean_std": ArrayNormalisation.req(self, datasets_to_process=["WJets", "SingleTop", "TTbar", "Rare", "DY", "T5qqqqVV", "MET", "SingleMuon", "SingleElectron"]),
+        }
+
+    def output(self):
+        # one output with metrics for each configuration
+        parameter_dict = self.create_parameter_dict()
+        out = {branch: self.local_target(parameters + ".json") for branch, parameters in parameter_dict.items()}
+        return out
+
+    # def store_parts(self):
+    #     # debug_str = ''
+    #     if self.debug:
+    #         debug_str = "debug"
+    #     else:
+    #         debug_str = ""
+
+    #     # put hyperparameters in path to make an easy optimization search
+    #     return (
+    #         super(PytorchCrossVal, self).store_parts()
+    #         # + (self.n_layers,)
+    #         + (self.n_nodes,)
+    #         + (self.dropout,)
+    #         + (self.batch_size,)
+    #         + (self.learning_rate,)
+    #         + (debug_str,)
+    #     )
+
+    def calc_class_weights(self, y_train, y_weight, norm=1, sqrt=False):
+        # calc class weights to battle imbalance
+        # norm to tune down huge factors, sqrt to smooth the distribution
+
+        from sklearn.utils import class_weight
+
+        weight_array = norm * class_weight.compute_class_weight(
+            "balanced",
+            classes=np.unique(np.argmax(y_train, axis=-1)),
+            y=np.argmax(y_train, axis=-1),
+        )
+        if sqrt:
+            # smooth by exponential function
+            # return dict(enumerate(np.sqrt(weight_array)))
+            return dict(enumerate((weight_array) ** 0.88))
+        if not sqrt:
+            # set at minimum to 1.0
+            # return dict(enumerate([a if a>1.0 else 1.0 for a in weight_array]))
+            return dict(enumerate(weight_array))
+
+        # n_processes = len(self.config_inst.get_aux("DNN_process_template")[self.category].keys())
+        # total_weight = np.sum(y_weight)
+        # class_weights = {}
+        # for i in range(n_processes):
+        #     mask = np.argmax(y_train, axis=-1) == i
+        #     class_weights[i] = total_weight / np.sum(y_weight[mask])
+        return class_weights
+
+    def reset_weights(self, m):
+        """
+        Try resetting model weights to avoid
+        weight leakage.
+        """
+        for layer in m.children():
+            if hasattr(layer, "reset_parameters"):
+                print(f"Reset trainable parameters of layer = {layer}")
+                layer.reset_parameters()
+
+    def run(self):
+        # problems with opening files on NAF
+        torch.multiprocessing.set_sharing_strategy("file_system")
+        # define dimensions, working with aux template for processes
+        n_variables = len(self.config_inst.variables)
+        n_processes = len(self.config_inst.get_aux("DNN_process_template")[self.category].keys())
+
+        # definition for the normalization layer
+        means, stds = (
+            self.input()["mean_std"]["means_stds"].load()[0],
+            self.input()["mean_std"]["means_stds"].load()[1],
+        )
+
+        performance = {}
+
+        # train setup only on one fold to be faster
+        i = self.branch % 2
+        # only load needed data set config in each step
+        X_train = self.input()["data"]["cross_val_{}".format(i)]["cross_val_X_train_{}".format(i)].load()
+        y_train = self.input()["data"]["cross_val_{}".format(i)]["cross_val_y_train_{}".format(i)].load()
+        weight_train = self.input()["data"]["cross_val_{}".format(i)]["cross_val_weight_train_{}".format(i)].load()
+        X_val = self.input()["data"]["cross_val_{}".format(i)]["cross_val_X_val_{}".format(i)].load()
+        y_val = self.input()["data"]["cross_val_{}".format(i)]["cross_val_y_val_{}".format(i)].load()
+        weight_val = self.input()["data"]["cross_val_{}".format(i)]["cross_val_weight_val_{}".format(i)].load()
+
+        class_weights = self.calc_class_weights(y_train, weight_train, sqrt=False)
+        # get hyperparameters for branch
+        parameter_dict = self.create_parameter_dict()
+        print(parameter_dict[self.branch])
+        n_nodes, dropout, batch_size, lr, gamma = parameter_dict[self.branch].split("_")
+        # define data
+        data_collection = util.DataModuleClass(
+            X_train,
+            y_train,
+            weight_train,
+            X_val,
+            y_val,
+            weight_val,
+            int(batch_size),
+            n_processes,
+        )
+
+        # declare model
+        model = util.MulticlassClassification(
+            num_feature=n_variables,
+            num_class=n_processes,
+            means=means,
+            stds=stds,
+            dropout=float(dropout),
+            class_weights=torch.tensor(list(class_weights.values())),
+            n_nodes=int(n_nodes),
+            learning_rate=float(lr),
+            gamma=float(gamma),
+        )
+
+        # Trainer, for gpu gpus=1
+        # train for 10 epochs to see result
+        trainer = pl.Trainer(
+            max_epochs=self.epochs,
+            enable_progress_bar=False,
+            check_val_every_n_epoch=1,
+        )
+
+        data_collection.setup("train")
+        trainer.fit(model, data_collection)
+
+        # Print fold results
+        print("K-FOLD CROSS VALIDATION RESULTS FOR {} FOLDS".format(i))
+        print("--------------------------------")
+
+        # for key, value in results.items():
+        print("Latest accuracy train: {} val: {}".format(model.accuracy_stats["train"][-1], model.accuracy_stats["val"][-1]))
+        print("Latest loss train: {} val: {} \n".format(model.loss_stats["train"][-1], model.loss_stats["val"][-1]))
+
+        performance.update(
+            {
+                "accuracy_stats": model.accuracy_stats,
+                "loss_stats": model.loss_stats,
+            }
+        )
+
+        self.output()[self.branch].parent.touch()
+        self.output()[self.branch].dump(performance)
+
+
+class FindBestTraining(DNNTask):
+    nParameters = IntParameter(default=1)
+
+    def requires(self):
+        return OptimizeHyperParam.req(self, nParameters=self.nParameters)
+
+    def output(self):
+        return self.local_target("best_training.json")
+
+    def run(self):
+        from collections import defaultdict
+
+        inp = self.input()["collection"].targets[0]
+        # declaring stuff to fill in loop
+        n_nodes = defaultdict(list)
+        dropout = defaultdict(list)
+        batch_size = defaultdict(list)
+        learning_rates = defaultdict(list)
+        gamma = defaultdict(list)
+        val_loss, val_acc = [], []
+        for branch in inp.keys():
+            nod, drop, batch, lr, gam = inp[branch].basename.replace(".json", "").split("_")
+            # print("\n",inp[branch].basename)
+            stats = inp[branch].load()
+            # # print latest entry for everything
+            # print("train_acc", stats['accuracy_stats']['train'][-1])
+            # print("val_acc", stats['accuracy_stats']['val'][-1])
+            # print("train_loss", stats['loss_stats']['train'][-1])
+            # print("val_loss", stats['loss_stats']['val'][-1])
+            val_loss.append(stats["loss_stats"]["val"][-1])
+            val_acc.append(stats["accuracy_stats"]["val"][-1])
+            # filling each parameter with the respective values
+            n_nodes[nod].append(stats["accuracy_stats"]["val"][-1])
+            dropout[drop].append(stats["accuracy_stats"]["val"][-1])
+            batch_size[batch].append(stats["accuracy_stats"]["val"][-1])
+            learning_rates[lr].append(stats["accuracy_stats"]["val"][-1])
+            gamma[gam].append(stats["accuracy_stats"]["val"][-1])
+
+        # fill nans so that they don't mess up investigation
+        val_loss = np.nan_to_num(val_loss, nan=10.0)
+        val_acc = np.nan_to_num(val_acc, nan=0.0)
+        print("\nmean acc", np.mean(val_acc))
+        print("Max val acc {} at training {} with parameters {}".format(np.max(val_acc), np.argmax(val_acc), inp[np.argmax(val_acc)].basename))
+        print("\nmean loss", np.mean(val_loss))
+        print("Min val loss {} at training {} with parameters {}".format(np.min(val_loss), np.argmin(val_loss), inp[np.argmin(val_loss)].basename))
+
+        ### respective values per hyperparam
+        print("\nnodes")
+        for val, acc in n_nodes.items():
+            print(val, np.mean(acc))
+        print("\ndropout")
+        for val, acc in dropout.items():
+            print(val, np.mean(acc))
+        print("\nbatch_size")
+        for val, acc in batch_size.items():
+            print(val, np.mean(acc))
+        print("\nlearning_rate")
+        for val, acc in learning_rates.items():
+            print(val, np.mean(acc))
+        print("\ngamma")
+        for val, acc in gamma.items():
+            print(val, np.mean(acc))
+
+        from IPython import embed
+
+        embed()
