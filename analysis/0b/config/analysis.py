@@ -57,12 +57,13 @@ for year, cfg in ("2016", config_2016), ("2017", config_2017):
     cfg.set_aux("DNN_model", os.path.expandvars("$ANALYSIS_BASE/config/DNN_model.pt"))
 
     cfg.set_aux("data", ["MET", "SingleMuon", "SingleElectron"])
-    cfg.set_aux("channels", {"SR0b": ["Muon", "Electron"], "Anti_cuts": ["LeptonIncl"], "SB_cuts": ["LeptonIncl"], "SR_Anti": ["LeptonIncl"]})
-    cfg.set_aux("DNNId", [-1, 1])
+    cfg.set_aux("channels", {"N0b": ["Muon", "Electron"], "SR0b": ["LeptonIncl"], "Anti_cuts": ["LeptonIncl"], "SB_cuts": ["LeptonIncl"], "SR_Anti": ["LeptonIncl"], "All_Lep": ["LeptonIncl"], "All_Signal": ["LeptonIncl"]})
+    cfg.set_aux("DNNId", [-1, 1]) # "SR0b": ["Muon", "Electron"],
 
     # for these, it's enough if we redo the event weights, don't need to process everything again
-    cfg.set_aux("systematic_shifts", ["MuonMediumIsoSfDown", "MuonMediumIsoSfUp", "MuonMediumSfDown", "MuonMediumSfUp", "MuonTriggerSfDown", "MuonTriggerSfUp", "PileDownWeightDown", "PileUpWeightDown", "PileUpWeightUp", "PreFireWeightDown", "PreFireWeightUp", "ElectronTightSfDown", "ElectronTightSfUp", "ElectronRecoSfDown", "ElectronRecoSfUp", "JetDeepJetMediumSfUp", "JetDeepJetMediumSfDown"])
-    cfg.set_aux("systematic_variable_shifts", ["TotalUp", "TotalDown"])
+    # FIXME change PileUp to UP so that we don't mess up shifts
+    cfg.set_aux("systematic_shifts", ["MuonMediumIsoSfDown", "MuonMediumIsoSfUp", "MuonMediumSfDown", "MuonMediumSfUp", "MuonTriggerSfDown", "MuonTriggerSfUp", "PileDownWeightDown","PileUpWeightDown", "PileUpWeightUp", "PreFireWeightDown", "PreFireWeightUp", "ElectronTightSfDown", "ElectronTightSfUp", "ElectronRecoSfDown", "ElectronRecoSfUp", "JetDeepJetMediumSfUp", "JetDeepJetMediumSfDown"])
+    cfg.set_aux("systematic_variable_shifts", ["TotalUp", "TotalDown"]) # 
 
     # signal always last category!
     cfg.set_aux(
@@ -111,5 +112,15 @@ for year, cfg in ("2016", config_2016), ("2017", config_2017):
                 "QCD": ["QCD"],
                 "data": ["MET", "SingleMuon", "SingleElectron"],
             },
+            "All_Lep": {
+                "ttjets": ["SingleTop", "TTbar"],
+                "Wjets": ["WJets", "Rare", "DY"],
+                "T5qqqqWW": ["T5qqqqWW_1500_1000", "T5qqqqWW_1500_1200", "T5qqqqWW_1600_1100", "T5qqqqWW_1700_1200", "T5qqqqWW_1800_1300", "T5qqqqWW_1900_100", "T5qqqqWW_1900_800", "T5qqqqWW_1900_1000", "T5qqqqWW_2200_100", "T5qqqqWW_2200_800"],
+            },
+            "All_Signal": {
+                "ttjets": ["SingleTop", "TTbar"],
+                "Wjets": ["WJets", "Rare", "DY"],
+                "T5qqqqWW": ["T5qqqqWW"],            
+                },
         },
     )
