@@ -21,26 +21,6 @@ def setup_processes(cfg):
     ### signal ###
     #  mge [TeV] 1.5 1.5 1.6 1.7 1.8 1.9 1.9 1.9 2.2 2.2
     # mχe0 [TeV] 1.0 1.2 1.1 1.2 1.3 0.1 0.8 1.0 0.1 0.8
-    cfg.add_process(
-        "T5qqqqWW_1500_1000",
-        15001000,
-        label=r"T5qqqqWW (1500, 1000)",
-        label_short="T5",
-        color="#FFD700",  # (Gold)
-        aux={"isData": False, "histtype": "step", "isSignal": True},
-        processes=[
-            od.Process(
-                "SMS-T5qqqqVV_TuneCP2_13TeV-madgraphMLM-pythia8_1500_1000",
-                1510,
-                label=r"T5qqqqWW (1500, 1000)",
-                xsecs={
-                    13: sn.Number(1.0),  # placeholder
-                },
-                label_short="T5",
-                aux={"isData": False, "isSignal": True, "masspoint": (1500, 1000), "histtype": "step", "isSignal": True},
-            )
-        ],
-    )
 
     cfg.add_process(
         "T5qqqqWW_1500_1200",
@@ -110,7 +90,7 @@ def setup_processes(cfg):
         18001300,
         label=r"T5qqqqWW (1800, 1300)",
         label_short="T5",
-        color="#FF1493",  # Deep Pink
+        color="#DED5CA",  # Soft Cream
         aux={"isData": False, "histtype": "step", "isSignal": True},
         processes=[
             od.Process(
@@ -190,33 +170,11 @@ def setup_processes(cfg):
     )
 
     cfg.add_process(
-        "T5qqqqWW_2200_100",
-        2200100,
-        label=r"T5qqqqWW (2200, 100)",
-        label_short="T5",
-        color="#FF1493",  # Deep Pink
-        aux={"isData": False, "histtype": "step", "isSignal": True},
-        processes=[
-            od.Process(
-                "SMS-T5qqqqVV_TuneCP2_13TeV-madgraphMLM-pythia8_2200_100",
-                221,
-                label=r"T5qqqqWW (2200, 100)",
-                xsecs={
-                    13: sn.Number(1.0),  # placeholder
-                },
-                label_short="T5",
-                color="#FF1493",  # Deep Pink
-                aux={"isData": False, "isSignal": True, "masspoint": (2200, 100), "histtype": "step", "isSignal": True},
-            )
-        ],
-    )
-
-    cfg.add_process(
         "T5qqqqWW_2200_800",
         2200800,
         label=r"T5qqqqWW (2200, 800)",
         label_short="T5",
-        color=(100, 0, 0),  # Deep Pink
+        color="#37906D",  # Balanced Green
         aux={"isData": False, "histtype": "step", "isSignal": True},
         processes=[
             od.Process(
@@ -227,37 +185,151 @@ def setup_processes(cfg):
                     13: sn.Number(1.0),  # placeholder
                 },
                 label_short="T5",
-                color="#FF1493",  # Deep Pink
+                color="#37906D",  # Balanced Green
                 aux={"isData": False, "isSignal": True, "masspoint": (2200, 800), "histtype": "step", "isSignal": True},
             )
         ],
     )
 
-    # all signal placeholder
-    cfg.add_process(
-        "T5qqqqWW",
-        1,
-        label=r"T5qqqqWW",
-        label_short="T5",
-        color=(0, 0, 0),
-        xsecs={
-            13: sn.Number(0.385, 0.385 * 0.116),  # placeholder
-        },
-        aux={"isData": False, "histtype": "step", "isSignal": True},
-        processes=[
-            od.Process(
-                "SMS-T5qqqqVV_TuneCP2_13TeV-madgraphMLM-pythia8",
-                103,
-                label=r"T5qqqqWW",
-                xsecs={
-                    13: sn.Number(1.0),  # placeholder
-                },
-                label_short="T5",
-                color=(0, 0, 0),
-                aux={"isData": False, "isSignal": True, "histtype": "fill"},
-            )
-        ],
-    )
+    # different signal name for 2016
+    if "2016" in cfg.name:
+        # all signal placeholder
+        cfg.add_process(
+            "T5qqqqWW",
+            1,
+            label=r"T5qqqqWW",
+            label_short="T5",
+            color=(0, 0, 0),
+            xsecs={
+                13: sn.Number(0.385, 0.385 * 0.116),  # placeholder
+            },
+            aux={"isData": False, "histtype": "step", "isSignal": True},
+            processes=[
+                od.Process(
+                    "SMS-T5qqqqVV_TuneCUETP8M1_13TeV-madgraphMLM-pythia8",
+                    103,
+                    label=r"T5qqqqWW",
+                    xsecs={
+                        13: sn.Number(1.0),  # placeholder
+                    },
+                    label_short="T5",
+                    color=(0, 0, 0),
+                    aux={"isData": False, "isSignal": True, "histtype": "fill"},
+                )
+            ],
+        )
+
+        cfg.add_process(
+            "T5qqqqWW_1500_1000",
+            15001000,
+            label=r"T5qqqqWW (1500, 1000)",
+            label_short="T5",
+            color="#FFD700",  # (Gold)
+            aux={"isData": False, "histtype": "step", "isSignal": True},
+            processes=[
+                od.Process(
+                    "SMS-T5qqqqVV_TuneCUETP8M1_13TeV-madgraphMLM-pythia8_1500_1000",
+                    1510,
+                    label=r"T5qqqqWW (1500, 1000)",
+                    xsecs={
+                        13: sn.Number(1.0),  # placeholder
+                    },
+                    label_short="T5",
+                    aux={"isData": False, "isSignal": True, "masspoint": (1500, 1000), "histtype": "step", "isSignal": True},
+                )
+            ],
+        )
+
+        cfg.add_process(
+            "T5qqqqWW_2200_100",
+            2200100,
+            label=r"T5qqqqWW (2200, 100)",
+            label_short="T5",
+            color="#FF1493",  # Deep Pink
+            aux={"isData": False, "histtype": "step", "isSignal": True},
+            processes=[
+                od.Process(
+                    "SMS-T5qqqqVV_TuneCUETP8M1_13TeV-madgraphMLM-pythia8_2200_100",
+                    221,
+                    label=r"T5qqqqWW (2200, 100)",
+                    xsecs={
+                        13: sn.Number(1.0),  # placeholder
+                    },
+                    label_short="T5",
+                    color="#FF1493",  # Deep Pink
+                    aux={"isData": False, "isSignal": True, "masspoint": (2200, 100), "histtype": "step", "isSignal": True},
+                )
+            ],
+        )
+    else:
+        # all signal placeholder
+        cfg.add_process(
+            "T5qqqqWW",
+            1,
+            label=r"T5qqqqWW",
+            label_short="T5",
+            color=(0, 0, 0),
+            xsecs={
+                13: sn.Number(0.385, 0.385 * 0.116),  # placeholder
+            },
+            aux={"isData": False, "histtype": "step", "isSignal": True},
+            processes=[
+                od.Process(
+                    "SMS-T5qqqqVV_TuneCP2_13TeV-madgraphMLM-pythia8",
+                    103,
+                    label=r"T5qqqqWW",
+                    xsecs={
+                        13: sn.Number(1.0),  # placeholder
+                    },
+                    label_short="T5",
+                    color=(0, 0, 0),
+                    aux={"isData": False, "isSignal": True, "histtype": "fill"},
+                )
+            ],
+        )
+
+        cfg.add_process(
+            "T5qqqqWW_1500_1000",
+            15001000,
+            label=r"T5qqqqWW (1500, 1000)",
+            label_short="T5",
+            color="#FFD700",  # (Gold)
+            aux={"isData": False, "histtype": "step", "isSignal": True},
+            processes=[
+                od.Process(
+                    "SMS-T5qqqqVV_TuneCP2_13TeV-madgraphMLM-pythia8_1500_1000",
+                    1510,
+                    label=r"T5qqqqWW (1500, 1000)",
+                    xsecs={
+                        13: sn.Number(1.0),  # placeholder
+                    },
+                    label_short="T5",
+                    aux={"isData": False, "isSignal": True, "masspoint": (1500, 1000), "histtype": "step", "isSignal": True},
+                )
+            ],
+        )
+
+        cfg.add_process(
+            "T5qqqqWW_2200_100",
+            2200100,
+            label=r"T5qqqqWW (2200, 100)",
+            label_short="T5",
+            color="#FF1493",  # Deep Pink
+            aux={"isData": False, "histtype": "step", "isSignal": True},
+            processes=[
+                od.Process(
+                    "SMS-T5qqqqVV_TuneCP2_13TeV-madgraphMLM-pythia8_2200_100",
+                    221,
+                    label=r"T5qqqqWW (2200, 100)",
+                    xsecs={
+                        13: sn.Number(1.0),  # placeholder
+                    },
+                    label_short="T5",
+                    color="#FF1493",  # Deep Pink
+                    aux={"isData": False, "isSignal": True, "masspoint": (2200, 100), "histtype": "step", "isSignal": True},
+                )
+            ],
+        )
 
     cfg.add_process("T1tttt", 2, label=r"T1tttt", label_short="T1", color=(150, 150, 150), xsecs={13: sn.Number(0.1)})  # FIXME,
 
@@ -322,90 +394,172 @@ def setup_processes(cfg):
         ],
     )
 
-    cfg.add_process(
-        "QCD",
-        200,
-        label=r"QCD Multijet",
-        label_short="QCD",
-        color="#9400D3",  # Dark Violet"#E0FFFF",  #(139, 28, 98),
-        aux={"isData": False, "histtype": "fill", "isSignal": False},
-        processes=[
-            od.Process(
-                "QCD_HT50to100_TuneCP5_13TeV-madgraphMLM-pythia8",
-                209,
-                label=r"QCD HT 50-100",
-                xsecs={
-                    13: sn.Number(187700000.0, 1639000.0),
-                },
-            ),
-            od.Process(
-                "QCD_HT100to200_TuneCP5_13TeV-madgraphMLM-pythia8",
-                201,
-                label=r"QCD HT 100-200",
-                xsecs={
-                    13: sn.Number(23500000.0, 207400.0),
-                },
-            ),
-            od.Process(
-                "QCD_HT200to300_TuneCP5_13TeV-madgraphMLM-pythia8",
-                202,
-                label=r"QCD HT 200-300",
-                xsecs={
-                    13: sn.Number(1552000.0, 14450.0),
-                },
-            ),
-            od.Process(
-                "QCD_HT300to500_TuneCP5_13TeV-madgraphMLM-pythia8",
-                203,
-                label=r"QCD HT 300-500",
-                xsecs={
-                    13: sn.Number(321100.0, 2968.0),
-                },
-            ),
-            od.Process(
-                "QCD_HT500to700_TuneCP5_13TeV-madgraphMLM-pythia8",
-                204,
-                label=r"QCD HT 500-700",
-                xsecs={
-                    13: sn.Number(30250.0, 284.0),
-                },
-            ),
-            od.Process(
-                "QCD_HT700to1000_TuneCP5_13TeV-madgraphMLM-pythia8",
-                205,
-                label=r"QCD HT 700-1000",
-                xsecs={13: sn.Number(6398.0, 59.32)},
-            ),
-            od.Process(
-                "QCD_HT1000to1500_TuneCP5_13TeV-madgraphMLM-pythia8",
-                206,
-                label=r"QCD HT 1000-1500",
-                xsecs={
-                    13: sn.Number(1122.0, 10.41),
-                },
-            ),
-            od.Process(
-                "QCD_HT1500to2000_TuneCP5_13TeV-madgraphMLM-pythia8",
-                207,
-                label=r"QCD HT 1500-2000",
-                xsecs={13: sn.Number(109.4, 1.006)},
-            ),
-            od.Process(
-                "QCD_HT2000toInf_TuneCP5_13TeV-madgraphMLM-pythia8",
-                208,
-                label=r"QCD HT 2000-Inf",
-                xsecs={
-                    13: sn.Number(21.74, 0.2019),
-                },
-            ),
-        ],
-    )
+    # different MC files for 2016
+    if "2016" in cfg.name:
+        cfg.add_process(
+            "QCD",
+            200,
+            label=r"QCD Multijet",
+            label_short="QCD",
+            color="#9400D3",  # Dark Violet"#E0FFFF",  #(139, 28, 98),
+            aux={"isData": False, "histtype": "fill", "isSignal": False},
+            processes=[
+                od.Process(
+                    "QCD_HT50to100_TuneCP5_PSWeights_13TeV-madgraphMLM-pythia8",
+                    209,
+                    label=r"QCD HT 50-100",
+                    xsecs={
+                        13: sn.Number(187700000.0, 1639000.0),
+                    },
+                ),
+                od.Process(
+                    "QCD_HT100to200_TuneCP5_PSWeights_13TeV-madgraphMLM-pythia8",
+                    201,
+                    label=r"QCD HT 100-200",
+                    xsecs={
+                        13: sn.Number(23500000.0, 207400.0),
+                    },
+                ),
+                od.Process(
+                    "QCD_HT200to300_TuneCP5_PSWeights_13TeV-madgraphMLM-pythia8",
+                    202,
+                    label=r"QCD HT 200-300",
+                    xsecs={
+                        13: sn.Number(1552000.0, 14450.0),
+                    },
+                ),
+                od.Process(
+                    "QCD_HT300to500_TuneCP5_PSWeights_13TeV-madgraphMLM-pythia8",
+                    203,
+                    label=r"QCD HT 300-500",
+                    xsecs={
+                        13: sn.Number(321100.0, 2968.0),
+                    },
+                ),
+                od.Process(
+                    "QCD_HT500to700_TuneCP5_PSWeights_13TeV-madgraphMLM-pythia8",
+                    204,
+                    label=r"QCD HT 500-700",
+                    xsecs={
+                        13: sn.Number(30250.0, 284.0),
+                    },
+                ),
+                od.Process(
+                    "QCD_HT700to1000_TuneCP5_PSWeights_13TeV-madgraphMLM-pythia8",
+                    205,
+                    label=r"QCD HT 700-1000",
+                    xsecs={13: sn.Number(6398.0, 59.32)},
+                ),
+                od.Process(
+                    "QCD_HT1000to1500_TuneCP5_PSWeights_13TeV-madgraphMLM-pythia8",
+                    206,
+                    label=r"QCD HT 1000-1500",
+                    xsecs={
+                        13: sn.Number(1122.0, 10.41),
+                    },
+                ),
+                od.Process(
+                    "QCD_HT1500to2000_TuneCP5_PSWeights_13TeV-madgraphMLM-pythia8",
+                    207,
+                    label=r"QCD HT 1500-2000",
+                    xsecs={13: sn.Number(109.4, 1.006)},
+                ),
+                od.Process(
+                    "QCD_HT2000toInf_TuneCP5_PSWeights_13TeV-madgraphMLM-pythia8",
+                    208,
+                    label=r"QCD HT 2000-Inf",
+                    xsecs={
+                        13: sn.Number(21.74, 0.2019),
+                    },
+                ),
+            ],
+        )
+
+    else:
+        cfg.add_process(
+            "QCD",
+            200,
+            label=r"QCD Multijet",
+            label_short="QCD",
+            color="#9400D3",  # Dark Violet"#E0FFFF",  #(139, 28, 98),
+            aux={"isData": False, "histtype": "fill", "isSignal": False},
+            processes=[
+                od.Process(
+                    "QCD_HT50to100_TuneCP5_13TeV-madgraphMLM-pythia8",
+                    209,
+                    label=r"QCD HT 50-100",
+                    xsecs={
+                        13: sn.Number(187700000.0, 1639000.0),
+                    },
+                ),
+                od.Process(
+                    "QCD_HT100to200_TuneCP5_13TeV-madgraphMLM-pythia8",
+                    201,
+                    label=r"QCD HT 100-200",
+                    xsecs={
+                        13: sn.Number(23500000.0, 207400.0),
+                    },
+                ),
+                od.Process(
+                    "QCD_HT200to300_TuneCP5_13TeV-madgraphMLM-pythia8",
+                    202,
+                    label=r"QCD HT 200-300",
+                    xsecs={
+                        13: sn.Number(1552000.0, 14450.0),
+                    },
+                ),
+                od.Process(
+                    "QCD_HT300to500_TuneCP5_13TeV-madgraphMLM-pythia8",
+                    203,
+                    label=r"QCD HT 300-500",
+                    xsecs={
+                        13: sn.Number(321100.0, 2968.0),
+                    },
+                ),
+                od.Process(
+                    "QCD_HT500to700_TuneCP5_13TeV-madgraphMLM-pythia8",
+                    204,
+                    label=r"QCD HT 500-700",
+                    xsecs={
+                        13: sn.Number(30250.0, 284.0),
+                    },
+                ),
+                od.Process(
+                    "QCD_HT700to1000_TuneCP5_13TeV-madgraphMLM-pythia8",
+                    205,
+                    label=r"QCD HT 700-1000",
+                    xsecs={13: sn.Number(6398.0, 59.32)},
+                ),
+                od.Process(
+                    "QCD_HT1000to1500_TuneCP5_13TeV-madgraphMLM-pythia8",
+                    206,
+                    label=r"QCD HT 1000-1500",
+                    xsecs={
+                        13: sn.Number(1122.0, 10.41),
+                    },
+                ),
+                od.Process(
+                    "QCD_HT1500to2000_TuneCP5_13TeV-madgraphMLM-pythia8",
+                    207,
+                    label=r"QCD HT 1500-2000",
+                    xsecs={13: sn.Number(109.4, 1.006)},
+                ),
+                od.Process(
+                    "QCD_HT2000toInf_TuneCP5_13TeV-madgraphMLM-pythia8",
+                    208,
+                    label=r"QCD HT 2000-Inf",
+                    xsecs={
+                        13: sn.Number(21.74, 0.2019),
+                    },
+                ),
+            ],
+        )
 
     cfg.add_process(
         "WJets",
         300,
         label=r"$W+Jets \rightarrow l \nu$",
-        label_short="W+JEts",
+        label_short="W+Jets",
         color="#FFD700",  # Gold"#B0C4DE",  #(255, 165, 0),
         aux={"isData": False, "histtype": "fill", "isSignal": False},
         processes=[
@@ -542,6 +696,7 @@ def setup_processes(cfg):
             ),
         ],
     )
+
     cfg.add_process(
         "SingleTop",
         500,
@@ -574,15 +729,14 @@ def setup_processes(cfg):
                     13: sn.Number(32.51, 0.02346),
                 },
             ),
-            # FIXME
-            # od.Process(
-            # "ST_tW_top_5f_NoFullyHadronicDecays_TuneCP5_13TeV-powheg-pythia",
-            # 504,
-            # label=r"s top no fh",
-            # xsecs={
-            # 13: sn.Number(32.45),
-            # },
-            # ),
+            od.Process(
+                "ST_tW_top_5f_NoFullyHadronicDecays_TuneCP5_13TeV-powheg-pythia8",
+                504,
+                label=r"s top no fh",
+                xsecs={
+                    13: sn.Number(32.45, 0.02338),
+                },
+            ),
             od.Process(
                 "ST_s-channel_4f_leptonDecays_TuneCP5_13TeV-amcatnlo-pythia8",
                 505,
@@ -618,14 +772,14 @@ def setup_processes(cfg):
                 # TTZ -> ll missing?
                 "TTZToNuNu_TuneCP5_13TeV-amcatnlo-pythia8",
                 601,
-                label=r"TTZ ll nu nu",
+                label=r"TTZ nu nu",
                 xsecs={
                     13: sn.Number(0.1476, 0.0001971),
                 },
                 aux={"isData": False, "histtype": "fill"},
             ),
-            # deleted?
             od.Process(
+                # 2017 name
                 "TTZToQQ_TuneCP5_13TeV_amcatnlo-pythia8",
                 602,
                 label=r"TTZ qq",
@@ -634,6 +788,16 @@ def setup_processes(cfg):
                 },
                 aux={"isData": False, "histtype": "fill"},
             ),
+            # od.Process(
+            #     #2018 name
+            #     "TTZToQQ_TuneCP5_13TeV-amcatnlo-pythia8",
+            #     6020,
+            #     label=r"TTZ qq",
+            #     xsecs={
+            #         13: sn.Number(0.5113, 0.001),  # placeholder unc
+            #     },
+            #     aux={"isData": False, "histtype": "fill"},
+            # ),
             od.Process(
                 "TTWJetsToLNu_TuneCP5_13TeV-amcatnloFXFX-madspin-pythia8",
                 603,
@@ -652,6 +816,28 @@ def setup_processes(cfg):
                 },
                 aux={"isData": False, "histtype": "fill"},
             ),
+            # # old VV files?
+            # od.Process(
+            #     "WW_TuneCP5_13TeV-pythia8",
+            #     60500,
+            #     label=r"WW",
+            #     xsecs={13: sn.Number(11.09, 0.00704)},
+            #     aux={"isData": False, "histtype": "fill"},
+            # ),
+            # od.Process(
+            #     "WZ_TuneCP5_13TeV-pythia8",
+            #     60600,
+            #     label=r"WW",
+            #     xsecs={13: sn.Number(11.09, 0.00704)},
+            #     aux={"isData": False, "histtype": "fill"},
+            # ),
+            # od.Process(
+            #     "ZZ_TuneCP5_13TeV-pythia8",
+            #     60700,
+            #     label=r"WW",
+            #     xsecs={13: sn.Number(11.09, 0.00704)},
+            #     aux={"isData": False, "histtype": "fill"},
+            # ),
             od.Process(
                 "WWTo2L2Nu_TuneCP5_13TeV-powheg-pythia8",
                 605,
@@ -659,15 +845,24 @@ def setup_processes(cfg):
                 xsecs={13: sn.Number(11.09, 0.00704)},
                 aux={"isData": False, "histtype": "fill"},
             ),
-            # od.Process(
-            # "WWTo1L1Nu2Q_4f_TuneCP5_13TeV-amcatnloFXFX-pythia8",
-            # 606,
-            # label=r"WW l nu qq",
-            # xsecs={
-            # 13: sn.Number(51.65),
-            # },
-            # aux={"isData": False, "histtype": "fill"},
-            # ),
+            od.Process(
+                "WWTo1L1Nu2Q_4f_TuneCP5_13TeV-amcatnloFXFX-pythia8",
+                606,
+                label=r"WW l nu qq",
+                xsecs={
+                    13: sn.Number(51.65, 0.5404),
+                },
+                aux={"isData": False, "histtype": "fill"},
+            ),
+            od.Process(
+                "WWTo4Q_4f_TuneCP5_13TeV-amcatnloFXFX-pythia8",
+                615,
+                label=r"WW 4q 4f",
+                xsecs={
+                    13: sn.Number(51.03, 0.5093),
+                },
+                aux={"isData": False, "histtype": "fill"},
+            ),
             od.Process(
                 "WZTo1L1Nu2Q_4f_TuneCP5_13TeV-amcatnloFXFX-pythia8",
                 607,
@@ -675,33 +870,42 @@ def setup_processes(cfg):
                 xsecs={13: sn.Number(9.119, 0.09682)},
                 aux={"isData": False, "histtype": "fill"},
             ),
-            # od.Process(
-            # 'WZTo1L3Nu_4f_TuneCP5_13TeV-amcatnloFXFX-pythia8',
-            # 608,
-            # label=r"WZ l nununu",
-            # xsecs={
-            # 13: sn.Number(3.414),
-            # },
-            # aux={"isData": False, "histtype": "fill"},
-            # ),
-            # od.Process(
-            # "WZTo2L2Q_13TeV_amcatnloFXFX_madspin_pythia8",
-            # 609,
-            # label=r"WZ ll qq",
-            # xsecs={
-            # 13: sn.Number(6.331),
-            # },
-            # aux={"isData": False, "histtype": "fill"},
-            # ),
-            # od.Process(
-            # "ZZ_qqnunu",
-            # 610,
-            # label=r"ZZ qq nunu",
-            # xsecs={
-            # 13: sn.Number(4.033),
-            # },
-            # aux={"isData": False, "histtype": "fill"},
-            # ),
+            od.Process(
+                "WZTo3LNu_5f_TuneCP5_13TeV-madgraphMLM-pythia8",
+                608,
+                label=r"WZ lll nu",
+                xsecs={
+                    13: sn.Number(0.8234, 0.001786),  # FIXME
+                },
+                aux={"isData": False, "histtype": "fill"},
+            ),
+            od.Process(
+                "WZTo1L3Nu_4f_TuneCP5_13TeV-amcatnloFXFX-pythia8",
+                6080,
+                label=r"WZ l nununu",
+                xsecs={
+                    13: sn.Number(0.8234, 0.001786),  # FIXME
+                },
+                aux={"isData": False, "histtype": "fill"},
+            ),
+            od.Process(
+                "WZTo2Q2L_mllmin4p0_TuneCP5_13TeV-amcatnloFXFX-pythia8",
+                609,
+                label=r"WZ ll qq",
+                xsecs={
+                    13: sn.Number(6.331),  # FIXME Still missing
+                },
+                aux={"isData": False, "histtype": "fill"},
+            ),
+            od.Process(
+                "ZZTo2Nu2Q_5f_TuneCP5_13TeV-amcatnloFXFX-pythia8",
+                610,
+                label=r"ZZ qq nunu",
+                xsecs={
+                    13: sn.Number(4.545, 0.04731),
+                },
+                aux={"isData": False, "histtype": "fill"},
+            ),
             od.Process(
                 "ZZTo2L2Nu_TuneCP5_13TeV_powheg_pythia8",
                 611,
@@ -718,6 +922,22 @@ def setup_processes(cfg):
                 xsecs={13: sn.Number(3.676, 0.03147)},
                 aux={"isData": False, "histtype": "fill"},
             ),
+            od.Process(
+                "ZZTo4Q_5f_TuneCP5_13TeV-amcatnloFXFX-pythia8",
+                6120,
+                label=r"ZZ qqqq",
+                xsecs={13: sn.Number(3.676, 0.03147)},  # FIXME
+                aux={"isData": False, "histtype": "fill"},
+            ),
+            od.Process(
+                "ZZTo4L_5f_TuneCP5_13TeV-madgraphMLM-pythia8",
+                616,
+                label=r"ZZ 4l",
+                xsecs={
+                    13: sn.Number(0.08135, 0.0005786),
+                },
+                aux={"isData": False, "histtype": "fill"},
+            ),
             # only UL16 xsec given
             od.Process(
                 "tZq_ll_4f_ckm_NLO_TuneCP5_13TeV-amcatnlo-pythia8",
@@ -728,7 +948,32 @@ def setup_processes(cfg):
                 },
                 aux={"isData": False, "histtype": "fill"},
             ),
-        ],
+            ###########
+            od.Process(
+                "TTZToLLNuNu_M-10_TuneCP5_13TeV-amcatnlo-pythia8",
+                614,
+                label=r"TTZ ll nunu",
+                xsecs={
+                    13: sn.Number(0.2439, 0.0002995),
+                },
+                aux={"isData": False, "histtype": "fill"},
+            ),
+        ]
+        + (
+            [
+                od.Process(
+                    "WZTo3LNu_TuneCP5_13TeV-amcatnloFXFX-pythia8",
+                    6081,
+                    label=r"WZ lll nu",
+                    xsecs={
+                        13: sn.Number(0.8234, 0.001786),  # FIXME
+                    },
+                    aux={"isData": False, "histtype": "fill"},
+                ),
+            ]
+            if "2016" in cfg.name
+            else []
+        ),
     )
 
     # extra colors
@@ -760,6 +1005,22 @@ def setup_processes(cfg):
             od.Process("data_e_F", 706, label=r"data", is_data=True),
             od.Process("data_e_G", 707, label=r"data", is_data=True),
             od.Process("data_e_H", 708, label=r"data", is_data=True),
+        ],
+    )
+
+    # change by CMS for 2018
+    cfg.add_process(
+        "EGamma",
+        750,
+        label=r"data electron",
+        label_short="dat ele",
+        color=(0, 0, 0),
+        aux={"isData": True, "histtype": "errorbar", "isSignal": False},
+        processes=[
+            od.Process("data_egamma_A", 751, label=r"data", is_data=True),
+            od.Process("data_egamma_B", 752, label=r"data", is_data=True),
+            od.Process("data_egamma_C", 753, label=r"data", is_data=True),
+            od.Process("data_egamma_D", 754, label=r"data", is_data=True),
         ],
     )
 
@@ -807,7 +1068,7 @@ def setup_processes(cfg):
     cfg.add_process(
         "data",
         789,
-        label=r"data all",
+        label=r"data observed",
         label_short="data",
         color=(0, 0, 0),
         aux={"isData": True, "histtype": "errorbar", "isSignal": False},
