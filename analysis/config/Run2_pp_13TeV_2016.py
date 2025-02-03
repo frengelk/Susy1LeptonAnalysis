@@ -23,5 +23,6 @@ cfg.set_aux(
         }
     },
 )
-cfg.set_aux("lumi", 35922.0)
+cfg.set_aux("lumi", 36000.0)
+cfg.set_aux("pre_post_lumi", {"pre": 19500, "post": 16500})
 # add dataset and processes
