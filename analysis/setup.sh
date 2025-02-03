@@ -22,7 +22,8 @@ action() {
     export ANALYSIS_BASE="$this_dir"
     export ANALYSIS_STORE="$ANALYSIS_BASE/tmp/data"
     export ANALYSIS_SOFTWARE="$ANALYSIS_BASE/tmp/software"
-    export ANALYSIS_PATH=/nfs/dust/cms/group/susy-desy/Susy1Lepton
+    #export ANALYSIS_PATH=/nfs/dust/cms/group/susy-desy/Susy1Lepton
+    export ANALYSIS_PATH=/data/dust/group/cms/group/susy-desy/Susy1Lepton
 
     export PATH="$ANALYSIS_SOFTWARE/bin:$PATH"
     export PYTHONPATH="$ANALYSIS_BASE:$ANALYSIS_SOFTWARE/lib/python${vpython}/site-packages:$PYTHONPATH"
