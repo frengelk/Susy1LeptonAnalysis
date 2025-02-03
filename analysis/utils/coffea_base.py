@@ -6,17 +6,13 @@ Also this write our arrays
 
 import numpy as np
 import awkward as ak
-from coffea import hist, processor
-
+from coffea import processor, hist
+import ROOT
 from coffea.processor.accumulator import (
     dict_accumulator,
     defaultdict_accumulator,
     column_accumulator,
 )
-
-# register our candidate behaviors
-# from coffea.nanoevents.methods import candidate
-# ak.behavior.update(candidate.behavior)
 
 
 class BaseProcessor(processor.ProcessorABC):
@@ -39,7 +35,7 @@ class BaseProcessor(processor.ProcessorABC):
             object_cutflow=defaultdict_accumulator(int),
             # cutflow = bh.Histogram(bh.axis.Regular(20, 0, 20)),
             cutflow=hist.Hist("Counts", self.dataset_axis, self.category_axis, self.category_axis, hist.Bin("cutflow", "Cut", 20, 0, 20)),
-            n_minus1=hist.Hist("Counts", self.dataset_axis, self.category_axis, self.category_axis, hist.Bin("Nminus1", "Cut", 20, 0, 20)),
+            n_minus1=hist.Hist("Counts", self.dataset_axis, self.category_axis, self.category_axis, hist.Bin("n_minus1", "Cut", 20, 0, 20)),
         )
 
     @property
@@ -93,6 +89,30 @@ class BaseSelection:
     def add_to_selection(self, selection, name, array):
         return selection.add(name, ak.to_numpy(array, allow_missing=True))
 
+    def get_fastsim_SF(self, pt, eta):
+        root_file = ROOT.TFile.Open("/nfs/dust/cms/user/frengelk/Code/cmssw/CMSSW_12_1_0/src/Susy1LeptonAnalysis/Susy1LeptonSkimmer/data/fastsim/2016/leptonScaleFactor/El_CBtight_miniIso0p1_Moriond.root")
+        histogram = root_file.Get("El_CBtight_miniIso0p1_Moriond;1")
+
+        # Get the bin edges for pt (X axis) and eta (Y axis)
+        x_bins = histogram.GetXaxis().GetNbins()
+        y_bins = histogram.GetYaxis().GetNbins()
+
+        x_edges = np.array([histogram.GetXaxis().GetBinLowEdge(i) for i in range(1, x_bins + 2)])
+        y_edges = np.array([histogram.GetYaxis().GetBinLowEdge(i) for i in range(1, y_bins + 2)])
+
+        # Use numpy digitize to find the bin index for each pt and eta
+        pt_bin_indices = np.digitize(pt, x_edges) - 1  # numpy returns bins from 1, ROOT uses 0-indexed
+        eta_bin_indices = np.digitize(eta, y_edges) - 1
+
+        # Now calculate the corresponding ROOT bin number from pt and eta indices
+        # ROOT's bin numbering is (global bin number) = x + (x_bins + 2) * y
+        bin_numbers = (pt_bin_indices + 1) + (x_bins + 2) * (eta_bin_indices + 1)
+
+        # Retrieve the bin contents for all bin numbers
+        bin_values = np.array([histogram.GetBinContent(b) for b in bin_numbers])
+
+        return bin_values
+
     def get_base_variable(self, events):
         ntFatJets = ak.fill_none(ak.firsts(events.FatJetDeepTagTvsQCD), value=-999)
         nWFatJets = ak.fill_none(ak.firsts(events.FatJetDeepTagWvsQCD), value=-999)
@@ -102,19 +122,21 @@ class BaseSelection:
         jetMass_2 = ak.fill_none(ak.firsts(events.JetMass[:, 1:2]), value=-999)
         jetEta_2 = ak.fill_none(ak.firsts(events.JetEta[:, 1:2]), value=-999)
         jetPhi_2 = ak.fill_none(ak.firsts(events.JetPhi[:, 1:2]), value=-999)
+        jetMass_3 = ak.fill_none(ak.firsts(events.JetMass[:, 2:3]), value=-999)
+        jetEta_3 = ak.fill_none(ak.firsts(events.JetEta[:, 2:3]), value=-999)
+        jetPhi_3 = ak.fill_none(ak.firsts(events.JetPhi[:, 2:3]), value=-999)
         # nJets = events.nJet
         LT = events.LT
         LP = events.LP
         # calculate per hand since we saw precision errors in C++ skimming
         # HT_old = events.HT
-        metPt = events.MetPt
         metPhi = events.MetPhi
         WBosonMt = events.WBosonMt
         # doing abs to stay in sync with old plots
         dPhi = abs(events.DeltaPhi)
-        nbJets = events.nDeepJetMediumBTag
-        # name with underscores lead to problems
-        zerob = nbJets == 0
+        # nbJets = events.nDeepJetMediumBTag
+        # # name with underscores lead to problems
+        # zerob = nbJets == 0
         multib = nbJets >= 1
         # variables to check cuts
         correctedMetPt = events.CorrectedMetPt
@@ -171,6 +193,10 @@ class BaseSelection:
         dataset = events.metadata["dataset"]
         # dataset_obj = self.config.get_dataset(dataset)
         proc = self.config.get_process(dataset)
+        if proc.is_leaf_process:
+            parent_proc = self.config.get_process(proc.parent_processes.names()[0])
+        else:
+            parent_proc = proc
         shift = events.metadata["shift"]
         summary = self.accumulator.identity()
         size = events.metadata["entrystop"] - events.metadata["entrystart"]
@@ -188,44 +214,28 @@ class BaseSelection:
         DNNId = np.resize([1, -1], size)
 
         # Get Variables used for Analysis and Selection
-        locals().update(self.get_base_variable(events))
+        # locals().update(self.get_base_variable(events))
+        # nJets = events.nJet
+        LT = events.LT
+        LP = events.LP
+        WBosonMt = events.WBosonMt
+        # doing abs to stay in sync with old plots
+        dPhi = abs(events.DeltaPhi)  # FIXME
+        # dPhi = events.DeltaPhi
+        nbJets = events.nDeepJetMediumBTag
+        # name with underscores lead to problems
+        zerob = nbJets == 0
+        multib = nbJets >= 1
+        # variables to check cuts
+        correctedMetPt = events.CorrectedMetPt
+        isoTrackPt = ak.fill_none(ak.firsts(events.IsoTrackPt), value=-999)
+        isoTrackMt2 = ak.fill_none(ak.firsts(events.IsoTrackMt2), value=-999)
+
         # if events.metadata["isFastSim"]:
         #    locals().update(self.get_gen_variable(events))
         # locals().update(self.get_electron_variables(events))
         # locals().update(self.get_muon_variables(events))
-        # doing all JetPt calculation here since we need to shift JetPt
-        JetPt = events.JetPt
-        if shift == "TotalUp":
-            JetPt = events.JetPt_TotalUp
-        if shift == "TotalDown":
-            JetPt = events.JetPt_TotalDown
-        goodJets = (JetPt > 30) & (abs(events.JetEta) < 2.4)
-        nJets = ak.sum(goodJets, axis=-1)
-        nJet5 = nJets >= 5
-        nJet34 = (nJets >= 3) & (nJets <= 4)
-        HT = ak.sum(JetPt[goodJets], axis=-1)
-        jetPt_1 = ak.fill_none(ak.firsts(JetPt[:, 0:1]), value=-999)
-        jetPt_2 = ak.fill_none(ak.firsts(JetPt[:, 1:2]), value=-999)
-
-        # iso_track = ((events.IsoTrackPt > 10) & (((events.IsoTrackMt2 < 60) & events.IsoTrackIsHadronicDecay) | ((events.IsoTrackMt2 < 80) & ~(events.IsoTrackIsHadronicDecay))))
-        # iso_track_cut = ak.sum(iso_track, axis=-1) == 0
-
-        # define selection
-        selection = processor.PackedSelection()
-        # Baseline PreSelection, split up now
-        # baselineSelection = (sortedJets[:, 1] > 80) & (events.LT > 250) & (events.HT > 500) & (ak.num(goodJets) >= 3) & (~events.IsoTrackVeto)
-        # subleading_jet = sortedJets[:, 1] > 80
-        # from IPython import embed; embed()
-        subleading_jet = ak.fill_none(ak.firsts(JetPt[:, 1:2] > 80), False)
-
         # doing lep selection
-        # mu_pt = ak.fill_none(ak.firsts(events.MuonPt[:, 0:1]), -999)
-        # e_pt = ak.fill_none(ak.firsts(events.ElectronPt[:, 0:1]), -999)
-        # mu_eta = ak.fill_none(ak.firsts(events.MuonEta[:, 0:1]), -999)
-        # e_eta = ak.fill_none(ak.firsts(events.ElectronEta[:, 0:1]), -999)
-        # mu_id = ak.fill_none(ak.firsts(events.MuonMediumId[:, 0:1]), False)
-        # e_id = ak.fill_none(ak.firsts(events.ElectronTightId[:, 0:1]), False)
-
         leptonEta = events.LeptonEta_1
         leptonMass = events.LeptonMass_1
         leptonPhi = events.LeptonPhi_1
@@ -251,6 +261,67 @@ class BaseSelection:
         all_ele = (~((events.ElectronTightId) | (events.ElectronMediumId)) | events.ElectronTightId) & (events.ElectronMiniIso < 0.4)
         all_mu = events.MuonMediumId
         all_hard_lepton = (ak.fill_none(ak.firsts(all_ele), False) | ak.fill_none(ak.firsts(all_mu), False)) & hard_lep
+
+        # doing all JetPt calculation here since we need to shift JetPt
+        JetPt = events.JetPt
+        cleanMask = events.JetIsClean
+        # doing all JetPt calculation here since we need to shift JetPt
+        JetPt = events.JetPt
+        cleanMask = events.JetIsClean
+        metPhi = events.MetPhi
+        metPt = events.MetPt
+        JetMass = events.JetMass
+
+        if shift != "nominal" and shift != "systematic_shifts":
+            JetPt = eval("events.JetPt_" + shift)
+            cleanMask = eval("events.JetIsClean_" + shift)
+            metPt = eval("events.MetPt_" + shift)
+            metPhi = eval("events.MetPhi_" + shift)
+            if "JER" in shift:
+                JetMass = eval("events.JetMass_" + shift)
+
+        # requiring at least loose jets, 30 GeV and inner region, and being cleaned from leptons
+        goodJets = (JetPt > 30) & (abs(events.JetEta) < 2.4) & (events.JetId >= 1) & (cleanMask)
+
+        # only feed genuine objects into final histograms
+        JetPt = JetPt[goodJets]
+        JetEta = events.JetEta[goodJets]
+        JetPhi = events.JetPhi[goodJets]
+
+        bTags = events.JetDeepJetMediumId[goodJets]
+        zerob = ak.sum(bTags, axis=-1) == 0
+        nJets = ak.sum(goodJets, axis=-1)
+        nJet3 = nJets >= 3
+        nJet5 = nJets >= 5
+        nJet34 = (nJets >= 3) & (nJets <= 4)
+        # reevaluate variables since shifts change contents
+        HT = ak.sum(JetPt, axis=-1)
+        HT_cut = HT > 500
+        LT = metPt + events.LeptonPt_1
+        LT_cut = LT > 250
+
+        jetPt_1 = ak.fill_none(ak.firsts(JetPt[:, 0:1]), value=-999)
+        jetPt_2 = ak.fill_none(ak.firsts(JetPt[:, 1:2]), value=-999)
+        jetPt_3 = ak.fill_none(ak.firsts(JetPt[:, 2:3]), value=-999)
+        subleading_jet = jetPt_2 > 80
+
+        jetMass_1 = ak.fill_none(ak.firsts(JetMass[:, 0:1]), value=-999)
+        jetEta_1 = ak.fill_none(ak.firsts(JetEta[:, 0:1]), value=-999)
+        jetPhi_1 = ak.fill_none(ak.firsts(JetPhi[:, 0:1]), value=-999)
+        jetMass_2 = ak.fill_none(ak.firsts(JetMass[:, 1:2]), value=-999)
+        jetEta_2 = ak.fill_none(ak.firsts(JetEta[:, 1:2]), value=-999)
+        jetPhi_2 = ak.fill_none(ak.firsts(JetPhi[:, 1:2]), value=-999)
+        jetMass_3 = ak.fill_none(ak.firsts(JetMass[:, 2:3]), value=-999)
+        jetEta_3 = ak.fill_none(ak.firsts(JetEta[:, 2:3]), value=-999)
+        jetPhi_3 = ak.fill_none(ak.firsts(JetPhi[:, 2:3]), value=-999)
+
+        # iso_track = ((events.IsoTrackPt > 10) & (((events.IsoTrackMt2 < 60) & events.IsoTrackIsHadronicDecay) | ((events.IsoTrackMt2 < 80) & ~(events.IsoTrackIsHadronicDecay))))
+        # iso_track_cut = ak.sum(iso_track, axis=-1) == 0
+        # define selection
+        selection = processor.PackedSelection()
+        # Baseline PreSelection, split up now
+        # baselineSelection = (sortedJets[:, 1] > 80) & (events.LT > 250) & (events.HT > 500) & (ak.num(goodJets) >= 3) & (~events.IsoTrackVeto)
+        subleading_jet = ak.fill_none(ak.firsts(JetPt[:, 1:2] > 80), False)
 
         # check which W/top tags we want to use
         nDeepAk8TopLooseId = events.nDeepAk8TopLooseId
@@ -287,42 +358,39 @@ class BaseSelection:
         # MuonIdCut = ak.fill_none(ak.firsts(events.MuonMediumId[:, 0:1]), False)
         # prevent double counting in data
         doubleCounting_XOR = (not events.metadata["isData"]) | ((events.metadata["PD"] == "isSingleElectron") & events.HLT_EleOr) | ((events.metadata["PD"] == "isSingleMuon") & events.HLT_MuonOr & ~events.HLT_EleOr) | ((events.metadata["PD"] == "isMet") & events.HLT_MetOr & ~events.HLT_MuonOr & ~events.HLT_EleOr)
+        # if campaign name ends on 2018, HEM only happening then
+        if self.config.name.split("_")[-1] == "2018":
+            doubleCounting_XOR = (not events.metadata["isData"]) | ((events.metadata["PD"] == "isEGamma") & events.HLT_EleOr) | ((events.metadata["PD"] == "isSingleMuon") & events.HLT_MuonOr & ~events.HLT_EleOr) | ((events.metadata["PD"] == "isMet") & events.HLT_MetOr & ~events.HLT_MuonOr & ~events.HLT_EleOr)
+            # Checking for HEM cut in 2018
+            # Veto events with any electron with pT > 30GeV, -3.0 < eta < -1.4, and -1.57 < phi < -0.87
+            # Setting every event not vetoed to true
+            HEM_cut_ele = ak.fill_none(ak.firsts(~((events.nVetoElectron == 1) & ((events.ElectronEta > -3.0) & (events.ElectronEta < -1.4)) & ((events.ElectronPhi > -1.57) & (events.ElectronPhi < -0.87)) & (events.ElectronPt > 30))), value=True)
+            # Veto events with any jet with pT > 30 GeV, DeltaPhi (jet, HT,miss) < 0.5, -3.2 <eta< -1.2, and -1.77 < phi < -0.67 (veto enlarged by half the jet cone)
+            HT_phi = ak.sum(JetPhi, axis=1)
+            HEM_cut_jet = ak.fill_none(~ak.any((((JetEta > -3.2) & (JetEta < -1.2)) & ((JetPhi > -1.77) & (JetPhi < -0.67)) & (JetPt > 30) & (abs(HT_phi - JetPhi) < 0.5)), axis=-1), value=True)
+
+            # this is True for events that are unaffected
+            HEM_cut = HEM_cut_jet & HEM_cut_ele
+
+            if events.metadata["isData"]:
+                # only affected data sets shall be corrected
+                not_affected_events = events.Run < 319077
+                HEM_data_cut = not_affected_events | HEM_cut
+
+                iso_cut = iso_cut & HEM_data_cut
+
         # HLT Combination
         HLT_Or = (not events.metadata["isData"]) | (events.HLT_MuonOr | events.HLT_MetOr | events.HLT_EleOr)
         # ghost muon filter
         ghost_muon_filter = events.MetPt / events.CaloMET_pt <= 5
-        common = ["baselineSelection", "doubleCounting_XOR", "HLT_Or"]  # , "{}IdCut".format(events.metadata["treename"])]
-        # data cut for control plots
-        # data_cut = (events.LT > 250) & (events.HT > 500) & (ak.sum(goodJets, axis=-1) >= 3)
-        # skim_cut = (events.LT > 150) & (events.HT > 350)
-        # triggers = [
-        # "HLT_Ele115_CaloIdVT_GsfTrkIdT",
-        # "HLT_Ele15_IsoVVVL_PFHT450",
-        # "HLT_Ele35_WPTight_Gsf",
-        # "HLT_Ele50_CaloIdVT_GsfTrkIdT_PFJet165",
-        # "HLT_EleOr",
-        # "HLT_IsoMu27",
-        # "HLT_MetOr",
-        # "HLT_Mu15_IsoVVVL_PFHT450",
-        # "HLT_Mu50",
-        # "HLT_MuonOr",
-        # "HLT_PFMET100_PFMHT100_IDTight",
-        # "HLT_PFMET110_PFMHT110_IDTight",
-        # "HLT_PFMET120_PFMHT120_IDTight",
-        # "HLT_PFMETNoMu100_PFMHTNoMu100_IDTight",
-        # "HLT_PFMETNoMu110_PFMHTNoMu110_IDTight",
-        # "HLT_PFMETNoMu120_PFMHTNoMu120_IDTight",
-        # ]
-
-        # for trig in triggers:
-        #    locals().update({trig: events[trig]})
-        # self.add_to_selection(selection, trig, events[trig])
-
-        # MET_Filter = "HLT_PFMET100_PFMHT100_IDTight | HLT_PFMET110_PFMHT110_IDTight | HLT_PFMET120_PFMHT120_IDTight | HLT_PFMETNoMu100_PFMHTNoMu100_IDTight | HLT_PFMETNoMu110_PFMHTNoMu110_IDTight |HLT_PFMETNoMu120_PFMHTNoMu120_IDTight"
-        # METFilter = eval(MET_Filter)        # apply weights,  MC/data check beforehand
+        common = ["baselineSelection", "doubleCounting_XOR", "HLT_Or"]
         weights = processor.Weights(size, storeIndividual=self.individal_weights)
         if not events.metadata["isData"]:
-            weights.add("Luminosity", events.metadata["Luminosity"])
+            lumi = events.metadata["Luminosity"]
+            # although 2016 was skimmed in postVFP, the signal has to be scaled to full 2016 lumi since we merge
+            if parent_proc.aux["isSignal"] and "2016" in self.config.name:
+                lumi = 36
+            weights.add("Luminosity", lumi)
             weights.add("GenWeight", events.GenWeight)
             weights.add("sumGenWeight", 1 / events.metadata["sumGenWeight"])
 
@@ -337,12 +405,18 @@ class BaseSelection:
                 )
             if events.metadata["isSignal"]:
                 weights.add("xSec", events.susyXSectionNLLO * 1000)
+                sfs_fast = ["MuonMediumFastSf", "ElectronTightFastSf", "ElectronTightMVAFastSf"]
+                for sf in sfs_fast:
+                    weights.add(
+                        sf,
+                        ak.fill_none(ak.firsts(getattr(events, sf)), 1.0),
+                        weightDown=ak.fill_none(ak.firsts(getattr(events, sf + "Down")), 1.0),
+                        weightUp=ak.fill_none(ak.firsts(getattr(events, sf + "Up")), 1.0),
+                    )
 
             # All leptons at once, don't seperate dependent on lepton selection
             sfs = ["MuonMediumSf", "MuonTriggerSf", "MuonMediumIsoSf", "ElectronTightSf", "ElectronRecoSf"]
             for sf in sfs:
-                # if sf == "ElectronTightSf":
-                #     from IPython import embed; embed()
                 weights.add(
                     sf,
                     ak.fill_none(ak.firsts(getattr(events, sf)), 1.0),
@@ -357,26 +431,26 @@ class BaseSelection:
             # )
 
             weights.add(
-                "PileUpWeight",
+                "PileUPWeight",
                 events.PileUpWeight,
                 weightDown=events.PileUpWeightDown,
                 weightUp=events.PileUpWeightUp,
             )
-
             # loading and applying calculated btag SF
             # by design, order should be the same for events, so we load only part of the batch
             btagSF = np.load(events.metadata["btagSF"])[events.metadata["entrystart"] : events.metadata["entrystop"]]
+            btagSF_up = np.load(events.metadata["btagSF_up"])[events.metadata["entrystart"] : events.metadata["entrystop"]]
+            btagSF_down = np.load(events.metadata["btagSF_down"])[events.metadata["entrystart"] : events.metadata["entrystop"]]
             weights.add(
                 "JetDeepJetMediumSf",
                 btagSF,
-                weightDown=np.ones_like(btagSF),
-                weightUp=np.ones_like(btagSF),
+                weightDown=btagSF_down,
+                weightUp=btagSF_up,
             )
 
-            # weights.add("JetMediumCSVBTagSF", events.JetMediumCSVBTagSF,
-            # weightUp = events.JetMediumCSVBTagSFUp,
-            # weightDown= events.JetMediumCSVBTagSFDown,
-            # )
+            # HEM weight is centrally computed
+            if self.config.name.split("_")[-1] == "2018":
+                weights.add("HEM", ak.where(HEM_cut, 1, (1 - 0.66)))
 
         cat = self.config.get_category(events.metadata["category"])
         # for cat in events.metadata["category"]:
@@ -385,7 +459,6 @@ class BaseSelection:
                 self.add_to_selection(selection, " ".join(cut), eval(cut[0]))
             else:
                 self.add_to_selection(selection, " ".join(cut), eval("events.{} {}".format(cut[0], cut[1])))
-        # categories = dict(N0b=common + ["zerob"], N1ib=common + ["multib"])  # common +
         categories = {cat.name: [" ".join(cut) for cut in cat.get_aux("cuts")]}  # for cat in self.config.categories}
         return locals()
 
@@ -452,10 +525,6 @@ class ArrayExporter(BaseProcessor, BaseSelection):
         # arrays.setdefault("weights", np.stack([np.full_like(weights, 1), weights], axis=-1))
         weights = selected_output["weights"]
         cat = list(categories.keys())[0]
-        # if len(weights.weight()[categories[cat]]) > 0:
-        #     print("max mean event weight after cuts: ", np.max(weights.weight()[categories[cat]]), np.mean(weights.weight()[categories[cat]]))
-        #     print("max mean Pileup weight after cuts: ", np.max(weights.partial_weight(include=["PileUpWeight"])[categories[cat]]), np.mean(weights.partial_weight(include=["PileUpWeight"])[categories[cat]]))
-        #     print("max mean btagSF weight after cuts: ", np.max(weights.partial_weight(include=["JetDeepJetMediumSf"])[categories[cat]]), np.mean(weights.partial_weight(include=["JetDeepJetMediumSf"])[categories[cat]]))
         # if we selected a shift beforehand, we don't set nominal weight but instead shift one weight accordingly
         # Data only should get nominal which is the default value
         arrays.setdefault("weights", weights.weight())
@@ -463,8 +532,15 @@ class ArrayExporter(BaseProcessor, BaseSelection):
             arrays.setdefault(selected_output["events"].metadata["shift"], weights.weight())
         elif selected_output["events"].metadata["shift"] == "systematic_shifts":
             # calling the weight object with the wanted shift varies the nominal by the Up/Down
-            for shift in self.config.get_aux("systematic_shifts"):
-                shift_weight = weights.weight(shift)
+            all_shifts = self.config.get_aux("systematic_shifts")
+            if events.metadata["isSignal"]:
+                all_shifts += self.config.get_aux("systematic_shifts_signal")
+            for shift in all_shifts:
+                # Prefire not well defined in signal NanoAOD, so we forge a syst of 1 here
+                if events.metadata["isSignal"] and "PreFireWeight" in shift:
+                    shift_weight = weights.weight()
+                else:
+                    shift_weight = weights.weight(shift)
                 arrays.setdefault(shift, shift_weight)
 
         if np.max(arrays["hl"]) > 1e20:
@@ -496,7 +572,7 @@ class ArrayExporter(BaseProcessor, BaseSelection):
                 output["n_minus1"].fill(
                     dataset=selected_output["dataset"],
                     category=cat,
-                    cutflow=np.array([0]),
+                    n_minus1=np.array([0]),
                     weight=np.array([weights.weight().sum()]),
                 )
                 allCuts = set(categories[cat])
@@ -504,7 +580,7 @@ class ArrayExporter(BaseProcessor, BaseSelection):
                     output["n_minus1"].fill(
                         dataset=selected_output["dataset"],
                         category=cat,
-                        cutflow=np.array([i + 1]),
+                        n_minus1=np.array([i + 1]),
                         weight=np.array([weights.weight()[selection.all(*(allCuts - {cut}))].sum()]),
                     )
             # output["n_events"]["sumAllEvents"] += selected_output["size"]
