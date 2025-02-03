@@ -18,7 +18,7 @@ class BaseTask(law.Task):
 
     def local_path(self, *path):
         parts = [str(p) for p in self.store_parts() + path]
-        return os.path.join("/nfs/dust/cms/group/susy-desy/Susy1Lepton", *parts)
+        return os.path.join("/data/dust/group/cms/susy-desy/Susy1Lepton", *parts)
 
     def local_target(self, *args):
         cls = law.LocalFileTarget if args else law.LocalDirectoryTarget
@@ -92,6 +92,7 @@ class DNNTask(AnalysisTask):
     n_nodes = luigi.IntParameter(default=256)
     steps_per_epoch = luigi.IntParameter(default=100)
     dropout = luigi.FloatParameter(default=0.2)
+    gamma = luigi.FloatParameter(default=1.0)
 
     # should be 2 for now, maybe larger later
     kfold = luigi.IntParameter(default=2)
@@ -148,7 +149,7 @@ class DatasetTask(ConfigTask):  # ShiftTask
 
 
 class HTCondorWorkflow(law.htcondor.HTCondorWorkflow):
-    debug = luigi.BoolParameter()
+    debug = luigi.BoolParameter(default=False)
     # configurable in task Parameters
     RAM = luigi.IntParameter(default=750)
     hours = luigi.IntParameter(default=1)
