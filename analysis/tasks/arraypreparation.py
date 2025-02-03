@@ -6,7 +6,7 @@ import sklearn.model_selection as skm
 
 # other modules
 from tasks.coffea import CoffeaTask
-from tasks.grouping import MergeArrays
+from tasks.grouping import MergeArrays, MergeShiftArrays
 
 
 class ArrayNormalisation(CoffeaTask):
@@ -21,6 +21,8 @@ class ArrayNormalisation(CoffeaTask):
     def requires(self):
         # if self.debug:
         # return CoffeaProcessor.req(self, debug=True, workflow="local")
+        if self.shift != "nominal":
+            return MergeShiftArrays.req(self, datasets_to_process=self.datasets_to_process, shifts=[self.shift])
         return MergeArrays.req(self, datasets_to_process=self.datasets_to_process)
 
     def path(self):
@@ -53,6 +55,11 @@ class ArrayNormalisation(CoffeaTask):
             out.update({"data": self.local_target("data.npy")})
         return out
 
+    def store_parts(self):
+        if self.shift != "nominal":
+            return super(ArrayNormalisation, self).store_parts() + (self.shift,)
+        return super(ArrayNormalisation, self).store_parts()
+
     def normalise(self, array):
         return ((array - array.mean()) / array.std(), array.mean(), array.std())
 
@@ -80,6 +87,10 @@ class ArrayNormalisation(CoffeaTask):
         data_list = []
         weight_dict = {}
 
+        inp = self.input()
+        if self.shift != "nominal":
+            inp = self.input()["collection"].targets[0]
+
         # loop through datasets and sort according to aux template
         # only N0b for now
         # for cat in self.config_inst.categories.names()[:1]:
@@ -89,12 +100,15 @@ class ArrayNormalisation(CoffeaTask):
             proc_list = []
             weight_list = []
             for subproc in self.config_inst.get_aux("DNN_process_template")[cat][key]:
-                proc_list.append(self.input()[cat + "_" + subproc]["array"].load())
-                weight_list.append(self.input()[cat + "_" + subproc]["weights"].load())
-                print("\n", subproc, np.max(self.input()[cat + "_" + subproc]["array"].load()))
-                argmax = np.argmax(self.input()[cat + "_" + subproc]["array"].load(), axis=0)
-                arr = self.input()[cat + "_" + subproc]["array"].load()
-                var_names = self.config_inst.variables.names()
+                # keys are different for shifts which are not nominal
+                if self.shift != "nominal":
+                    subproc += "_" + self.shift
+                proc_list.append(inp[cat + "_" + subproc]["array"].load())
+                weight_list.append(inp[cat + "_" + subproc]["weights"].load())
+                print("\n", subproc, np.max(inp[cat + "_" + subproc]["array"].load()))
+                # argmax = np.argmax(inp[cat + "_" + subproc]["array"].load(), axis=0)
+                # arr = inp[cat + "_" + subproc]["array"].load()
+                # var_names = self.config_inst.variables.names()
                 # for j in range(len(argmax)):
                 #     print(var_names[j] , arr[argmax[j]][j])#, arr[argmax[i]])
             proc_dict.update({key: np.concatenate(proc_list)})
@@ -109,7 +123,7 @@ class ArrayNormalisation(CoffeaTask):
         # fill data
         for dat in self.datasets_to_process:
             if self.config_inst.get_process(dat).aux["isData"]:
-                data_list.append(self.input()[cat + "_" + dat]["array"].load())
+                data_list.append(inp[cat + "_" + dat]["array"].load())
 
         # merge all processes
         MC_compl = np.concatenate(list(proc_dict.values()))
@@ -144,6 +158,8 @@ class CrossValidationPrep(CoffeaTask):
     """
 
     def requires(self):
+        if self.shift != "nominal":
+            return MergeShiftArrays.req(self, shifts=[self.shift])
         return MergeArrays.req(self)
 
     # def output(self):
@@ -161,23 +177,28 @@ class CrossValidationPrep(CoffeaTask):
             }
             for i in range(self.kfold)
         }
-
-        out.update({"data": self.local_target("data.npy")})
+        if self.shift == "nominal":
+            out.update({"data": self.local_target("data.npy")})
         return out
 
-    def normalise(self, array):
-        return ((array - array.mean()) / array.std(), array.mean(), array.std())
+    def store_parts(self):
+        if self.shift != "nominal":
+            return super(CrossValidationPrep, self).store_parts() + (self.shift,)
+        return super(CrossValidationPrep, self).store_parts()
 
-    def calc_norm_parameter(self, data):
-        # return values to shift distribution to normal
+    # def normalise(self, array):
+    #     return ((array - array.mean()) / array.std(), array.mean(), array.std())
 
-        dat = np.swapaxes(data, 0, 1)
-        means, stds = [], []
-        for var in dat:
-            means.append(var.mean())
-            stds.append(var.std())
+    # def calc_norm_parameter(self, data):
+    #     # return values to shift distribution to normal
 
-        return np.array(means), np.array(stds)
+    #     dat = np.swapaxes(data, 0, 1)
+    #     means, stds = [], []
+    #     for var in dat:
+    #         means.append(var.mean())
+    #         stds.append(var.std())
+
+    #     return np.array(means), np.array(stds)
 
     def run(self):
         proc_dict = {}
@@ -186,9 +207,11 @@ class CrossValidationPrep(CoffeaTask):
         data_list = []
         DNNId_dict = {}
 
-        # loop through datasets and sort according to aux template
-        # for now only 1st category
+        inp = self.input()
+        if self.shift != "nominal":
+            inp = self.input()["collection"].targets[0]
 
+        # loop through datasets and sort according to aux template
         # for cat in self.config_inst.categories.names()[:1]:
         cat = self.category
         for i, key in enumerate(self.config_inst.get_aux("DNN_process_template")[cat].keys()):
@@ -197,10 +220,14 @@ class CrossValidationPrep(CoffeaTask):
             DNNId_list = []
             print("node", key)
             for subproc in self.config_inst.get_aux("DNN_process_template")[cat][key]:
-                proc_list.append(self.input()[cat + "_" + subproc]["array"].load())
-                weight_list.append(self.input()[cat + "_" + subproc]["weights"].load())
-                DNNId_list.append(self.input()[cat + "_" + subproc]["DNNId"].load())
-                print(subproc, "len, weightsum, max, min", len(self.input()[cat + "_" + subproc]["array"].load()), np.sum(self.input()[cat + "_" + subproc]["weights"].load()), np.max(self.input()[cat + "_" + subproc]["weights"].load()), np.min(self.input()[cat + "_" + subproc]["weights"].load()))
+                # keys are different for shifts which are not nominal
+                if self.shift != "nominal":
+                    subproc += "_" + self.shift
+
+                proc_list.append(inp[cat + "_" + subproc]["array"].load())
+                weight_list.append(inp[cat + "_" + subproc]["weights"].load())
+                DNNId_list.append(inp[cat + "_" + subproc]["DNNId"].load())
+                print(subproc, "len, weightsum, max, min", len(inp[cat + "_" + subproc]["array"].load()), np.sum(inp[cat + "_" + subproc]["weights"].load()), np.max(inp[cat + "_" + subproc]["weights"].load()), np.min(inp[cat + "_" + subproc]["weights"].load()))
 
             # print(proc_list)
             proc_dict.update({key: np.concatenate(proc_list)})
@@ -212,17 +239,20 @@ class CrossValidationPrep(CoffeaTask):
             labels[:, i] = 1
             print(key, i)
             one_hot_labels.append(labels)
-        for dat in self.config_inst.aux["data"]:
-            data_list.append(self.input()[cat + "_" + dat]["array"].load())
+
+        # we only do data stuff without shifts
+        if self.shift == "nominal":
+            for dat in self.config_inst.aux["data"]:
+                data_list.append(inp[cat + "_" + dat]["array"].load())
+            self.output()["data"].dump(np.concatenate(data_list))
 
         # merge all processes
         MC_compl = np.concatenate(list(proc_dict.values()))
         weight_compl = np.concatenate(list(weight_dict.values()))
         DNNId_compl = np.concatenate(list(DNNId_dict.values()))
         one_hot_labels = np.concatenate(one_hot_labels)
-        self.output()["data"].dump(np.concatenate(data_list))
 
-        kfold = skm.KFold(n_splits=self.kfold, shuffle=True, random_state=42)
+        # kfold = skm.KFold(n_splits=self.kfold, shuffle=True, random_state=42)
         # for fold, (train_ids, test_ids) in enumerate(kfold.split(dataset)):
         # kfold returns generator, loop over generated indices
         # for each kfold, dump the respective data and labels
@@ -230,7 +260,8 @@ class CrossValidationPrep(CoffeaTask):
         for i, idx in enumerate([-1, 1]):  # iterating over previous ids from coffea
             print("fold", i)
             # spltting everything in half, using remainding 90% for training, and 10% vor validation
-            X_train, X_val, y_train, y_val, weight_train, weight_val = skm.train_test_split(MC_compl[DNNId_compl == idx], one_hot_labels[DNNId_compl == idx], weight_compl[DNNId_compl == idx], test_size=0.1, random_state=42)
+            # FIXME try 8:2 maybe to reduce variance in val loss
+            X_train, X_val, y_train, y_val, weight_train, weight_val = skm.train_test_split(MC_compl[DNNId_compl == idx], one_hot_labels[DNNId_compl == idx], weight_compl[DNNId_compl == idx], test_size=0.2, random_state=42)
 
             self.output()["cross_val_{}".format(i)]["cross_val_X_train_{}".format(i)].dump(X_train)
             self.output()["cross_val_{}".format(i)]["cross_val_y_train_{}".format(i)].dump(y_train)

@@ -7,6 +7,7 @@ from luigi import Parameter, BoolParameter
 from tasks.base import AnalysisTask, HTCondorWorkflow
 import json
 import awkward as ak
+from tqdm import tqdm
 
 """
 Tasks to write config for datasets from target directory
@@ -17,6 +18,7 @@ Then write a fileset directory as an input for coffea
 class BaseMakeFilesTask(AnalysisTask):
     # Basis class only for inheritance
     directory_path = Parameter(default="/nfs/dust/cms/user/frengelk/Code/cmssw/CMSSW_12_1_0/Batch/2023_01_18/2017/Data/root")
+    skip_extra = BoolParameter(default=False)
 
 
 class CheckFiles(BaseMakeFilesTask):
@@ -55,14 +57,18 @@ class WriteDatasets(BaseMakeFilesTask):
 
     def run(self):
         self.output().parent.touch()
-
+        print("\n skipping extra files for now \n")
         file_dict = {}
         for root, dirs, files in os.walk(self.directory_path):
-            for directory in dirs:
+            for directory in sorted(dirs):
                 # print(directory)
                 file_list = []
                 for r, d, f in os.walk(self.directory_path + "/" + directory):
-                    for file in f:
+                    for file in sorted(f):
+                        if self.skip_extra:
+                            if "extra" in file:
+                                print("skipping extra")
+                                continue
                         file_list.append(directory + "/" + file)
                 file_dict.update({directory: file_list})  # self.directory_path + "/" +
 
@@ -107,11 +113,15 @@ class WriteDatasetPathDict(BaseMakeFilesTask):
         self.output()["dataset_dict"].parent.touch()
         file_dict = {}
         for root, dirs, files in os.walk(self.directory_path):
-            for directory in dirs:
+            for directory in sorted(dirs):
                 # print(directory)
                 file_list = []
                 for r, d, f in os.walk(self.directory_path + "/" + directory):
-                    for file in f:
+                    for file in sorted(f):
+                        if self.skip_extra:
+                            if "extra" in file:
+                                print("skipping extra")
+                                continue
                         file_list.append(directory + "/" + file)
                 file_dict.update({directory: file_list})  # self.directory_path + "/" +
         assert len(file_dict.keys()) > 0, "No files found in {}".format(self.directory_path)
@@ -230,7 +240,7 @@ class CollectMasspoints(BaseMakeFilesTask):
                 if bin_content != 0.0:
                     bin_center_x = hist.GetXaxis().GetBinCenter(i)
                     bin_center_y = hist.GetYaxis().GetBinCenter(j)
-                    print(f"Bin ({i}, {j}) with label ({bin_center_x:.2f}, {bin_center_y:.2f}) is filled with content: {bin_content}")
+                    # print(f"Bin ({i}, {j}) with label ({bin_center_x:.2f}, {bin_center_y:.2f}) is filled with content: {bin_content}")
                     masspoints.append((bin_center_x, bin_center_y))
         return masspoints
 
@@ -238,11 +248,21 @@ class CollectMasspoints(BaseMakeFilesTask):
     def run(self):
         inp = self.input()
         path = inp["dataset_path"].load()
-        signal_name = inp["dataset_dict"].load()["SMS-T5qqqqVV_TuneCP2_13TeV-madgraphMLM-pythia8"][0]
-        file = ROOT.TFile(path + "/" + signal_name)
-        hist = file.Get("numberOfT5qqqqWWGenEvents;1")
-        masspoints = self.find_filled_bins(hist)
+        # if this process is not defined, you are using the wrong signal
+        proc = self.config_inst.get_process("T5qqqqWW")
+        sub_name = [b[0].name for b in proc.walk_processes()][0]
+        signal_names = inp["dataset_dict"].load()[sub_name]
+        mp = []
+        for name in signal_names:
+            file = ROOT.TFile(path + "/" + name)
+            hist = file.Get("numberOfT5qqqqWWGenEvents;1")
+            masspoints = self.find_filled_bins(hist)
+            print("Found ", len(masspoints), " masspoints")
+            if len(masspoints) > len(mp):
+                mp = masspoints
+        print("final length: ", len(mp))
         self.output().dump({"masspoints": masspoints})
+        print("You should maybe do 2017 first if you see less than 861 masspoints")
         os.system("cp {} {}".format(self.output().path, self.config_inst.get_aux("masspoints")))
 
 
@@ -261,14 +281,16 @@ class CollectInputData(BaseMakeFilesTask):
 
     def output(self):
         # if not "SR" in self.category or "SR_Anti" in self.category:
-            return {
-                "sum_gen_weights": self.local_target("sum_gen_weights.json"),
-            }
-        # else:
-        #     return {
-        #         "sum_gen_weights": self.local_target("sum_gen_weights.json"),
-        #         "cutflow": self.local_target("cutflow_dict.json"),
-        #     }
+        return {
+            "sum_gen_weights": self.local_target("sum_gen_weights.json"),
+            "cutflow": self.local_target("cutflow_dict.json"),
+        }
+
+    # else:
+    #     return {
+    #         "sum_gen_weights": self.local_target("sum_gen_weights.json"),
+    #         "cutflow": self.local_target("cutflow_dict.json"),
+    #     }
 
     def store_parts(self):
         return super(CollectInputData, self).store_parts()
@@ -299,7 +321,9 @@ class CollectInputData(BaseMakeFilesTask):
     @law.decorator.safe_output
     def run(self):
         sum_gen_weights_dict = {}
+        # if we want to include other channels as well
         cutflow_dict = {
+            "LeptonIncl": {},
             "Muon": {},
             "Electron": {},
         }
@@ -331,11 +355,11 @@ class CollectInputData(BaseMakeFilesTask):
                             masspoint_dict["_".join(["ISR", str(masspoint[0]), str(masspoint[1])])] += count_ISR
                             new_key = key + "_{}_{}".format(mGlu, mLSP)
                             if new_key not in sum_gen_weights_dict.keys():
-                                # cutflow_dict["Muon"][key] = file['cutflow_Muon;1'].values()
+                                cutflow_dict["LeptonIncl"][key] = file["cutflow_LeptonIncl;1"].values()
                                 # cutflow_dict["Electron"][key] = file['cutflow_Electron;1'].values()
                                 sum_gen_weights_dict[new_key] = sum_gen_weight
                                 # if "SR" in self.category and not "SR_Anti" in self.category:
-                                #     muon_arr = file["cutflow_Muon;1"].values()
+                                lep_arr = file["cutflow_LeptonIncl;1"].values()
                                 #     electron_arr = file["cutflow_Electron;1"].values()
                             elif new_key in sum_gen_weights_dict.keys():
                                 sum_gen_weights_dict[new_key] += sum_gen_weight
@@ -346,21 +370,20 @@ class CollectInputData(BaseMakeFilesTask):
                     # else:
                     # keys should do the same for both dicts
                     if key not in sum_gen_weights_dict.keys():
-                        # cutflow_dict["Muon"][key] = file['cutflow_Muon;1'].values()
+                        cutflow_dict["LeptonIncl"][key] = file["cutflow_LeptonIncl;1"].values()
                         # cutflow_dict["Electron"][key] = file['cutflow_Electron;1'].values()
                         # if "SR" in self.category and not "SR_Anti" in self.category:
-                        #     muon_arr = file["cutflow_Muon;1"].values()
+                        lep_arr = file["cutflow_LeptonIncl;1"].values()
                         #     electron_arr = file["cutflow_Electron;1"].values()
                         sum_gen_weights_dict[key] = sum_gen_weight
                         print("bg", key)
                     elif key in sum_gen_weights_dict.keys():
                         sum_gen_weights_dict[key] += sum_gen_weight
                         # if "SR" in self.category and not "SR_Anti" in self.category:
-                        #     muon_arr += file["cutflow_Muon;1"].values()
+                        lep_arr += file["cutflow_LeptonIncl;1"].values()
                         #     electron_arr += file["cutflow_Electron;1"].values()
 
-            # if "SR" in self.category and not "SR_Anti" in self.category:
-            #     cutflow_dict["Muon"][key] = muon_arr[muon_arr > 0].tolist()
+            cutflow_dict["LeptonIncl"][key] = lep_arr[lep_arr > 0].tolist()
             #     cutflow_dict["Electron"][key] = electron_arr[electron_arr > 0].tolist()
 
             # that is our data
@@ -384,31 +407,36 @@ class CollectInputData(BaseMakeFilesTask):
 
         self.output()["sum_gen_weights"].dump(sum_gen_weights_dict)
         # if "SR" in self.category and not "SR_Anti" in self.category:
-        #     self.output()["cutflow"].dump(cutflow_dict)
+        self.output()["cutflow"].dump(cutflow_dict)
 
 
 class CalcBTagSF(BaseMakeFilesTask, HTCondorWorkflow, law.LocalWorkflow):
     # require more ressources
-    RAM = 2000
-    hours = 5
+    RAM = 2500
+    hours = 14
+    debug = BoolParameter(default=False)
 
     def requires(self):
         return WriteDatasets.req(self, category=self.category)
 
     def create_branch_map(self):
+        # return list(range(len(self.T5_ids)))
         # define job number according to number of files of the dataset that you want to process
         data_list_keys, _ = self.get_datalist_items()
         if self.debug:
-            data_list_keys = data_list_keys[0]
+            data_list_keys = data_list_keys[:1]
         return list(range(len(data_list_keys)))
 
     def output(self):
         values = self.get_datalist_items()[1]
-        out = {lep + "_" + val.split("/")[1]: self.local_target(lep + "_" + val.split("/")[1].replace(".root", ".npy")) for val in values for lep in self.config_inst.get_aux("channels")[self.category]}
+        out = {lep + "_" + val.split("/")[1]: {"weights": self.local_target(lep + "_" + val.split("/")[1].replace(".root", ".npy")), "up": self.local_target(lep + "_" + val.split("/")[1].replace(".root", "_up.npy")), "down": self.local_target(lep + "_" + val.split("/")[1].replace(".root", "_down.npy"))} for val in values for lep in self.config_inst.get_aux("channels")[self.category]}
         return out
 
     def store_parts(self):
-        return super(CalcBTagSF, self).store_parts()
+        parts = tuple()
+        if self.debug:
+            parts += ("debug",)
+        return super(CalcBTagSF, self).store_parts() + parts
 
     def get_datalist_items(self):
         with open(self.config_inst.get_aux("job_dict").replace(".json", "_" + self.version + "_" + self.category + ".json")) as f:
@@ -416,14 +444,17 @@ class CalcBTagSF(BaseMakeFilesTask, HTCondorWorkflow, law.LocalWorkflow):
         # so we can pop in place
         keys = list(data_list.keys())
         for key in keys:
-            if key in self.config_inst.get_aux("data"):
+            # FIXME
+            # if not "DYJetsToLL_M-50_HT-100to200" in key:
+            # need to delete last entry, which is the path
+            if key in self.config_inst.get_aux("data") or "directory_path" in key:
                 data_list.pop(key)
-        # need to delete last entry, which is the path
+
         values = []
-        data_list_values = map(values.extend, list(data_list.values())[:-1])
+        data_list_values = map(values.extend, list(data_list.values()))  # [:-1])
         # executes the map somehow?
         list(data_list_values)
-        return (list(data_list.keys())[:-1], list(values))
+        return (list(data_list.keys()), list(values))  # [:-1]
 
     def get_bin_contents(self, hist, pt, eta):
         """
@@ -454,6 +485,12 @@ class CalcBTagSF(BaseMakeFilesTask, HTCondorWorkflow, law.LocalWorkflow):
 
     @law.decorator.safe_output
     def run(self):
+        import matplotlib.pyplot as plt
+
+        # if this process is not defined, you are using the wrong signal
+        proc = self.config_inst.get_process("T5qqqqWW")
+        sub_name = [b[0].name for b in proc.walk_processes()][0]
+
         data_list_keys, data_list_values = self.get_datalist_items()
         sum_gen_weights_dict = {}
         # cutflow_dict = {
@@ -463,68 +500,155 @@ class CalcBTagSF(BaseMakeFilesTask, HTCondorWorkflow, law.LocalWorkflow):
         dataset_dict = self.input().load()  # [self.channel[0]].collection.targets[0]
         # remove path from dict and save it for later
         data_path = dataset_dict.pop("directory_path")
-        # for key in dataset_dict.keys():
         key = data_list_keys[self.branch]
         print(key)
-        true_counts = np.array([])
-        tagged_counts = np.array([])
+        true_counts_b, true_counts_c, true_counts_l = np.array([]), np.array([]), np.array([])
+        tagged_counts_b, tagged_counts_c, tagged_counts_l = np.array([]), np.array([]), np.array([])
         for path in dataset_dict[key]:
             with up.open(data_path + "/" + path) as file:
                 # following method from https://twiki.cern.ch/twiki/bin/viewauth/CMS/BTagSFMethods
                 TrueB = file["nTrueB;1"].to_numpy()
                 nBTag = file["nMediumBbTagDeepJet;1"].to_numpy()
-                # not filled yet
-                if true_counts.shape == (0,):
-                    true_counts = TrueB[0]
-                    tagged_counts = nBTag[0]
+                TrueC = file["nTrueC;1"].to_numpy()
+                nCTag = file["nMediumCbTagDeepJet;1"].to_numpy()
+                TrueL = file["nTrueLight;1"].to_numpy()
+                nLTag = file["nMediumLightbTagDeepJet;1"].to_numpy()
+                # not filled yet, fill all at once
+                if true_counts_b.shape == (0,):
+                    true_counts_b = TrueB[0]
+                    tagged_counts_b = nBTag[0]
+                    true_counts_c = TrueC[0]
+                    tagged_counts_c = nCTag[0]
+                    true_counts_l = TrueL[0]
+                    tagged_counts_l = nLTag[0]
                     pt_bins, eta_bins = TrueB[1], TrueB[2]
                 else:
-                    true_counts += TrueB[0]
-                    tagged_counts += nBTag[0]
+                    true_counts_b += TrueB[0]
+                    tagged_counts_b += nBTag[0]
+                    true_counts_c += TrueC[0]
+                    tagged_counts_c += nCTag[0]
+                    true_counts_l += TrueL[0]
+                    tagged_counts_l += nLTag[0]
 
         # total efficiency per file
-        efficiency_hist = tagged_counts / true_counts
+        efficiency_hist_b = tagged_counts_b / true_counts_b
+        efficiency_hist_c = tagged_counts_c / true_counts_c
+        efficiency_hist_l = tagged_counts_l / true_counts_l
         # special hardcoded case to do complete Btag SF for mass scan
-        # if key == 'SMS-T5qqqqVV_TuneCP2_13TeV-madgraphMLM-pythia8':
-        #     total_arr = []
+        if key == sub_name:
+            total_arr, total_arr_up, total_arr_down = [], [], []
 
-        for path in dataset_dict[key]:
-            print(data_path + "/" + path)
+        # FIXME
+        for path in tqdm(sorted(dataset_dict[key])):  # , reverse=True
+            print(path)
             with up.open(data_path + "/" + path) as file:
-                # having to do both trees seperatly
+                # having to do each trees seperatly
                 for lep in self.config_inst.get_aux("channels")[self.category]:
-                    # following method from https://twiki.cern.ch/twiki/bin/viewauth/CMS/BTagSFMethods
-                    TrueB = file["nTrueB;1"].to_numpy()
-                    nBTag = file["nMediumBbTagDeepJet;1"].to_numpy()
+                    # tto semileptonic was branch 30
+                    # if os.path.exists(self.output()[lep + "_" + path.split("/")[1]]["weights"].path):
+                    #     print(self.output()[lep + "_" + path.split("/")[1]]["weights"].path, "exists")
+                    #     continue
+                    # print("doing", self.output()[lep + "_" + path.split("/")[1]]["weights"].path)
+                    # following method from https://btv-wiki.docs.cern.ch/PerformanceCalibration/fixedWPSFRecommendations/
+                    # if "QCD_HT200to300" in path or "QCD_HT200to300" in data_path:
+                    #     from IPython import embed; embed()
 
                     tree = file[lep]
-
                     tagged = tree["JetDeepJetMediumId"].array()
                     SF = tree["JetDeepJetMediumSf"].array()
+                    SF_up = tree["JetDeepJetMediumSf_uncorrelatedUp"].array()
+                    SF_down = tree["JetDeepJetMediumSf_uncorrelatedDown"].array()
                     jetPt = tree["JetPt"].array()
-
                     jetEta = tree["JetEta"].array()
-
+                    # additional fastsim SF have to be applied
+                    if key == sub_name:
+                        SF_fast = tree["JetDeepJetLooseFastSf"].array()
+                        SF_fast_up = tree["JetDeepJetMediumFastSfUp"].array()
+                        SF_fast_down = tree["JetDeepJetTightFastSfDown"].array()
+                        # *= does not work
+                        SF = SF * SF_fast
+                        SF_up = SF_up * SF_fast_up
+                        SF_down = SF_down * SF_fast_down
                     # effs=(efficiency, pt_bins, eta_bins)
                     # computing efficiencies, do it flat to avoid for loop in python
-                    efficiencies = ak.Array(self.get_bin_contents((efficiency_hist, pt_bins, eta_bins), ak.flatten(jetPt), ak.flatten(jetEta)))
+                    efficiencies_b = ak.Array(self.get_bin_contents((efficiency_hist_b, pt_bins, eta_bins), ak.flatten(jetPt), ak.flatten(jetEta)))
+                    efficiencies_c = ak.Array(self.get_bin_contents((efficiency_hist_c, pt_bins, eta_bins), ak.flatten(jetPt), ak.flatten(jetEta)))
+                    efficiencies_l = ak.Array(self.get_bin_contents((efficiency_hist_l, pt_bins, eta_bins), ak.flatten(jetPt), ak.flatten(jetEta)))
                     # split them back up, we know the amount of jets
                     nJet = tree["nJet"].array()
-                    efficiencies = ak.Array(np.split(efficiencies, np.cumsum(nJet)))
-                    if len(efficiencies) > len(tagged):
+                    efficiencies_b = ak.Array(np.split(efficiencies_b, np.cumsum(nJet)))
+                    efficiencies_c = ak.Array(np.split(efficiencies_c, np.cumsum(nJet)))
+                    efficiencies_l = ak.Array(np.split(efficiencies_l, np.cumsum(nJet)))
+                    if len(efficiencies_b) > len(tagged):
                         # cumsum may result in empty array at the end
-                        efficiencies = efficiencies[:-1]
+                        efficiencies_b = efficiencies_b[:-1]
+                        efficiencies_c = efficiencies_c[:-1]
+                        efficiencies_l = efficiencies_l[:-1]
+
+                    # now build together arrays to multiply per efficiency(flav), divide in flavor 5 b, 4 c, else light
+                    # there may be a faster way to do it columnar, I did not find it
+                    jetFlav = tree["JetPartFlav"].array()
+                    b_flav = abs(jetFlav) == 5
+                    c_flav = abs(jetFlav) == 4
+                    l_flav = (abs(jetFlav) != 5) & (abs(jetFlav) != 4)
+                    efficiencies = ak.concatenate((efficiencies_b[b_flav], efficiencies_c[c_flav], efficiencies_l[l_flav]), axis=-1)
+
                     P_MC = np.prod(efficiencies[tagged], axis=-1) * np.prod((1 - efficiencies)[~tagged], axis=-1)
-                    P_data = np.prod((SF * efficiencies)[tagged], axis=-1) * np.prod((1 - SF * efficiencies)[~tagged], axis=-1)
-
-                    weights = P_MC / P_data
+                    P_data = np.prod((SF * efficiencies)[tagged], axis=-1) * np.clip(np.prod((1 - SF * efficiencies)[~tagged], axis=-1), 0, 10)
+                    weights = P_data / P_MC
                     # sum_gen_weights_dict[path.split("/")[1]] = np.array(weights)
-                    self.output()[lep + "_" + path.split("/")[1]].parent.touch()
-                    print("\n", self.output()[lep + "_" + path.split("/")[1]].path)
-                    self.output()[lep + "_" + path.split("/")[1]].dump(np.array(weights))
-                    # if key == 'SMS-T5qqqqVV_TuneCP2_13TeV-madgraphMLM-pythia8':
-                    #     total_arr.append(weights)
 
-        # if key == 'SMS-T5qqqqVV_TuneCP2_13TeV-madgraphMLM-pythia8':
-        #     total_signal_weights=np.concatenate(total_arr)
-        #     np.save(self.output()[lep + "_" + path.split("/")[1]].path.replace(".npy", "_total_signal.npy"), np.array(total_signal_weights))
+                    # doing syst for one year here
+                    P_MC_up = np.prod(efficiencies[tagged], axis=-1) * np.prod((1 - efficiencies)[~tagged], axis=-1)
+                    P_data_up = np.prod((SF_up * efficiencies)[tagged], axis=-1) * np.clip(np.prod((1 - SF_up * efficiencies)[~tagged], axis=-1), 0, 10)
+                    weights_up = P_data_up / P_MC_up
+                    P_MC_down = np.prod(efficiencies[tagged], axis=-1) * np.prod((1 - efficiencies)[~tagged], axis=-1)
+                    P_data_down = np.prod((SF_down * efficiencies)[tagged], axis=-1) * np.clip(np.prod((1 - SF_down * efficiencies)[~tagged], axis=-1), 0, 10)
+                    weights_down = P_data_down / P_MC_down
+                    self.output()[lep + "_" + path.split("/")[1]]["weights"].parent.touch()
+                    self.output()[lep + "_" + path.split("/")[1]]["weights"].dump(np.array(weights))
+                    self.output()[lep + "_" + path.split("/")[1]]["up"].dump(np.array(weights_up))
+                    self.output()[lep + "_" + path.split("/")[1]]["down"].dump(np.array(weights_down))
+                    if key == sub_name:
+                        total_arr.append(weights)
+                        total_arr_up.append(weights_up)
+                        total_arr_down.append(weights_down)
+
+                    print("\ndone:", self.output()[lep + "_" + path.split("/")[1]]["weights"].path)
+
+                    # # contigency plots
+                    # weights_small = weights < 0.3
+                    # jets5 = nJet >=5
+                    # fig = plt.figure()
+                    # plt.hist(ak.flatten(SF), label="SF from skimming", bins=20, density=True)
+                    # plt.hist(ak.flatten(SF[weights_small]), label="SF in events with small weights", bins=20, density=True, histtype="step")
+                    # plt.xlabel("SF")
+                    # plt.ylabel("a.u.")
+                    # plt.legend()
+                    # plt.savefig(self.output()[lep + "_" + path.split("/")[1]]["weights"].parent.path + "/SF.png")
+
+                    # fig = plt.figure()
+                    # plt.hist(ak.flatten(efficiencies), label="efficiencies from skimming", bins=20, density=True)
+                    # plt.hist(ak.flatten(efficiencies[weights_small]), label="efficiencies in events with small weights", bins=20, density=True, histtype="step")
+                    # plt.xlabel("Efficiencies")
+                    # plt.ylabel("a.u.")
+                    # plt.legend()
+                    # plt.savefig(self.output()[lep + "_" + path.split("/")[1]]["weights"].parent.path + "/efficiencies.png")
+
+                    # fig = plt.figure()
+                    # plt.hist(weights, label="weights", bins=50, density=True)
+                    # plt.hist(weights[jets5], label="weights for >=5 jet events", bins=50, density=True, histtype="step")
+                    # plt.xlabel("Computed event weights")
+                    # plt.ylabel("a.u.")
+                    # plt.legend()
+                    # plt.savefig(self.output()[lep + "_" + path.split("/")[1]]["weights"].parent.path + "/weights.png")
+                    # from IPython import embed; embed()
+        if key == sub_name:
+            print("In Signal")
+            # store signal merged once so YieldPerMasspoint doesn't have to do redundant stuff
+            total_signal_weights = np.array(np.concatenate(total_arr))
+            total_signal_weights_up = np.array(np.concatenate(total_arr_up))
+            total_signal_weights_down = np.array(np.concatenate(total_arr_down))
+            np.save(self.output()[lep + "_" + path.split("/")[1]]["weights"].parent.path + self.config_inst.get_aux("all_btag_SF"), total_signal_weights)
+            np.save(self.output()[lep + "_" + path.split("/")[1]]["weights"].parent.path + self.config_inst.get_aux("all_btag_SF").replace("_T5qqqqWW", "_up_T5qqqqWW"), total_signal_weights_up)
+            np.save(self.output()[lep + "_" + path.split("/")[1]]["weights"].parent.path + self.config_inst.get_aux("all_btag_SF").replace("_T5qqqqWW", "_down_T5qqqqWW"), total_signal_weights_down)

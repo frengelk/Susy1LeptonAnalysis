@@ -9,9 +9,8 @@ import uproot as up
 import coffea
 from tqdm import tqdm
 
-
 # other modules
-from tasks.coffea import CoffeaProcessor, CoffeaTask, AntiProcessor
+from tasks.coffea import CoffeaProcessor, CoffeaTask
 from tasks.makefiles import WriteDatasetPathDict, WriteDatasets
 from tasks.base import HTCondorWorkflow
 
@@ -122,15 +121,12 @@ class MergeArrays(CoffeaTask):  # , law.LocalWorkflow, HTCondorWorkflow):
                     for ind in inverse_np_dict[p]:
                         key = cat + "_" + p + "_" + str(ind)
                         arr = np_dict[key]["array"].load()
-                        if len(arr) > 0:
-                            if len(arr[0]) > 21:
-                                print(lep, key, len(arr[0]))
                         weights = np_dict[key]["weights"].load()
                         IDs = np_dict[key]["DNNId"].load()
                         if len(np_dict[key]["array"].load()) > 1:
                             if np.max(np_dict[key]["array"].load()) > 1e6:
+                                print("WARNING, C++ skimming messed up, removing entries from:", key)
                                 maxis = arr[arr > 100000]
-                                print("WARNING, C++ skimming messed up, removing ", len(np.unique(maxis)), " entries from:", key)
                                 ind_maxis = []
                                 for maxi in maxis:
                                     i, j = np.where(np.isclose(arr, maxi))
@@ -164,8 +160,70 @@ class MergeArrays(CoffeaTask):  # , law.LocalWorkflow, HTCondorWorkflow):
             DNNId_arr = np.concatenate(DNNId_list)
             self.output()[cat + "_" + dat]["DNNId"].dump(DNNId_arr)
             print(dat, " len: ", len(weights_arr), " sum: ", sum(weights_arr))
-        # exporting variables to be able to reconstruct array content
-        np.save(self.output()[cat + "_" + dat]["array"].parent.path + "/variables.npy", self.config_inst.variables.names())
+
+
+class Merge2016VFP(CoffeaTask):
+    do_shifts = luigi.BoolParameter(default=False)
+
+    # this task is just there to merge MergeArrays Output for 2016preVFP and 2016postVFP since signal is only produced in total for 2016
+    def requires(self):
+        return MergeArrays.req(self, datasets_to_process=self.datasets_to_process)
+
+    def store_parts(self):
+        return super(MergeArrays, self).store_parts() + ("_".join(self.channel),)
+
+    @law.decorator.timeit(publish_message=True)
+    @law.decorator.safe_output
+    def run(self):
+        # either merging all shifts or nominal files
+        if self.do_shifts:
+            shift = self.config_inst.get_aux("systematic_shifts")[0]
+            shifts_task = MergeShiftArrays.req(self, datasets_to_process=self.datasets_to_process, shifts=["systematic_shifts"])
+            target_dir_shifts = shifts_task.output()["collection"].targets[0][self.category + "_" + self.datasets_to_process[0] + "_" + shift]["array"].parent.path
+            pre_dir_shifts = target_dir_shifts.replace(self.version, "preVFP_2016")
+            post_dir_shifts = target_dir_shifts.replace(self.version, "postVFP_2016")
+            pre_files_shifts = os.listdir(pre_dir_shifts)
+            post_files_shifts = os.listdir(post_dir_shifts)
+            if not os.path.isdir(target_dir_shifts):
+                os.makedirs(target_dir_shifts)
+
+            for file in pre_files_shifts:
+                print("Merging", file)
+                if file not in post_files_shifts:
+                    raise ValueError("If there arent the same dats in pre as in post, you fcked up")
+                file_path_pre = pre_dir_shifts + "/" + file
+                file_path_post = post_dir_shifts + "/" + file
+
+                file_pre = np.load(file_path_pre)
+                file_post = np.load(file_path_post)
+
+                # making sure ordering is always pre - post, which is crucial with the weights
+                merged_arr = np.concatenate((file_pre, file_post))
+                np.save(target_dir_shifts + "/" + file, merged_arr)
+
+        if not self.do_shifts:
+            target_dir = self.input()[self.category + "_" + self.datasets_to_process[0]]["array"].parent.path
+            # hardcoded versions but we have to keep track from which dataset each
+            pre_dir = target_dir.replace(self.version, "preVFP_2016")
+            post_dir = target_dir.replace(self.version, "postVFP_2016")
+            pre_files = os.listdir(pre_dir)
+            post_files = os.listdir(post_dir)
+            assert len(pre_files) == len(post_files)
+            if not os.path.isdir(target_dir):
+                os.makedirs(target_dir)
+            for file in pre_files:
+                print("Merging", file)
+                if file not in post_files:
+                    raise ValueError("If there arent the same dats in pre as in post, you fcked up")
+                file_path_pre = pre_dir + "/" + file
+                file_path_post = post_dir + "/" + file
+
+                file_pre = np.load(file_path_pre)
+                file_post = np.load(file_path_post)
+
+                # making sure ordering is always pre - post, which is crucial with the weights
+                merged_arr = np.concatenate((file_pre, file_post))
+                np.save(target_dir + "/" + file, merged_arr)
 
 
 class ComputeEfficiencies(CoffeaTask):
@@ -285,11 +343,11 @@ class YieldsFromArrays(CoffeaTask):
 
 
 # to check all requirements. comment out the Workflow dependencies, no idea why)
+# Also if the dependencies don't get checked correctly
 class MergeShiftArrays(CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
     # require more ressources
     RAM = 2500
     hours = 1
-    channel = luigi.ListParameter(default=["Muon", "Electron"])
     shifts = luigi.ListParameter(default=["systematic_shifts"])
 
     def create_branch_map(self):
