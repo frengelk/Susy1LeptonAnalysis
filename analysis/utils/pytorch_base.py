@@ -37,6 +37,17 @@ class ClassifierDataset(data.Dataset):
 """
 
 
+class TestDataset(data.Dataset):
+    def __init__(self, X_data):
+        self.X_data = X_data
+
+    def __getitem__(self, index):
+        return self.X_data[index]
+
+    def __len__(self):
+        return len(self.X_data)
+
+
 class ClassifierDataset(data.Dataset):
     def __init__(self, X_data, y_data):
         self.X_data = X_data
@@ -93,8 +104,9 @@ class DataModuleClass(pl.LightningDataModule):
         # every GPU, like splitting data, applying
         # transform etc.
         # self.train_dataset = ClassifierDataset(torch.from_numpy(self.X_train).float(), torch.from_numpy(self.y_train).float())
-        self.train_dataset = ClassifierDatasetWeight(torch.from_numpy(self.X_train).float(), torch.from_numpy(self.y_train).float(), torch.from_numpy(self.weight_train).float())
-        self.val_dataset = ClassifierDatasetWeight(torch.from_numpy(self.X_val).float(), torch.from_numpy(self.y_val).float(), torch.from_numpy(self.weight_val).float())
+        # from IPython import embed; embed()
+        self.train_dataset = ClassifierDatasetWeight(torch.from_numpy(self.X_train.copy()).float(), torch.from_numpy(self.y_train.copy()).float(), torch.from_numpy(self.weight_train.copy()).float())
+        self.val_dataset = ClassifierDatasetWeight(torch.from_numpy(self.X_val.copy()).float(), torch.from_numpy(self.y_val.copy()).float(), torch.from_numpy(self.weight_val.copy()).float())
 
     def train_dataloader(self):
         # Use BalancedWeightedSampler directly here
@@ -123,8 +135,9 @@ class DataModuleClass(pl.LightningDataModule):
             dataset=self.train_dataset,
             sampler=sampler,
             batch_size=self.batch_size,
-            num_workers=8,
+            num_workers=0,
             drop_last=True,
+            # pin_memory=True,
         )
         # FIXME train without sampling
         # dataloader = data.DataLoader(
@@ -142,7 +155,7 @@ class DataModuleClass(pl.LightningDataModule):
         return data.DataLoader(
             dataset=self.val_dataset,
             batch_size=10 * self.batch_size,  # 10 *  , shuffle=True  # len(val_dataset
-            num_workers=8,  # 8,
+            num_workers=0,  # 8,
             drop_last=True,
             # persistent_workers=True,
         )
@@ -157,7 +170,7 @@ class DataModuleClass(pl.LightningDataModule):
 
 # torch Multiclassifer
 class MulticlassClassification(pl.LightningModule):  # nn.Module core.lightning.LightningModule
-    def __init__(self, num_feature, num_class, means, stds, dropout, class_weights, n_nodes, learning_rate=1e-3, gamma=1.5):
+    def __init__(self, num_feature, num_class, means, stds, dropout, class_weights, n_nodes, learning_rate=1e-3, gamma=1.0):
         super(MulticlassClassification, self).__init__()
 
         # Attribute failure

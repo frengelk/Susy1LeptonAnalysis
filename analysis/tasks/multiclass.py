@@ -2,7 +2,7 @@
 
 import law
 import numpy as np
-from luigi import IntParameter
+from luigi import IntParameter, ListParameter, BoolParameter
 from rich.console import Console
 from time import time
 
@@ -11,13 +11,13 @@ import torch
 import torch.nn as nn
 import torch.utils.data as data  # import Dataset, DataLoader, WeightedRandomSampler
 import pytorch_lightning as pl
-
-from tasks.base import DNNTask, HTCondorWorkflow, AnalysisTask
-from tasks.grouping import MergeArrays
-from tasks.arraypreparation import ArrayNormalisation, CrossValidationPrep
-from tasks.coffea import CoffeaTask
 import matplotlib.pyplot as plt
 
+
+from tasks.base import DNNTask, HTCondorWorkflow, AnalysisTask
+from tasks.grouping import MergeArrays, MergeShiftArrays
+from tasks.arraypreparation import ArrayNormalisation, CrossValidationPrep
+from tasks.coffea import CoffeaTask
 import utils.pytorch_base as util
 
 
@@ -135,7 +135,7 @@ class PytorchMulticlass(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
         early_stop_callback = pl.callbacks.early_stopping.EarlyStopping(
             monitor="val_loss",
             min_delta=0.00,
-            patience=3,
+            patience=10,
             verbose=False,
             mode="max",
             strict=False,
@@ -264,12 +264,12 @@ class PytorchMulticlass(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
         plt.savefig(self.output()["model"].parent.path + "/signal_fraction.png")
 
 
-class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):  # , CoffeaTask
+class PytorchCrossVal(DNNTask, CoffeaTask, HTCondorWorkflow, law.LocalWorkflow):
     # define it here again so training can be started from here
     kfold = IntParameter(default=2)
     # setting needed RAM high and time long
     RAM = 12000
-    hours = 6
+    hours = 20
 
     # This parameters worked
     #  --batch-size 512 --dropout 0.3 --learning-rate 0.0003 --n-nodes 256
@@ -306,6 +306,7 @@ class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):  # , Coffea
             + (self.dropout,)
             + (self.batch_size,)
             + (self.learning_rate,)
+            + (self.gamma if self.gamma != 1.0 else "",)  # so old output can still be found
             + (debug_str,)
         )
 
@@ -382,7 +383,7 @@ class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):  # , Coffea
             class_weights=torch.tensor(list(class_weights.values())),
             n_nodes=self.n_nodes,
             learning_rate=self.learning_rate,
-            gamma=1.0,  # from Hyperparam Opt 1.5,
+            gamma=self.gamma,  # from Hyperparam Opt 1.5,
         )
 
         # weight resetting
@@ -408,19 +409,19 @@ class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):  # , Coffea
             # self.steps_per_epoch,
         )
 
-        early_stop_callback = pl.callbacks.early_stopping.EarlyStopping(
-            monitor="val_loss",#"val_acc",
+        early_stopping_callback = pl.callbacks.early_stopping.EarlyStopping(
+            monitor="val_loss",  # "val_acc",
             min_delta=0.00,
-            patience=10,
+            patience=5,
             verbose=False,
-            mode="max",
+            mode="min",  # "max"
             strict=False,
         )
 
         # should help better generalization, reduce learning rate later
-        swa_callback = pl.callbacks.StochasticWeightAveraging(swa_lrs=self.learning_rate / 2, swa_epoch_start=0.25)
+        swa_callback = pl.callbacks.StochasticWeightAveraging(swa_lrs=self.learning_rate / 2, swa_epoch_start=0.2)
         # collect callbacks
-        callbacks = [early_stop_callback, swa_callback]
+        callbacks = [pl.callbacks.ModelCheckpoint(monitor="val_loss", save_top_k=1, mode="min"), early_stopping_callback, swa_callback]
 
         # Trainer, for gpu gpus=1
         trainer = pl.Trainer(
@@ -431,6 +432,7 @@ class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):  # , Coffea
             check_val_every_n_epoch=1,
         )
 
+        print(model)
         data_collection.setup("train")
         trainer.fit(model, data_collection)
 
@@ -482,26 +484,41 @@ class PytorchCrossVal(DNNTask, HTCondorWorkflow, law.LocalWorkflow):  # , Coffea
         plt.savefig(self.output()["fold_" + str(i)]["model"].parent.path + "/signal_fraction{}.png".format(str(i)))
 
 
-class PredictDNNScores(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
+class PredictDNNScores(CoffeaTask, DNNTask, HTCondorWorkflow, law.LocalWorkflow):
     # needs RAM or it fails
     RAM = 5000
     hours = 1
+    datasets_to_process = ListParameter(default=["QCD"])
+    do_shifts = BoolParameter(default=False)
 
     def requires(self):
         out = {
             "samples": CrossValidationPrep.req(self, kfold=self.kfold),
-            "models": PytorchCrossVal.req(self, kfold=self.kfold,category="All_Lep"), # ,category="All_Lep" FIXME, this is trained on inclusive cuts
-            "QCD": MergeArrays.req(self, datasets_to_process=["QCD"], channel=["LeptonIncl"]),
+            "models": PytorchCrossVal.req(self, kfold=self.kfold, category="All_Lep"),
+            "merged": MergeArrays.req(self, datasets_to_process=["QCD"] + list(self.datasets_to_process), channel=["LeptonIncl"]),
             # "data": ArrayNormalisation.req(self),
         }
-
+        if self.do_shifts:
+            out.update({"shifts": MergeShiftArrays.req(self, datasets_to_process=["WJets", "SingleTop", "TTbar", "QCD", "Rare", "DY"], shifts=["systematic_shifts", "TotalUp", "TotalDown", "JERUp", "JERDown"])})
         return out
 
     def output(self):
-        return {"scores": self.local_target("scores.npy"), "labels": self.local_target("labels.npy"), "data": self.local_target("data_scores.npy"), "weights": self.local_target("weights.npy"), "QCD_scores": self.local_target("QCD_scores.npy"), "QCD_weights": self.local_target("QCD_weights.npy")}
+        out = {"scores": self.local_target("scores.npy"), "labels": self.local_target("labels.npy"), "data": self.local_target("data_scores.npy"), "weights": self.local_target("weights.npy"), "QCD_scores": self.local_target("QCD_scores.npy"), "QCD_weights": self.local_target("QCD_weights.npy")}
+        out.update({dat: self.local_target(dat + "_scores.npy") for dat in self.datasets_to_process})
+        out.update({dat + "_weights": self.local_target(dat + "_weights.npy") for dat in self.datasets_to_process})
+        if self.do_shifts:
+            targets = {}
+            for key in self.input()["shifts"].keys():
+                targets["scores_" + key] = self.local_target(key + "_scores.npy")
+                targets["weights_" + key] = self.local_target(key + "_weights.npy")
+            out.update({"shifts": targets})
+        return out
 
     def store_parts(self):
         # put hyperparameters in path to make an easy optimization search
+        parts = tuple()
+        if self.do_shifts:
+            parts += ("do_shifts",)
         return (
             super(PredictDNNScores, self).store_parts()
             # + (self.n_layers,)
@@ -509,6 +526,8 @@ class PredictDNNScores(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
             + (self.dropout,)
             + (self.batch_size,)
             + (self.learning_rate,)
+            + (self.gamma,)
+            + parts
         )
 
     def run(self):
@@ -518,12 +537,16 @@ class PredictDNNScores(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
         data_scores = {}
         QCD_scores = {}
         data = self.input()["samples"]["data"].load()
-        QCD = self.input()["QCD"][self.category + "_QCD"]
+        QCD = self.input()["merged"][self.category + "_QCD"]
 
         # first extractz QCD to substract predicted from data
         QCD_arr = QCD["array"].load()
         QCD_weights = QCD["weights"].load()
 
+        dats_to_predict = {}
+        if self.do_shifts:
+            shifts_to_predict = {}
+            shifts_in = self.input()["shifts"]
         for i in range(self.kfold):
             # to switch training/validation
             j = abs(i - 1)
@@ -542,6 +565,20 @@ class PredictDNNScores(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
                 X_scores = model(torch.tensor(X_test)).softmax(dim=1)
                 data_pred = model(torch.tensor(data)).softmax(dim=1)
                 QCD_pred = model(torch.tensor(QCD_arr)).softmax(dim=1)
+                for dat in self.datasets_to_process:
+                    arr = self.input()["merged"][self.category + "_" + dat]["array"].load()
+                    arr_weights = self.input()["merged"][self.category + "_" + dat]["weights"].load()
+                    arr_DNNId = self.input()["merged"][self.category + "_" + dat]["DNNId"].load()
+                    dats_to_predict[dat + "_scores" + str(i)] = model(torch.tensor(arr[arr_DNNId == 1 - 2 * i])).softmax(dim=1)
+                    dats_to_predict[dat + "_weights" + str(i)] = arr_weights[arr_DNNId == 1 - 2 * i]
+                if self.do_shifts:
+                    for key in shifts_in.keys():
+                        shift = shifts_in[key]["array"].load()
+                        shift_weights = shifts_in[key]["weights"].load()
+                        shift_DNNId = shifts_in[key]["DNNId"].load()
+                        shifts_to_predict[key + "_scores" + str(i)] = model(torch.tensor(shift[shift_DNNId == 1 - 2 * i])).softmax(dim=1)
+                        shifts_to_predict[key + "_weights" + str(i)] = shift_weights[shift_DNNId == 1 - 2 * i]
+
             scores.append(X_scores.numpy())
             labels.append(y_test)
             weights.append(weight_test)
@@ -560,6 +597,18 @@ class PredictDNNScores(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
             # data_loader = torch.utils.data.DataLoader(dataset=data, batch_size=1000)
             # for X_data in data_loader:
 
+        for dat in self.datasets_to_process:
+            self.output()[dat].dump(np.concatenate((dats_to_predict[dat + "_scores0"], dats_to_predict[dat + "_scores1"])))
+            self.output()[dat + "_weights"].dump(np.concatenate((dats_to_predict[dat + "_weights0"], dats_to_predict[dat + "_weights1"])))
+        keep_note = self.output()["shifts"].keys()
+        if self.do_shifts:
+            for key in shifts_in.keys():
+                self.output()["shifts"]["scores_" + key].dump(np.concatenate((shifts_to_predict[key + "_scores0"], shifts_to_predict[key + "_scores1"])))
+                self.output()["shifts"]["weights_" + key].dump(np.concatenate((shifts_to_predict[key + "_weights0"], shifts_to_predict[key + "_weights1"])))
+        #         keep_note.remove("scores_"+key)
+        #         keep_note.remove("weights_"+key)
+        # print(keep_note)
+
         averaged_data_scores = sum(list(data_scores.values())) / len(data_scores.values())
         averaged_QCD_scores = sum(list(QCD_scores.values())) / len(QCD_scores.values())
         self.output()["scores"].dump(np.concatenate(scores))
@@ -573,20 +622,28 @@ class PredictDNNScores(DNNTask, HTCondorWorkflow, law.LocalWorkflow):
 class CalcNormFactors(DNNTask):  # Requiring MergeArrays from a DNNTask leads to JSON errors
     # should be
     kfold = IntParameter(default=2)
+    QCD_estimate = BoolParameter(default=False)
 
     def requires(self):
         out = {
             "samples": CrossValidationPrep.req(self, kfold=self.kfold),
-            "models": PytorchCrossVal.req(self, kfold=self.kfold,category="All_Lep"), # ,category="All_Lep" FIXME, this is trained on inclusive cuts,
+            "models": PytorchCrossVal.req(self, kfold=self.kfold, category="All_Lep"),  # ,category="All_Lep" FIXME, this is trained on inclusive cuts,
             "scores": PredictDNNScores.req(self, workflow="local"),
         }
+        if self.QCD_estimate:
+            # preventing circular imports
+            from tasks.bgestimation import EstimateQCDinSR
 
+            out.update({"QCD_pred": EstimateQCDinSR.req(self, datasets_to_process=["WJets", "SingleTop", "TTbar", "QCD", "Rare", "DY", "MET", "SingleMuon", "SingleElectron"])})
         return out
 
     def output(self):
         return self.local_target("Normalisation_factors.json")
 
     def store_parts(self):
+        parts = tuple()
+        if self.QCD_estimate:
+            parts += ("QCD_est",)
         return (
             super(CalcNormFactors, self).store_parts()
             # + (self.n_layers,)
@@ -594,6 +651,8 @@ class CalcNormFactors(DNNTask):  # Requiring MergeArrays from a DNNTask leads to
             + (self.dropout,)
             + (self.batch_size,)
             + (self.learning_rate,)
+            + (self.gamma,)
+            + parts
         )
 
     def run(self):
@@ -615,29 +674,48 @@ class CalcNormFactors(DNNTask):  # Requiring MergeArrays from a DNNTask leads to
         weights = inp_scores["weights"].load()
 
         # QCD
-        QCD_scores = inp_scores["QCD_scores"].load()
-        QCD_weights = inp_scores["QCD_weights"].load()
-        QCD_node_0 = QCD_weights[np.argmax(QCD_scores, axis=-1) == 0]
-        QCD_node_1 = QCD_weights[np.argmax(QCD_scores, axis=-1) == 1]
+        # QCD_scores = inp_scores["QCD_scores"].load()
+        # QCD_weights = inp_scores["QCD_weights"].load()
+        # QCD_node_0 = QCD_weights[np.argmax(QCD_scores, axis=-1) == 0]
+        # QCD_node_1 = QCD_weights[np.argmax(QCD_scores, axis=-1) == 1]
+        # QCD_node_2 = QCD_weights[np.argmax(QCD_scores, axis=-1) == 2]
+        QCD_node_0 = weights[(MC_labels == 2) & (MC_pred == 0)]
+        QCD_node_1 = weights[(MC_labels == 2) & (MC_pred == 1)]
+        QCD_node_2 = weights[(MC_labels == 2) & (MC_pred == 2)]
+        if self.QCD_estimate:
+            print("Using data driven QCD", self.input()["QCD_pred"].load())
+            # if we calculate QCD beforehand, readjust yields
+            QCD_bg_est = self.input()["QCD_pred"].load()["diff_data_EWK"]
+            F_Sel_Anti = self.input()["QCD_pred"].load()["F_Sel_Anti"]
+            QCD_node_0 = QCD_bg_est[0] * F_Sel_Anti
+            QCD_node_1 = QCD_bg_est[1] * F_Sel_Anti
+            QCD_node_2 = QCD_bg_est[2] * F_Sel_Anti
 
         # assigning nodes
         tt_node_0 = weights[(MC_labels == 0) & (MC_pred == 0)]
-        WJets_node_0 = weights[(MC_labels == 1) & (MC_pred == 0)]
-        data_node_0 = np.argmax(data_scores, axis=-1) == 0
-
         tt_node_1 = weights[(MC_labels == 0) & (MC_pred == 1)]
+        tt_node_2 = weights[(MC_labels == 0) & (MC_pred == 2)]
+
+        WJets_node_0 = weights[(MC_labels == 1) & (MC_pred == 0)]
         WJets_node_1 = weights[(MC_labels == 1) & (MC_pred == 1)]
+        WJets_node_2 = weights[(MC_labels == 1) & (MC_pred == 2)]
+
+        data_node_0 = np.argmax(data_scores, axis=-1) == 0
         data_node_1 = np.argmax(data_scores, axis=-1) == 1
+        data_node_2 = np.argmax(data_scores, axis=-1) == 2
 
         # constructing and solving linear equation system, QCD for now weighted with delta = 1
-        left_side = np.array([[np.sum(tt_node_0), np.sum(WJets_node_0)], [np.sum(tt_node_1), np.sum(WJets_node_1)]])
-        right_side = np.array([np.sum(data_node_0) - np.sum(QCD_node_0), np.sum(data_node_1) - np.sum(QCD_node_1)])
+        # left_side = np.array([[np.sum(tt_node_0), np.sum(WJets_node_0)], [np.sum(tt_node_1), np.sum(WJets_node_1)]])
+        # right_side = np.array([np.sum(data_node_0) - np.sum(QCD_node_0), np.sum(data_node_1) - np.sum(QCD_node_1)])
+        left_side = np.array([[np.sum(tt_node_0), np.sum(WJets_node_0), np.sum(QCD_node_0)], [np.sum(tt_node_1), np.sum(WJets_node_1), np.sum(QCD_node_1)], [np.sum(tt_node_2), np.sum(WJets_node_2), np.sum(QCD_node_2)]])
+        right_side = np.array([np.sum(data_node_0), np.sum(data_node_1), np.sum(data_node_2)])
         factors = np.linalg.solve(left_side, right_side)
 
         print("Left: ", left_side, "\nRight: ", right_side)
 
         # alpha * tt + beta * Wjets
-        factor_dict = {"alpha": factors[0], "beta": factors[1]}
+        # factor_dict = {"alpha": factors[0], "beta": factors[1]}
+        factor_dict = {"alpha": factors[0], "beta": factors[1], "delta": factors[2]}
         print(factor_dict)
         self.output().dump(factor_dict)
 
@@ -666,15 +744,15 @@ class OptimizeHyperParam(DNNTask, HTCondorWorkflow, law.LocalWorkflow):  # , Cof
     nParameters = IntParameter(default=1)
     # setting needed RAM high and time long
     RAM = 10000
-    hours = 3
+    hours = 8
 
     def create_parameter_dict(self):
         parameter_dict = {}
-        n_nodes = [32, 64, 128, 256]
-        dropouts = [0.01, 0.1, 0.2, 0.3]
-        batch_sizes = [32, 64, 128, 512]
-        learning_rates = [0.01, 0.0003, 0.0001, 0.001]
-        gammas = [0.5, 1, 1.5, 2]
+        n_nodes = [16, 32, 64, 128, 256]
+        dropouts = [0.01, 0.1, 0.2, 0.3, 0.5]
+        batch_sizes = [16, 32, 64, 128, 256]
+        learning_rates = [0.001, 0.0003, 0.0001, 0.00005, 0.00001]
+        gammas = [0.75, 0.875, 1, 1.125, 1.25]
         branch_counter = 0
         for inode, node in enumerate(n_nodes[: self.nParameters]):
             for idrop, drop in enumerate(dropouts[: self.nParameters]):
@@ -853,6 +931,27 @@ class FindBestTraining(DNNTask):
     def output(self):
         return self.local_target("best_training.json")
 
+    def find_highest_value(self, dic):
+        # Initialize variables to track the max value, key, and index
+        max_value = float("-inf")
+        max_key = None
+        max_index = None
+
+        # Iterate through each key and its corresponding list
+        for key, values in dic.items():
+            # Find the maximum value and its index in the current list
+            current_max = max(values)
+            current_index = values.index(current_max)
+
+            # Update if a new maximum is found
+            if current_max > max_value:
+                max_value = current_max
+                max_key = key
+                max_index = current_index
+
+        # Print results
+        print(f"The maximum value is {max_value} in list '{max_key}' at index {max_index}.")
+
     def run(self):
         from collections import defaultdict
 
@@ -883,8 +982,8 @@ class FindBestTraining(DNNTask):
             gamma[gam].append(stats["accuracy_stats"]["val"][-1])
 
         # fill nans so that they don't mess up investigation
-        val_loss = np.nan_to_num(val_loss, nan=10.0)
-        val_acc = np.nan_to_num(val_acc, nan=0.0)
+        val_loss = np.nan_to_num(val_loss, nan=np.max(val_loss))
+        val_acc = np.nan_to_num(val_acc, nan=np.min(val_acc))
         print("\nmean acc", np.mean(val_acc))
         print("Max val acc {} at training {} with parameters {}".format(np.max(val_acc), np.argmax(val_acc), inp[np.argmax(val_acc)].basename))
         print("\nmean loss", np.mean(val_loss))
@@ -906,6 +1005,35 @@ class FindBestTraining(DNNTask):
         print("\ngamma")
         for val, acc in gamma.items():
             print(val, np.mean(acc))
+
+        for dic in [n_nodes, dropout, batch_size, learning_rates, gamma]:
+            self.find_highest_value(dic)
+
+        # latex table
+        print("\multicolumn{2}{c|}{$n_\\text{nodes}$}", " & ", "\multicolumn{2}{c|}{dropout}", " & ", "\multicolumn{2}{c|}{batch size}", " & ", "\multicolumn{2}{c|}{learning rate}", " & ", "\multicolumn{2}{c}{$\gamma$}", "\\\\ \hline")
+        for i in range(self.nParameters):
+            print(
+                list(n_nodes.keys())[i],
+                " & ",
+                np.round(np.mean(n_nodes[list(n_nodes.keys())[i]]), 3),
+                " & ",
+                list(dropout.keys())[i],
+                "  & ",
+                np.round(np.mean(dropout[list(dropout.keys())[i]]), 3),
+                " & ",
+                list(batch_size.keys())[i],
+                " & ",
+                np.round(np.mean(batch_size[list(batch_size.keys())[i]]), 3),
+                " & ",
+                list(learning_rates.keys())[i],
+                " & ",
+                np.round(np.mean(learning_rates[list(learning_rates.keys())[i]]), 3),
+                " & ",
+                list(gamma.keys())[i],
+                " & ",
+                np.round(np.mean(gamma[list(gamma.keys())[i]]), 3),
+                " \\\\",
+            )
 
         from IPython import embed
 
