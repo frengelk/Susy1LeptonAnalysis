@@ -12,24 +12,24 @@ def setup_variables(cfg):
 
     nBinsPt = 35  # 100
     nBinsEta = 32
-    minEta = -pi
-    maxEta = pi
+    minEta = -2.4
+    maxEta = 2.4
     nBinsPhi = 15
     minPhi = -pi
     maxPhi = pi
     nBinsMass = 25
     minMass = 0
-    maxMass = 1000
-    nBinsHt = 42  # 25
-    minHt = 0  # 500
+    maxMass = 500
+    nBinsHt = 30
+    minHt = 500
     maxHt = 3000  # 5000
-    nBinsLt = 35  # 25
-    minLt = 0  # 250
+    nBinsLt = 24  # 25
+    minLt = 250
     maxLt = 1200  # 2000
     nJets = 20
     minNJets = 0
     maxNJets = 20
-    minPt = 0
+    minPt = 25
     maxPt = 1000
     nLep = 5
     minLep = 0
@@ -42,9 +42,10 @@ def setup_variables(cfg):
     maxBool = 1
     cfg.add_variable(name="metPt", expression="metPt", binning=(nBinsPt, minPt, maxPt), unit="GeV", x_title=r"$p_{T}^{miss}$", x_discrete=False)
     cfg.add_variable(name="metPhi", expression="metPhi", binning=(nBinsPhi, minPhi, maxPhi), x_title=r"$\Phi^{MET}$", x_discrete=False)
-    cfg.add_variable(name="WBosonMt", expression="WBosonMt", binning=(nBinsMass, minMass, maxMass), unit="GeV", x_title=r"$m_{t}^{W}$", x_discrete=False)
-    cfg.add_variable(name="LT", expression="LT", binning=(nBinsHt, minLt, maxLt), unit="GeV", x_title="LT", x_discrete=False)
-    cfg.add_variable(name="HT", expression="HT", binning=(nBinsLt, minHt, maxHt), unit="GeV", x_title="HT", x_discrete=False)
+    cfg.add_variable(name="WBosonMt", expression="WBosonMt", binning=(nBinsMass, minMass, maxPt), unit="GeV", x_title=r"$m_{t}^{W}$", x_discrete=False)
+    cfg.add_variable(name="LP", expression="LP", binning=(30, -0.5, 2.5), x_title=r"LP", x_discrete=False)
+    cfg.add_variable(name="LT", expression="LT", binning=(nBinsLt, minLt, maxLt), unit="GeV", x_title="LT", x_discrete=False)
+    cfg.add_variable(name="HT", expression="HT", binning=(nBinsHt, minHt, maxHt), unit="GeV", x_title="HT", x_discrete=False)
     cfg.add_variable(name="nJets", expression="nJets", binning=(nJets, minNJets, maxNJets), x_title="nJets", x_discrete=False)
     # cfg.add_variable(name="nbJets", expression="nbJets", binning=(nJets, minNJets, maxNJets), x_discrete=False)
     # cfg.add_variable(name="ntFatJets", expression="ntFatJets", binning=(nJets, minNJets, maxLep), x_discrete=False)
@@ -69,26 +70,28 @@ def setup_variables(cfg):
     cfg.add_variable(name="leadElectronPhi", expression="leadElectronPhi", binning=(nBinsPhi, minPhi, maxPhi), x_title=r"$\Phi^{e 1}$", x_discrete=False)
     """
     cfg.add_variable(name="leptonEta", expression="leptonEta", binning=(nBinsEta, minEta, maxEta), x_title=r"$\eta^{lep}$", x_discrete=False)
-    cfg.add_variable(name="leptonMass", expression="leptonMass", binning=(nBinsMass, minMass, maxMass), x_discrete=False)
+    # cfg.add_variable(name="leptonMass", expression="leptonMass", binning=(nBinsMass, minMass, maxMass), x_discrete=False)
     cfg.add_variable(name="leptonPhi", expression="leptonPhi", binning=(nBinsPhi, minPhi, maxPhi), x_title=r"$\Phi^{lep}$", x_discrete=False)
     cfg.add_variable(name="leptonPt", expression="leptonPt", binning=(nBinsPt, minPt, maxPt), unit="GeV", x_title=r"$p_{T}^{lep}$", x_discrete=False)
-    cfg.add_variable(name="leptonIso", expression="leptonIso", binning=(nBinsEta, minEta, maxEta), x_title="MiniIso Lepton", x_discrete=False)
-    # jet stuff ##################
-    cfg.add_variable(name="jetMass_1", expression="jetMass_1", binning=(nBinsMass, minMass, maxMass), unit="GeV", x_title=r"$m_{Jet}^{1}$", x_discrete=False)
-    cfg.add_variable(name="jetPt_1", expression="jetPt_1", binning=(nBinsPt, minPt, maxPt), unit="GeV", x_title=r"$p_{T}^{Jet1}$", x_discrete=False)
-    cfg.add_variable(name="jetEta_1", expression="jetEta_1", binning=(nBinsEta, minEta, maxEta), x_title=r"$\eta_{Jet}^{1}$", x_discrete=False)
-    cfg.add_variable(name="jetPhi_1", expression="jetPhi_1", binning=(nBinsPhi, minPhi, maxPhi), x_title=r"$\Phi_{Jet}^{1}$", x_discrete=False)
-    cfg.add_variable(name="jetMass_2", expression="jetMass_1", binning=(nBinsMass, minMass, maxMass), unit="GeV", x_title=r"$m_{Jet}^{1}$", x_discrete=False)
-    cfg.add_variable(name="jetPt_2", expression="jetPt_2", binning=(nBinsPt, minPt, maxPt), unit="GeV", x_title=r"$p_{T}^{Jet2}$", x_discrete=False)
-    cfg.add_variable(name="jetEta_2", expression="jetEta_1", binning=(nBinsEta, minEta, maxEta), x_title=r"$\eta_{Jet}^{1}$", x_discrete=False)
-    cfg.add_variable(name="jetPhi_2", expression="jetPhi_1", binning=(nBinsPhi, minPhi, maxPhi), x_title=r"$\Phi_{Jet}^{1}$", x_discrete=False)
+    # cfg.add_variable(name="leptonIso", expression="leptonIso", binning=(nBinsEta, minEta, maxEta), x_title="MiniIso Lepton", x_discrete=False)
+    # cfg.add_variable(name="nLepton", expression="nLepton", binning=(nLep, minLep, maxLep), x_discrete=False)
+    # jet stuff for first 3 jets##################
+    for i in range(1, 4):
+        cfg.add_variable(name="jetMass_{}".format(i), expression="jetMass_{}".format(i), binning=(nBinsMass, minMass, maxMass), unit="GeV", x_title=r"$m_{{Jet^{0}}}$".format(i), x_discrete=False)
+        cfg.add_variable(name="jetPt_{}".format(i), expression="jetPt_{}".format(i), binning=(nBinsPt, minPt, maxPt), unit="GeV", x_title=r"$p_{{T}}^{{Jet^{0}}}$".format(i), x_discrete=False)
+        cfg.add_variable(name="jetEta_{}".format(i), expression="jetEta_{}".format(i), binning=(nBinsEta, minEta, maxEta), x_title=r"$\eta_{{Jet^{0}}}$".format(i), x_discrete=False)
+        cfg.add_variable(name="jetPhi_{}".format(i), expression="jetPhi_{}".format(i), binning=(nBinsPhi, minPhi, maxPhi), x_title=r"$\Phi_{{Jet^{0}}}$".format(i), x_discrete=False)
+    # cfg.add_variable(name="jetMass_2", expression="jetMass_2", binning=(nBinsMass, minMass, maxMass), unit="GeV", x_title=r"$m_{Jet}^{2}$", x_discrete=False)
+    # cfg.add_variable(name="jetPt_2", expression="jetPt_2", binning=(nBinsPt, minPt, maxPt), unit="GeV", x_title=r"$p_{T}^{Jet2}$", x_discrete=False)
+    # cfg.add_variable(name="jetEta_2", expression="jetEta_2", binning=(nBinsEta, minEta, maxEta), x_title=r"$\eta_{Jet}^{2}$", x_discrete=False)
+    # cfg.add_variable(name="jetPhi_2", expression="jetPhi_2", binning=(nBinsPhi, minPhi, maxPhi), x_title=r"$\Phi_{Jet}^{2}$", x_discrete=False)
     #########################
     cfg.add_variable(name="dPhi", expression="dPhi", binning=(nBinsPhi, 0, maxPhi), x_title=r"$ \Delta \Phi $", x_discrete=False)
 
     # variables to check cuts
     # cfg.add_variable(name="correctedMetPt", expression="correctedMetPt", binning=(nBinsPt, minPt, maxPt), unit="GeV", x_title=r"Corrected $p_{T}^{miss}$", x_discrete=False)
-    cfg.add_variable(name="isoTrackPt", expression="isoTrackPt", binning=(nBinsPt, minPt, maxPt), unit="GeV", x_title=r"Iso track $p_{T}$", x_discrete=False)
-    cfg.add_variable(name="isoTrackMt2", expression="isoTrackMt2", binning=(nBinsPt, minPt, maxPt), unit="GeV", x_title=r"Iso Track $M_{T2}$", x_discrete=False)
+    # cfg.add_variable(name="isoTrackPt", expression="isoTrackPt", binning=(nBinsPt, minPt, maxPt), unit="GeV", x_title=r"Iso track $p_{T}$", x_discrete=False)
+    # cfg.add_variable(name="isoTrackMt2", expression="isoTrackMt2", binning=(nBinsPt, minPt, maxPt), unit="GeV", x_title=r"Iso Track $M_{T2}$", x_discrete=False)
     # cfg.add_variable(name="iso_cut", expression="iso_cut", binning=(nBool, minBool, maxBool), x_discrete=False)
     # cfg.add_variable(name="ghost_muon_filter", expression="ghost_muon_filter", binning=(nBool, minBool, maxBool), x_discrete=False)
     # cfg.add_variable(name="doubleCounting_XOR", expression="doubleCounting_XOR", binning=(nBool, minBool, maxBool), x_discrete=False)
